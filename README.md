@@ -78,7 +78,7 @@ These are specific to the kendo.dev codebase. They serve as examples of how to w
 |-------|-------------|
 | [agent-auditor](agents/agent-auditor.md) | Audit agent definitions for quality and consistency |
 | [docs-auditor](agents/docs-auditor.md) | Audit CLAUDE.md and docs against codebase for drift |
-| [librarian](agents/librarian.md) | Audit and grade every skill/agent, scan repos for new content |
+| [librarian](agents/librarian.md) | Scan other repos for shareable skills/agents, grade and recommend imports |
 | [qa](agents/qa.md) | Diagnose CI failures or evaluate implementations against acceptance criteria |
 | [reviewer](agents/reviewer.md) | Review PRs for code quality, architecture, and pattern consistency |
 
