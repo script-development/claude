@@ -45,6 +45,7 @@ Shared library of Claude Code skills and agents for the team. Clone this repo to
 | [pr](skills/pr/) | Create a pull request for the current branch |
 | [review-branch](skills/review-branch/) | Code review all changes on current branch vs base |
 | [review-mcp-descriptions](skills/review-mcp-descriptions/) | Improve MCP tool/resource descriptions for discoverability |
+| [maintain](skills/maintain/) | Scan repos for new skills/agents, audit for staleness, propose updates |
 | [research](skills/research/) | Research a topic, produce a filed report, build cumulative knowledge |
 | [retro](skills/retro/) | Write retrospectives capturing what went wrong, why, and what changed |
 | [task-writer](skills/task-writer/) | Break down features into structured TASKS.md with verification |
