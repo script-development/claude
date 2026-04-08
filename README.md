@@ -1,38 +1,54 @@
 # Claude Code Skills & Agents
 
-Shared library of Claude Code skills and agents for the team. Clone this repo to browse, use, and contribute skills.
+Shared library of reusable Claude Code skills and agents. Clone this repo to browse, use, and contribute.
 
 ## Quick Start
 
 ### Using a skill
 
-1. Copy the skill folder into your project's `.claude/skills/` directory:
-   ```bash
-   cp -r skills/skill-name /path/to/your/project/.claude/skills/
-   ```
+Copy or symlink a skill folder into your project's `.claude/skills/` directory:
 
-2. Or symlink it:
-   ```bash
-   ln -s /path/to/this/repo/skills/skill-name /path/to/your/project/.claude/skills/skill-name
-   ```
+```bash
+# Copy
+cp -r skills/commit /path/to/your/project/.claude/skills/
 
-3. Use it in Claude Code with `/skill-name`
+# Or symlink (stays in sync with this repo)
+ln -s /path/to/this/repo/skills/commit /path/to/your/project/.claude/skills/commit
+```
+
+Then use it in Claude Code with `/commit` (or whatever the skill name is).
 
 ### Using an agent
 
-1. Copy the agent file into your project's `.claude/agents/` directory:
-   ```bash
-   cp agents/agent-name.md /path/to/your/project/.claude/agents/
-   ```
+Same idea, but with `.claude/agents/`:
 
-2. Or symlink it:
-   ```bash
-   ln -s /path/to/this/repo/agents/agent-name.md /path/to/your/project/.claude/agents/agent-name.md
-   ```
+```bash
+cp agents/reviewer.md /path/to/your/project/.claude/agents/
+```
+
+Agents are invoked as subagents by Claude when their description matches the task.
+
+### Bulk setup
+
+To add all generic skills and agents to a project at once:
+
+```bash
+# Symlink all generic skills
+for skill in babysit catchup commit newbranch next plan-feature pr research retro review-branch review-mcp-descriptions task-writer; do
+  ln -sf /path/to/this/repo/skills/$skill /path/to/your/project/.claude/skills/$skill
+done
+
+# Symlink all generic agents
+for agent in agent-auditor docs-auditor librarian qa reviewer; do
+  ln -sf /path/to/this/repo/agents/$agent.md /path/to/your/project/.claude/agents/$agent.md
+done
+```
 
 ## Skills Catalog
 
 ### Generic Skills
+
+Work in any project, no configuration needed.
 
 | Skill | Description |
 |-------|-------------|
@@ -43,15 +59,15 @@ Shared library of Claude Code skills and agents for the team. Clone this repo to
 | [next](skills/next/) | Continue through TASKS.md — find next task, execute, mark done |
 | [plan-feature](skills/plan-feature/) | Interrogate the developer, then produce a feature plan |
 | [pr](skills/pr/) | Create a pull request for the current branch |
-| [review-branch](skills/review-branch/) | Code review all changes on current branch vs base |
-| [review-mcp-descriptions](skills/review-mcp-descriptions/) | Improve MCP tool/resource descriptions for discoverability |
 | [research](skills/research/) | Research a topic, produce a filed report, build cumulative knowledge |
 | [retro](skills/retro/) | Write retrospectives capturing what went wrong, why, and what changed |
+| [review-branch](skills/review-branch/) | Code review all changes on current branch vs base |
+| [review-mcp-descriptions](skills/review-mcp-descriptions/) | Improve MCP tool/resource descriptions for discoverability |
 | [task-writer](skills/task-writer/) | Break down features into structured TASKS.md with verification |
 
 ### Kendo PM Skills
 
-Skills for working with [Kendo](https://kendo.dev) project management. Usable in any project that uses Kendo for issue tracking.
+For any project using [Kendo](https://kendo.dev) for issue tracking. Requires the Kendo CLI or MCP server.
 
 | Skill | Description |
 |-------|-------------|
@@ -62,7 +78,7 @@ Skills for working with [Kendo](https://kendo.dev) project management. Usable in
 
 ### Project-Specific Examples
 
-These are specific to the kendo.dev codebase. They serve as examples of how to write monitoring, setup, and release skills.
+These are specific to the kendo.dev codebase. Included as reference implementations showing how to write monitoring, setup, and release skills.
 
 | Skill | Description |
 |-------|-------------|
@@ -88,8 +104,20 @@ These are specific to the kendo.dev codebase. They serve as examples of how to w
 |-------|-------------|
 | [plan-reviewer](agents/plan-reviewer.md) | Review feature plans for codebase convention violations (kendo-specific) |
 
+## Maintaining This Repo
+
+Use the **librarian** agent to scan your other repos for new skills and agents worth sharing:
+
+```
+> Check my repos for new skills
+```
+
+It scans `~/Code/*/` for `.claude/skills/` and `.claude/agents/`, grades each candidate on quality and genericness, and recommends what to import.
+
 ## Contributing
 
 See [docs/contributing.md](docs/contributing.md) for how to add new skills and agents.
 
-Use the templates in `templates/` as a starting point.
+Use the templates in `templates/` as a starting point:
+- `templates/skill-template/` — skeleton for a new skill
+- `templates/agent-template.md` — skeleton for a new agent
