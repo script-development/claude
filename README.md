@@ -32,9 +32,15 @@ Shared library of Claude Code skills and agents for the team. Clone this repo to
 
 ## Skills Catalog
 
-| Skill | Description | Tags |
-|-------|-------------|------|
-| *No skills yet - be the first to contribute!* | | |
+| Skill | Description |
+|-------|-------------|
+| [babysit](skills/babysit/) | Watch a PR's CI, auto-fix failures, push until green |
+| [catchup](skills/catchup/) | Load branch context, show progress, sync with base branch |
+| [commit](skills/commit/) | Small, focused commits with conventional messages + push |
+| [next](skills/next/) | Continue through TASKS.md — find next task, execute, mark done |
+| [plan-feature](skills/plan-feature/) | Interrogate the developer, then produce a feature plan |
+| [review-branch](skills/review-branch/) | Code review all changes on current branch vs base |
+| [review-mcp-descriptions](skills/review-mcp-descriptions/) | Improve MCP tool/resource descriptions for discoverability |
 
 ## Agents Catalog
 
