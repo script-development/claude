@@ -45,6 +45,8 @@ Shared library of Claude Code skills and agents for the team. Clone this repo to
 | [pr](skills/pr/) | Create a pull request for the current branch |
 | [review-branch](skills/review-branch/) | Code review all changes on current branch vs base |
 | [review-mcp-descriptions](skills/review-mcp-descriptions/) | Improve MCP tool/resource descriptions for discoverability |
+| [research](skills/research/) | Research a topic, produce a filed report, build cumulative knowledge |
+| [retro](skills/retro/) | Write retrospectives capturing what went wrong, why, and what changed |
 | [task-writer](skills/task-writer/) | Break down features into structured TASKS.md with verification |
 
 ### Kendo PM Skills
@@ -69,6 +71,17 @@ These are specific to the kendo.dev codebase. They serve as examples of how to w
 | [startup](skills/startup/) | Full project setup with worktree support |
 
 ## Agents Catalog
+
+### Generic Agents
+
+| Agent | Description |
+|-------|-------------|
+| [agent-auditor](agents/agent-auditor.md) | Audit agent definitions for quality and consistency |
+| [docs-auditor](agents/docs-auditor.md) | Audit CLAUDE.md and docs against codebase for drift |
+| [qa](agents/qa.md) | Diagnose CI failures or evaluate implementations against acceptance criteria |
+| [reviewer](agents/reviewer.md) | Review PRs for code quality, architecture, and pattern consistency |
+
+### Project-Specific Examples
 
 | Agent | Description |
 |-------|-------------|
