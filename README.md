@@ -34,12 +34,12 @@ To add all generic skills and agents to a project at once:
 
 ```bash
 # Symlink all generic skills
-for skill in babysit catchup commit newbranch next plan-feature pr research retro review-branch review-mcp-descriptions task-writer; do
+for skill in babysit catchup commit newbranch next plan-feature pr research retro review-branch review-mcp-descriptions task-writer wireframe; do
   ln -sf /path/to/this/repo/skills/$skill /path/to/your/project/.claude/skills/$skill
 done
 
 # Symlink all generic agents
-for agent in agent-auditor docs-auditor librarian qa reviewer; do
+for agent in acceptance-reviewer agent-auditor docs-auditor librarian qa reviewer task-alignment-reviewer wireframe-reviewer; do
   ln -sf /path/to/this/repo/agents/$agent.md /path/to/your/project/.claude/agents/$agent.md
 done
 ```
@@ -64,6 +64,7 @@ Work in any project, no configuration needed.
 | [review-branch](skills/review-branch/) | Code review all changes on current branch vs base |
 | [review-mcp-descriptions](skills/review-mcp-descriptions/) | Improve MCP tool/resource descriptions for discoverability |
 | [task-writer](skills/task-writer/) | Break down features into structured TASKS.md with verification |
+| [wireframe](skills/wireframe/) | Generate structured WIREFRAMES.md with ASCII layouts, design tokens, and interaction specs |
 
 ### Kendo PM Skills
 
@@ -92,11 +93,14 @@ These are specific to the kendo.dev codebase. Included as reference implementati
 
 | Agent | Description |
 |-------|-------------|
+| [acceptance-reviewer](agents/acceptance-reviewer.md) | Verify implementation satisfies plan's acceptance criteria and wireframe specs |
 | [agent-auditor](agents/agent-auditor.md) | Audit agent definitions for quality and consistency |
 | [docs-auditor](agents/docs-auditor.md) | Audit CLAUDE.md and docs against codebase for drift |
 | [librarian](agents/librarian.md) | Scan other repos for shareable skills/agents, grade and recommend imports |
 | [qa](agents/qa.md) | Diagnose CI failures or evaluate implementations against acceptance criteria |
 | [reviewer](agents/reviewer.md) | Review PRs for code quality, architecture, and pattern consistency |
+| [task-alignment-reviewer](agents/task-alignment-reviewer.md) | Verify TASKS.md fully covers PLAN.md — criteria, wireframes, scope |
+| [wireframe-reviewer](agents/wireframe-reviewer.md) | Verify WIREFRAMES.md completeness, token validity, and plan coverage |
 
 ### Project-Specific Examples
 
