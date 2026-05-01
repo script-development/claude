@@ -75,14 +75,36 @@ diagnose the issue. Read it carefully.
 
 ### Step 4: Diagnose and fix
 
-Read the failure logs and categorize the issue:
+Categorize the failure and fix it.
 
-**Auto-fixable failures** — many CI failures can be fixed by running a formatter or fixer tool
-locally. Check the project for linting/formatting commands (e.g., `prettier --write`, `eslint --fix`,
-`black`, `cargo fmt`, `gofmt`, `php-cs-fixer fix`). Run the appropriate fixer, verify locally, then
-commit.
+#### Auto-fixable (just run the tool)
 
-**Code change failures** — for type errors, test failures, build errors, or static analysis issues:
+Many CI failures can be fixed by running a formatter or fixer tool locally. Examples (adapt to
+the project's stack):
+
+| Failure | Typical fix command |
+|---------|---------------------|
+| JS/TS lint with fixable errors | `npx eslint . --fix` / `prettier --write` |
+| PHP style | `./vendor/bin/pint` / `php-cs-fixer fix` |
+| PHP upgrade rules | `vendor/bin/rector` |
+| Go format | `gofmt -w .` |
+| Rust format | `cargo fmt` |
+| Python format | `black .` / `ruff format` |
+
+After running the fixer, verify the check passes locally before committing.
+
+#### Requires code changes
+
+| Failure | Diagnosis approach |
+|---------|-------------------|
+| Type errors (TS, mypy, phpstan, etc.) | Read the error lines, fix type mismatches, missing imports, narrowed types |
+| Test failures | Read which test failed and why, fix the code or test |
+| Build failures | Read bundler/compiler output, fix syntax or import errors |
+| Spell check | Fix typos or add to the project's spell-check word list |
+| Layer/boundary violations | Read which boundary was crossed, move the import |
+| Coverage failures | Write missing tests for uncovered lines |
+
+For code changes:
 1. Read the relevant files to understand context
 2. Make the minimal fix — do NOT refactor or improve unrelated code
 3. Verify locally with the narrowest possible check (run just the failing test, or just the type

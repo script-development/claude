@@ -87,7 +87,7 @@ against TASKS.md. Flag any planned file that no task mentions in its Touches/Sco
 ### Step 6: Testing Coverage
 
 If PLAN.md has a Testing Strategy section with per-PR test tables, check that TASKS.md includes
-test-writing action items that match the planned test files and descriptions.
+test-writing action items (e.g., `[RED]` tags) that match the planned test files and descriptions.
 
 ### Step 7: Edge Case Coverage
 

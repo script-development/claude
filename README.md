@@ -34,12 +34,12 @@ To add all generic skills and agents to a project at once:
 
 ```bash
 # Symlink all generic skills
-for skill in babysit catchup commit newbranch next plan-feature pr research retro review-branch review-mcp-descriptions task-writer wireframe; do
+for skill in babysit catchup commit fix-bug implement-plan newbranch next plan-feature pr research retro review-branch review-mcp-descriptions task-writer wireframe; do
   ln -sf /path/to/this/repo/skills/$skill /path/to/your/project/.claude/skills/$skill
 done
 
 # Symlink all generic agents
-for agent in acceptance-reviewer agent-auditor docs-auditor librarian qa reviewer task-alignment-reviewer wireframe-reviewer; do
+for agent in acceptance-reviewer agent-auditor bug-fix-verifier docs-auditor efficiency-hunter librarian qa reviewer silent-failure-hunter simplicity-reviewer task-alignment-reviewer wireframe-reviewer; do
   ln -sf /path/to/this/repo/agents/$agent.md /path/to/your/project/.claude/agents/$agent.md
 done
 ```
@@ -55,9 +55,11 @@ Work in any project, no configuration needed.
 | [babysit](skills/babysit/) | Watch a PR's CI, auto-fix failures, push until green |
 | [catchup](skills/catchup/) | Load branch context, show progress, sync with base branch |
 | [commit](skills/commit/) | Small, focused commits with conventional messages + push |
+| [fix-bug](skills/fix-bug/) | End-to-end bug-fix workflow: reproduce, diagnose, fix, verify via bug-fix-verifier |
+| [implement-plan](skills/implement-plan/) | Execute a feature plan end-to-end without TASKS.md, gated by acceptance-reviewer |
 | [newbranch](skills/newbranch/) | Create a new branch from the default branch |
 | [next](skills/next/) | Continue through TASKS.md — find next task, execute, mark done |
-| [plan-feature](skills/plan-feature/) | Interrogate the developer, then produce a feature plan |
+| [plan-feature](skills/plan-feature/) | Interrogate the developer, then produce PLAN.md + DECISIONS.md |
 | [pr](skills/pr/) | Create a pull request for the current branch |
 | [research](skills/research/) | Research a topic, produce a filed report, build cumulative knowledge |
 | [retro](skills/retro/) | Write retrospectives capturing what went wrong, why, and what changed |
@@ -95,10 +97,14 @@ These are specific to the kendo.dev codebase. Included as reference implementati
 |-------|-------------|
 | [acceptance-reviewer](agents/acceptance-reviewer.md) | Verify implementation satisfies plan's acceptance criteria and wireframe specs |
 | [agent-auditor](agents/agent-auditor.md) | Audit agent definitions for quality and consistency |
+| [bug-fix-verifier](agents/bug-fix-verifier.md) | Verify a bug fix actually resolves BUG.md's defect; gates `/fix-bug` before PR |
 | [docs-auditor](agents/docs-auditor.md) | Audit CLAUDE.md and docs against codebase for drift |
+| [efficiency-hunter](agents/efficiency-hunter.md) | Hunt N+1 queries, missed concurrency, hot-path bloat in branch diffs |
 | [librarian](agents/librarian.md) | Scan other repos for shareable skills/agents, grade and recommend imports |
 | [qa](agents/qa.md) | Diagnose CI failures or evaluate implementations against acceptance criteria |
 | [reviewer](agents/reviewer.md) | Review PRs for code quality, architecture, and pattern consistency |
+| [silent-failure-hunter](agents/silent-failure-hunter.md) | Hunt empty catches, swallowed errors, missing user feedback in branch diffs |
+| [simplicity-reviewer](agents/simplicity-reviewer.md) | Verify the implementation is the simplest shape that meets the plan |
 | [task-alignment-reviewer](agents/task-alignment-reviewer.md) | Verify TASKS.md fully covers PLAN.md — criteria, wireframes, scope |
 | [wireframe-reviewer](agents/wireframe-reviewer.md) | Verify WIREFRAMES.md completeness, token validity, and plan coverage |
 

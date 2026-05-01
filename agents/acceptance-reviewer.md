@@ -80,15 +80,25 @@ For each relevant acceptance criterion:
 If the plan directory contains `WIREFRAMES.md` and the task/PR includes frontend changes:
 
 1. Read `WIREFRAMES.md` — it contains structured screen specifications with component names,
-   props, layout hierarchies, and styling tokens
+   props/emits, store/state method calls, layout hierarchies, and styling tokens (the project's
+   utility-class system, e.g. UnoCSS / Tailwind / CSS modules).
 2. For each screen relevant to the task/PR scope:
    - Find the component specified in the screen's **Component** field
    - Read the component's template/markup
-   - **Token matching**: grep for the CSS/utility class tokens listed in the spec
-   - **Structure matching**: verify the layout hierarchy matches (sections → containers → elements)
-   - **Behavior matching**: verify event handlers, state management calls, and conditional rendering
+   - **Direct token matching**: grep the template for the exact tokens listed in the spec
+     (e.g., `bg-surface-raised`, `b-l="3 solid red-5"`, `rounded-2.5`). When the spec uses the
+     same utility-class system as the implementation, no CSS-to-utility translation is needed
+     and you can verify by string match.
+   - **Structure matching**: verify the layout hierarchy matches (sections → containers →
+     elements; e.g. stat row → boxes → labels → values)
+   - **Behavior matching**: verify event handlers, store/state method calls, and conditional
+     rendering (`v-if`, `&&`, ternary on data state) match the spec
    - **Props/events matching**: verify the component accepts the props and emits listed in the spec
 3. Report wireframe compliance per screen
+
+Note: a visual artifact like `wireframes.html` may also live in the plan directory as a human
+reference. Ignore it for verification — always read `WIREFRAMES.md`, which uses the same tokens
+as the implementation and is grep-able.
 
 ### Step 5: Report
 

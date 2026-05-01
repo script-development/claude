@@ -1,7 +1,7 @@
 ---
 name: next
 description: |
-  Continue working through a TASKS.md file — find the next uncompleted task, execute it,
+  Continue working through TASKS.md — find the next uncompleted task, execute it with TDD flow,
   and mark it done. Use this skill whenever the user wants to continue implementation work, pick up
   where they left off, resume after /clear, or work through a task list. Trigger on: "next task",
   "continue working", "keep going", "what's next", "pick up where I left off", "resume work",
@@ -10,26 +10,38 @@ description: |
 
 # Next Task
 
-Continue working through a TASKS.md file: locate it, find the next uncompleted task, execute it,
-and mark it done with learnings.
+Continue working through a TASKS.md file: locate it, find the next uncompleted task, execute it
+following TDD flow, and mark it done with learnings.
+
+> **No TASKS.md, just PLAN.md + DECISIONS.md?** Use `/implement-plan` instead. It runs the same
+> context-recovery / TDD / verification machinery against the plan directly, without expecting a
+> per-task checklist.
+
+> **Review runs once per branch, not per task.** Do not spawn reviewer agents after each task —
+> per-task reviews burn tokens for near-zero signal (first-pass scores are 9-10 the vast majority
+> of the time). The gate for a task is **verification** (tests + types + lint). Reviewers run
+> once via `/review-branch` before `/pr`.
 
 ## Step 1: Locate TASKS.md
 
-Search for the task file:
+Derive the plan directory from the current git branch:
 
-1. Check the current git branch name for clues (issue keys, feature names)
-2. Look for `TASKS.md` in common locations:
-   - Repository root
-   - `docs/plans/<branch-name-or-issue>/TASKS.md`
-   - Any `docs/plans/*/TASKS.md` that matches the branch
-3. If not found, ask the user where their task file is
+1. Run `git branch --show-current`
+2. Strip prefix up to and including the first `/` (e.g. `claude/` → removed, `feature/` → removed)
+3. Strip any random suffix — e.g. a trailing `-XXXXX` segment where X is alphanumeric
+4. Look for `docs/plans/<result>/TASKS.md`
+5. If not found, fall back to `TASKS.md` in the repository root
+6. If still not found, ask the user where their task file is
+
+**Example:** Branch `claude/claude-code-sdk-integration-0L8sI` → directory `claude-code-sdk-integration`
+→ file `docs/plans/claude-code-sdk-integration/TASKS.md`
 
 ## Step 2: Show progress and find next task
 
 Read the TASKS.md file and report a quick progress summary:
 
 ```
-Progress: 3/7 tasks complete — starting task 4
+Progress: 3/7 tasks complete — starting 2.1
 ```
 
 Find the first task not marked with `[x]`. If all tasks are complete, summarize the work done and
@@ -37,37 +49,64 @@ ask if there's anything else needed.
 
 ## Step 3: Recover context
 
-This is important when resuming after a `/clear` or at the start of a new session.
+This is important when resuming after a `/clear` or at the start of a new session — the Context
+block in each task is specifically designed for this.
 
-Read the task's context to understand:
-- **Why** — The problem this task solves
-- **What** — What needs to be built or changed
-- **Key refs** — File paths to read as entry points
-- **Watch out** — Edge cases and gotchas
+Read the task's **Context** section to understand:
 
-Read the files mentioned in the task to build working understanding of the code you'll be
-modifying. Also glance at the previous completed tasks to understand what's already been done.
+- **Why** — The business problem this task solves
+- **Architecture** — How it fits in, which patterns to follow
+- **Key refs** — File paths and line numbers to read as entry points
+- **Watch out** — Edge cases and gotchas to keep in mind
 
-If the task references decisions or a plan document, read those to understand the reasoning behind
-the chosen approach.
+Read the files mentioned in **Key refs** and **Touches** to build working understanding of the
+code you'll be modifying. Also glance at the previous completed tasks to understand what's
+already been done in this feature.
+
+If the task Context references decisions (e.g., "see D2"), read `DECISIONS.md` in the same plan
+directory to understand the reasoning behind the chosen approach — especially which alternatives
+were rejected and why.
 
 ## Step 4: Execute the task
 
-### Follow the task's ordering
+### Follow TDD ordering
 
-If tasks have specific ordering tags (like TDD `[RED]`/`[GREEN]` markers, or numbered sub-steps),
-respect that ordering.
+Tasks use `[RED]` and `[GREEN]` tags in their action items to indicate TDD flow:
 
-### Stay in scope
+- **[RED]** — Write tests first (they should fail initially)
+- **[GREEN]** — Implement code to make the tests pass
 
-The task's scope and action items define what this task covers. Stay within those boundaries —
-don't start work that belongs to a later task. If you discover something that needs doing but
-isn't in the current task, note it for later rather than doing it now.
+Always execute [RED] items before [GREEN] items.
+
+### Load testing skills before any test work
+
+If the project provides a domain-specific testing skill, invoke it **before** writing or modifying
+test code. These skills typically carry the project's mock organization, AAA conventions, coverage
+requirements, and test file structure — none of which are obvious from existing tests.
+
+If the project doesn't have a testing skill, fall back to reading 1-2 existing tests in the area
+you're touching and matching their conventions.
+
+### Use task scope as guardrails
+
+The **Scope**, **Touches**, and **Action items** define what this task covers. Stay within those
+boundaries — don't start work that belongs to a later task. If you discover something that needs
+doing but isn't in the current task, note it for later rather than doing it now.
 
 ## Step 5: Verify before completing
 
-After implementation, check if the task has verification steps. Run what you can (tests, linters,
-type checks). Don't block on manual verification — flag those for the user.
+After implementation, check if the task has a **"Verify before complete"** section. If it does,
+remind the user about the verification checks and run the ones you can (CI commands, test
+suites, type checkers). Don't block on manual verification steps — flag them for the user.
+
+Common verification patterns:
+- `/ci --quick` (or equivalent lint + types check)
+- Narrowed/pipeline test commands for the area you touched (avoid full-suite watch mode)
+- Coverage check if the project enforces a threshold
+
+**Verification is the per-task gate.** Reviewer agents (acceptance, simplicity, silent-failure,
+efficiency) no longer run per task — they run once against the full branch via `/review-branch`
+before `/pr`.
 
 ## Step 6: Mark complete with metadata
 
@@ -77,15 +116,15 @@ Update the TASKS.md file:
 2. Add completion metadata below the task's existing content:
 
 ```markdown
-- [x] **4** Implement feature X
+- [x] **N.1** Implement feature X
     - [existing task content...]
     - **Completed:** YYYY-MM-DD
     - **Learnings:**
         - Key insight discovered during implementation
         - Gotcha or edge case encountered
     - **Key Changes:**
-        - Created `src/features/x/service.ts`
-        - Modified `src/api/routes.ts`
+        - Created `path/to/new/file.ts`
+        - Modified `path/to/existing/file.ts`
     - **Notes:** Any important context for future tasks
 ```
 
@@ -97,7 +136,7 @@ you hit, patterns you discovered. These help future tasks and context recovery.
 Summarize what was done, then suggest committing the work as a natural checkpoint:
 
 ```
-Done: task 4 — Implemented X with tests
+Done: 2.1 — Implemented X with tests
 
 Suggest committing before continuing. Want me to /commit?
 ```

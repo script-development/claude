@@ -25,10 +25,21 @@ For each **tool description**, verify:
 ### 1. Front-loaded action + synonyms in first sentence
 The first sentence must contain the primary action AND common synonyms that users might type.
 
-**Good:** `"Search, find, or filter issues by text query and/or filters."`
-**Bad:** `"Search issues by text query and/or filters."`
+**Good:** `"Search, find, or filter issues within a project."`
+**Bad:** `"Search issues within a project by text query and/or filters."`
 
-Think about what words users might use to describe the same action and include them as synonyms.
+Common synonym groups to consider (adapt to the tool's domain):
+- Things: thing, item, record, entity (issue, ticket, task, bug, etc.)
+- Search: search, find, filter, query, look up
+- Create: create, add, new
+- Update: update, edit, change, modify, move
+- Delete: delete, remove
+- Link: link, connect, associate, attach
+- Group concept: epic, milestone, project
+- Time period: sprint, iteration
+- Status: lane, column, status, board
+- Time tracking: time, hours, worklog, time entry
+- Conversation: comment, note, reply, feedback
 
 ### 2. No "Before using this tool" boilerplate
 Resource hints belong in server instructions, NOT in individual tool descriptions.
@@ -42,6 +53,16 @@ Before using this tool, read resource://projects to discover...
 ### 3. No parameter documentation in description
 Required/optional parameters are already documented in the tool's schema definitions.
 Don't repeat them in the tool description.
+
+**Remove patterns like:**
+```
+Required parameters:
+- project_id: The project to operate in
+- title: The item title
+
+Optional parameters:
+- lane_id: The lane to place the item in
+```
 
 ### 4. Max 2-4 lines
 Tool descriptions should be concise. Every word must earn its place. If a description
