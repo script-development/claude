@@ -45,37 +45,34 @@ claude --version
 - If not on PATH, check `npm config get prefix` and advise accordingly.
 - Verify it works before continuing.
 
-## Step 4: Check if the kendo MCP server is configured (user-scoped)
+## Step 4: Configure project-specific MCP servers (conditional)
 
-Check `~/.claude.json` for a top-level `mcpServers` entry for `kendo`.
+**Skip if** the project doesn't define any MCP servers.
 
-Expected (at the root level of `~/.claude.json`):
+Check the project's documentation for MCP server configuration:
 
-```json
-{
-  "mcpServers": {
-    "kendo": {
-      "type": "http",
-      "url": "https://script.kendo.dev/mcp/kendo"
-    }
-  }
-}
+1. **`.mcp.json`** at the project root — project-scoped MCP server definitions.
+2. **The project's `CLAUDE.md`** — usually documents which MCP servers to add and the URLs / auth flows.
+
+If the project documents one or more MCP servers, register each user-scoped (so they're available across all worktrees):
+
+```bash
+claude mcp add --scope user --transport <transport> <name> <url>
 ```
 
-- If not configured, add it:
-  ```bash
-  claude mcp add --scope user --transport http kendo https://script.kendo.dev/mcp/kendo
-  ```
+Replace `<transport>`, `<name>`, and `<url>` with the values from the project's docs.
 
 **Note**: `--scope user` makes the MCP server available for ALL projects on this PC.
 
-## Step 5: Check if the kendo MCP server is authenticated
+## Step 5: Verify project MCP servers are authenticated
 
-Try calling an MCP tool or resource from the kendo server (e.g. list projects).
+**Skip if** no project MCP servers were configured in Step 4.
+
+For each project MCP server, try calling a simple tool or resource.
 
 - If it returns data, setup is complete.
-- If it returns an auth error:
-  1. The MCP server uses OAuth. The user needs to visit the auth URL provided in the error.
+- If it returns an auth error (typically OAuth-based):
+  1. Surface the auth URL provided in the error.
   2. Ask the user to complete authentication in their browser.
   3. Re-test the MCP connection after they confirm.
 
@@ -90,5 +87,5 @@ MCP setup complete!
   [x] gh CLI installed and authenticated
   [x] Scoop package manager installed (Windows)
   [x] claude CLI installed and on PATH
-  [x] kendo MCP server configured (user-scoped) and authenticated
+  [x] Project MCP servers configured and authenticated (if any)
 ```

@@ -77,7 +77,7 @@ For each item that's **New** or **Updated**, read the full file and grade it.
 - **1-3** — Deeply project-specific (hardcoded paths, IDs, stack assumptions throughout)
 
 Be specific about what would need to change. "Has hardcoded paths" is vague.
-"`project_id: 1` on line 45 and `~/Code/kendo` on lines 12, 78, 93" is actionable.
+"`project_id: 1` on line 45 and `~/Code/myapp` on lines 12, 78, 93" is actionable.
 
 #### 3. Shareability verdict
 Based on quality and genericness, recommend one of:
@@ -132,8 +132,8 @@ should be synced back. Be specific:
 
 | Skill/Agent | Source | What changed | Recommendation |
 |-------------|--------|--------------|----------------|
-| babysit | ~/Code/kendo | Added flaky test retry logic | Sync — generic improvement |
-| commit | ~/Code/kendo | Changed to kendo-specific branch naming | Skip — shared version is more generic |
+| babysit | ~/Code/foo | Added flaky test retry logic | Sync — generic improvement |
+| commit | ~/Code/bar | Changed to bar-specific branch naming | Skip — shared version is more generic |
 
 ### Summary
 - **Repos scanned:** N

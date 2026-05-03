@@ -45,12 +45,12 @@ If you're hacking on this repo locally:
 | [plan-feature](plugins/core/skills/plan-feature/) | Interrogate the developer, then produce PLAN.md + DECISIONS.md |
 | [pr](plugins/core/skills/pr/) | Create a pull request for the current branch |
 | [prepare-issue](plugins/core/skills/prepare-issue/) | Prepare a kendo issue: assign, branch, link, move to In Progress |
-| [release-cli](plugins/core/skills/release-cli/) | Release the kendo Go CLI via GoReleaser |
+| [release-cli](plugins/core/skills/release-cli/) | Tag and release a Go CLI tool via GoReleaser |
 | [research](plugins/core/skills/research/) | Research a topic, produce a filed report, build cumulative knowledge |
 | [retro](plugins/core/skills/retro/) | Write retrospectives capturing what went wrong, why, and what changed |
 | [review-branch](plugins/core/skills/review-branch/) | Code review all changes on current branch vs base |
 | [review-mcp-descriptions](plugins/core/skills/review-mcp-descriptions/) | Improve MCP tool/resource descriptions for discoverability |
-| [startup](plugins/core/skills/startup/) | Full project setup with worktree support |
+| [startup](plugins/core/skills/startup/) | Full project setup for Laravel + Vue + MinIO projects with worktree support |
 | [task-writer](plugins/core/skills/task-writer/) | Break down features into structured TASKS.md with verification |
 | [wireframe](plugins/core/skills/wireframe/) | Generate structured WIREFRAMES.md with ASCII layouts, design tokens, and interaction specs |
 
@@ -64,7 +64,7 @@ If you're hacking on this repo locally:
 | [docs-auditor](plugins/core/agents/docs-auditor.md) | Audit CLAUDE.md and docs against codebase for drift |
 | [efficiency-hunter](plugins/core/agents/efficiency-hunter.md) | Hunt N+1 queries, missed concurrency, hot-path bloat in branch diffs |
 | [librarian](plugins/core/agents/librarian.md) | Scan other repos for shareable skills/agents, grade and recommend imports |
-| [plan-reviewer](plugins/core/agents/plan-reviewer.md) | Review feature plans for codebase convention violations |
+| [plan-reviewer](plugins/core/agents/plan-reviewer.md) | Review feature plans against the project's CLAUDE.md conventions and arch tests |
 | [qa](plugins/core/agents/qa.md) | Diagnose CI failures or evaluate implementations against acceptance criteria |
 | [reviewer](plugins/core/agents/reviewer.md) | Review PRs for code quality, architecture, and pattern consistency |
 | [silent-failure-hunter](plugins/core/agents/silent-failure-hunter.md) | Hunt empty catches, swallowed errors, missing user feedback in branch diffs |

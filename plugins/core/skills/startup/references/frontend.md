@@ -25,7 +25,7 @@ node --version
   - **Windows**: `scoop install nodejs` or download from https://nodejs.org/
   - **macOS**: `brew install node`
   - **Linux**: `sudo apt install nodejs` (Debian/Ubuntu) or use https://github.com/nodesource/distributions
-- Verify the version is **18 or higher**. If outdated, advise the user to upgrade.
+- Verify the version meets the project's `engines.node` requirement in `frontend/package.json` (or **18 or higher** as a sensible default for Vite-based projects). If outdated, advise the user to upgrade.
 - Confirm `node` resolves correctly:
   ```bash
   which node
@@ -60,7 +60,7 @@ Once all steps pass, print a summary:
 ```
 Frontend setup complete!
   [x] frontend/package.json found
-  [x] Node.js installed and up-to-date (18+)
+  [x] Node.js installed and up-to-date (18+ or per package.json engines)
   [x] Dependencies installed (npm install)
   [x] .env file present
 ```

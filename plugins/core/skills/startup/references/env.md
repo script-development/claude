@@ -4,7 +4,7 @@ Create the backend `.env` file from `.env.example` and apply local development d
 
 ## Step 1 — Copy .env.example to .env
 
-**Always** copy `.env.example` over `.env`, even if `.env` already exists. This ensures new variables (like `SESSION_CONNECTION=tenant`) are never missing from a stale `.env` file.
+**Always** copy `.env.example` over `.env`, even if `.env` already exists. This ensures any new variables added to `.env.example` are never missing from a stale `.env` file.
 
 ```bash
 cp ./backend/.env.example ./backend/.env
@@ -29,32 +29,37 @@ grep '^APP_KEY=' ./backend/.env
 
 ## Step 3 — Apply local database defaults
 
-Read `backend/.env` and set the following database variables:
+Read `backend/.env` and set the following database variables to local-friendly values:
 
 - `DB_USERNAME=root`
 - `DB_PASSWORD=root`
 
 **Edit hint:** Only modify active (uncommented) lines. Never touch commented-out lines (starting with `#`). When a variable name like `DB_PASSWORD` also appears in a commented block, include enough surrounding context (e.g. the line above) to uniquely match the active one.
 
-The multi-tenancy databases are:
-- **Central**: `CENTRAL_DB_DATABASE=kendo-central` (tenant registry)
-- **Tenant**: The tenant database name is resolved per-tenant from the central `tenants` table (no `DB_DATABASE` variable needed)
+### Multi-tenancy (conditional)
 
-The `.env.example` ships with `CENTRAL_DB_DATABASE=issue-tracker-central`. Replace it with `kendo-central`.
+**Skip this sub-step if** the project doesn't use multi-tenancy (no `stancl/tenancy` in `backend/composer.json`).
+
+Multi-tenant projects typically have:
+
+- **Central database**: a single registry database — variable name is project-specific (commonly `CENTRAL_DB_DATABASE` or `DB_DATABASE`). Default it to `<app>-central` where `<app>` is `APP_NAME` lowercased/slugified.
+- **Tenant databases**: usually resolved per-tenant from the central `tenants` table — no static `DB_DATABASE` variable needed.
+
+If `.env.example` ships with a placeholder value for the central DB (e.g. `<something>-central`), replace it with `<app>-central` derived from this project's `APP_NAME`. Check the project's `CLAUDE.md` if you're unsure which variable controls the central DB.
 
 ## Step 4 — Set cache store to array
 
-Set `CACHE_STORE=array` to avoid needing the central cache table during local development:
+Set `CACHE_STORE=array` to avoid needing a cache table during local development:
 
 ```
 CACHE_STORE=array
 ```
 
-This stores cache in-memory per request (not persisted). It avoids the "cache table not found" error that occurs with `CACHE_STORE=database` when the central database migration hasn't been run yet.
+This stores cache in-memory per request (not persisted). It avoids "cache table not found" errors that occur with `CACHE_STORE=database` when migrations haven't been run yet — particularly useful in multi-tenant projects where the central cache table may not exist on first boot.
 
 ## Step 5 — Apply local AWS/MinIO block
 
-Replace the entire AWS configuration block (all lines starting with `AWS_`) with:
+Replace the entire AWS configuration block (all lines starting with `AWS_`) with the local MinIO defaults:
 
 ```
 AWS_ACCESS_KEY_ID=minioadmin
@@ -66,12 +71,14 @@ AWS_URL=http://localhost:9000/${APP_NAME}
 AWS_USE_PATH_STYLE_ENDPOINT=true
 ```
 
+`${APP_NAME}` is interpolated by Laravel at runtime from the same `.env` file, so the bucket name automatically matches the app.
+
 ## Step 6 — Report
 
 Print the values that were set:
 
 - `DB_USERNAME`, `DB_PASSWORD`
-- `CENTRAL_DB_DATABASE`
+- Central DB variable (if multi-tenancy)
 - `CACHE_STORE`
 - AWS block (summarize)
 

@@ -1,35 +1,40 @@
 ---
 name: nightwatch-mcp
 description: |
-  Nightwatch monitoring for the kendo application. Use when checking production or staging
+  Nightwatch error and performance monitoring. Use when checking production or staging
   errors, triaging exceptions, investigating slow routes, reviewing application health, or managing
   issue status (resolve/ignore). Also use when the user mentions Nightwatch, production errors,
   exceptions, slow endpoints, or application monitoring. ALWAYS use this skill before calling any
-  mcp__nightwatch__ tool — it contains pre-resolved IDs that skip unnecessary lookup calls.
+  mcp__nightwatch__ tool.
 ---
 
 # Nightwatch Monitoring
 
-Monitor and triage production/staging issues for kendo using the Nightwatch MCP server.
+Triage production/staging issues using the Nightwatch MCP server.
 
-## Application Context
+## First-time setup: pre-resolve IDs for this project
 
-| Key | Value |
-|-----|-------|
-| **Application** | Kendo |
-| **Application ID** | `a1200a22-6414-4c04-9692-c42ffd66ce6c` |
-| **Organization** | Script |
+Before any other call, resolve the application and environment IDs **once** so subsequent calls can pass them directly without lookup.
 
-Always use this application ID directly — never call `list_applications` unless explicitly asked.
+1. Look in the project's `CLAUDE.md` (root or `.claude/`) for a `Nightwatch` section listing pre-resolved IDs. If present, use those and skip the rest of this section.
+2. Otherwise, call `mcp__nightwatch__list_applications` to find the application for this project (match by name or URL), then `mcp__nightwatch__list_environments` for that application.
+3. Report the resolved IDs to the user and ask them to record the table below in their project `CLAUDE.md` so future sessions skip the lookup:
 
-## Environments
+   ```markdown
+   ## Nightwatch
 
-| Environment | ID | Deploys from | URL |
-|-------------|----|--------------|----|
-| **Production** | `a1200a22-67cb-43f4-8009-115a63469706` | `main` branch | `script.kendo.dev` |
-| **Staging** | `a1200adc-7b13-4444-9324-e4ba2770d324` | `development` branch | `staging-issue-tracker.fly.dev` |
+   | Key | Value |
+   |-----|-------|
+   | Application | <name> |
+   | Application ID | <uuid> |
 
-Both environments are in `eu-central-1`, deployed on Fly.io (Amsterdam).
+   | Environment | ID | Deploys from | URL |
+   |-------------|----|--------------|----|
+   | Production  | <uuid> | <branch> | <url> |
+   | Staging     | <uuid> | <branch> | <url> |
+   ```
+
+Once resolved, never call `list_applications` or `list_environments` again in the same project unless the user explicitly asks.
 
 ## MCP Tools
 
@@ -39,8 +44,8 @@ Both environments are in `eu-central-1`, deployed on Fly.io (Amsterdam).
 | `mcp__nightwatch__get_issue` | Full diagnostics: stack trace, code context, occurrence stats, activity log |
 | `mcp__nightwatch__update_issue` | Change status (open/resolved/ignored), priority, title, description, assignee |
 | `mcp__nightwatch__add_issue_comment` | Add a comment (only when explicitly asked or recording meaningful findings) |
-| `mcp__nightwatch__list_applications` | List apps (rarely needed — ID is pre-resolved above) |
-| `mcp__nightwatch__list_environments` | List environments (rarely needed — IDs are pre-resolved above) |
+| `mcp__nightwatch__list_applications` | List apps (only on first-time setup — see above) |
+| `mcp__nightwatch__list_environments` | List environments (only on first-time setup — see above) |
 
 ## Issue Types
 
@@ -49,10 +54,10 @@ Nightwatch tracks five types of issues:
 | Type | Filter value | Description |
 |------|-------------|-------------|
 | Exception | `exception` | Unhandled exceptions and errors |
-| Slow Route | `route` | HTTP requests exceeding 750ms threshold |
-| Slow Job | `job` | Queued jobs exceeding threshold |
-| Slow Command | `command` | Artisan commands exceeding threshold |
-| Slow Scheduled Task | `scheduled_task` | Scheduled tasks exceeding threshold |
+| Slow Route | `route` | HTTP requests exceeding the threshold |
+| Slow Job | `job` | Queued jobs exceeding the threshold |
+| Slow Command | `command` | Console commands exceeding the threshold |
+| Slow Scheduled Task | `scheduled_task` | Scheduled tasks exceeding the threshold |
 
 ## Common Workflows
 
@@ -84,7 +89,7 @@ Use `update_issue` to set priority (`none`, `low`, `medium`, `high`) and status:
 
 ## Guidelines
 
-- Do not call `list_applications` or `list_environments` unless the user explicitly asks — use the pre-resolved IDs above.
+- Do not call `list_applications` or `list_environments` unless this is first-time setup or the user explicitly asks.
 - Only add comments when explicitly requested or when recording meaningful findings (root cause, fix applied). Do not comment just to acknowledge seeing an issue.
 - When investigating exceptions, always read the relevant source file in the local codebase to provide actionable fix suggestions.
-- Correlate deployment timing: if an issue appeared right after a deploy, check recent commits on the relevant branch (`main` for production, `development` for staging).
+- Correlate deployment timing: if an issue appeared right after a deploy, check recent commits on the branch that environment deploys from (recorded in the project `CLAUDE.md`).

@@ -17,7 +17,7 @@ php --version
   - **Windows**: `scoop install php` or download from https://windows.php.net/download
   - **macOS**: `brew install php`
   - **Linux**: `sudo apt install php` (Debian/Ubuntu) or equivalent
-- Verify the version is **8.2 or higher**. If outdated, advise the user to upgrade.
+- Verify the version meets the project's requirement in `backend/composer.json` (`require.php`). If outdated, advise the user to upgrade.
 - Confirm `php` resolves to the latest installed version (not an old one shadowed on PATH):
   ```bash
   which php
@@ -27,7 +27,7 @@ php --version
   php --ini
   ```
   Then read the loaded `php.ini` and check that:
-  - Common extensions are enabled: `openssl`, `pdo`, `mbstring`, `tokenizer`, `xml`, `ctype`, `json`, `bcmath`, `curl`, `fileinfo`
+  - Common Laravel extensions are enabled: `openssl`, `pdo`, `mbstring`, `tokenizer`, `xml`, `ctype`, `json`, `bcmath`, `curl`, `fileinfo`
   - `memory_limit` is at least `256M`
   - There are no deprecated settings for the current PHP version
   - If any extensions are missing, advise the user how to enable them in `php.ini`.
@@ -76,7 +76,15 @@ composer install --working-dir=./backend
   - Platform requirements — may need `--ignore-platform-reqs` as a last resort, but prefer fixing the platform.
 - Verify it completes successfully.
 
-## Step 5: Generate Passport keys
+## Step 5: Generate Passport keys (conditional)
+
+**Skip if** the project doesn't use Laravel Passport. Detect by checking `backend/composer.json` for `laravel/passport`:
+
+```bash
+grep -q 'laravel/passport' ./backend/composer.json && echo "passport" || echo "no passport"
+```
+
+If Passport is in use:
 
 ```bash
 php ./backend/artisan passport:keys
@@ -87,23 +95,44 @@ php ./backend/artisan passport:keys
 
 ## Step 6: Run migrations and seed the database
 
-This project uses multi-tenancy with a central database (`kendo-central`) and per-tenant databases.
-
 If the migration strategy was **already provided** by the orchestrator (passed as context when this agent was launched), use that choice directly. Otherwise, use `AskUserQuestion` to ask:
 
 > **How should the database be set up?**
 >
-> - **Full reset (dev:reset --force)** — Drop all databases (central + tenant), recreate, migrate, and seed. Use for a clean start.
-> - **Tenant migrate only (tenant:migrate)** — Run pending migrations on all tenant databases. Use when the central database is fine but tenant schemas need updating.
+> - **Full reset** — Drop the database, recreate, migrate, and seed. Use for a clean start.
+> - **Migrate only** — Run pending migrations without dropping data. Use when the schema needs updating but data should be preserved.
 > - **Skip** — Don't touch the database. Use when everything is already up to date.
 
-Run the selected command:
+Pick the right command based on project conventions:
 
-- **Full reset**: `php ./backend/artisan dev:reset --force`
-- **Tenant migrate only**: `php ./backend/artisan tenant:migrate`
+### Default (generic Laravel)
+
+- **Full reset**: `php ./backend/artisan migrate:fresh --seed`
+- **Migrate only**: `php ./backend/artisan migrate`
 - **Skip**: Do nothing, proceed to Completion.
 
-If this fails due to database connection issues, check that the database configured in `./backend/.env` is running and accessible.
+### Project override (custom dev-reset)
+
+If the project defines a custom artisan command for dev resets (commonly `dev:reset`), use it instead — it usually wraps central + tenant database setup. Detect by:
+
+```bash
+php ./backend/artisan list | grep -E '^\s*dev:reset'
+```
+
+If present:
+
+- **Full reset**: `php ./backend/artisan dev:reset --force` (or whatever the project documents in its `CLAUDE.md`)
+- **Migrate only**: `php ./backend/artisan migrate` plus `php ./backend/artisan tenant:migrate` if multi-tenancy is in use
+
+### Multi-tenancy override
+
+If the project uses `stancl/tenancy`, "Migrate only" should also run tenant migrations:
+
+```bash
+php ./backend/artisan tenant:migrate
+```
+
+If migrations fail due to database connection issues, check that the database configured in `./backend/.env` is running and accessible.
 Ask the user to verify their database credentials if needed.
 Confirm migrations complete successfully (or were skipped).
 
@@ -113,11 +142,11 @@ Once all steps pass, print a summary:
 
 ```
 Backend setup complete!
-  [x] PHP installed and up-to-date (8.2+)
+  [x] PHP installed and up-to-date (per composer.json)
   [x] php.ini verified — extensions enabled, no deprecated settings
   [x] Composer installed globally (2.x)
   [x] .env file present with APP_KEY set
   [x] Dependencies installed (composer install)
-  [x] Passport keys generated
-  [x] Database migrated and seeded
+  [x] Passport keys generated (if applicable)
+  [x] Database migrated and seeded (or skipped)
 ```
