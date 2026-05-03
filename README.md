@@ -1,118 +1,76 @@
 # Claude Code Skills & Agents
 
-Shared library of reusable Claude Code skills and agents. Clone this repo to browse, use, and contribute.
+A Claude Code [plugin marketplace](https://code.claude.com/docs/en/plugin-marketplaces) of reusable skills and agents.
 
 ## Quick Start
 
-### Using a skill
+Add the marketplace once, then install the plugin in any repo:
 
-Copy or symlink a skill folder into your project's `.claude/skills/` directory:
-
-```bash
-# Copy
-cp -r skills/commit /path/to/your/project/.claude/skills/
-
-# Or symlink (stays in sync with this repo)
-ln -s /path/to/this/repo/skills/commit /path/to/your/project/.claude/skills/commit
+```text
+/plugin marketplace add script-development/claude
+/plugin install core@claude-skills
 ```
 
-Then use it in Claude Code with `/commit` (or whatever the skill name is).
+Skills become available as `/core:commit`, `/core:plan-feature`, etc. Agents are auto-discovered as subagents.
 
-### Using an agent
+To update later:
 
-Same idea, but with `.claude/agents/`:
-
-```bash
-cp agents/reviewer.md /path/to/your/project/.claude/agents/
+```text
+/plugin marketplace update claude-skills
 ```
 
-Agents are invoked as subagents by Claude when their description matches the task.
+### Local development
 
-### Bulk setup
+If you're hacking on this repo locally:
 
-To add all generic skills and agents to a project at once:
-
-```bash
-# Symlink all generic skills
-for skill in babysit catchup commit fix-bug implement-plan newbranch next plan-feature pr research retro review-branch review-mcp-descriptions task-writer wireframe; do
-  ln -sf /path/to/this/repo/skills/$skill /path/to/your/project/.claude/skills/$skill
-done
-
-# Symlink all generic agents
-for agent in acceptance-reviewer agent-auditor bug-fix-verifier docs-auditor efficiency-hunter librarian qa reviewer silent-failure-hunter simplicity-reviewer task-alignment-reviewer wireframe-reviewer; do
-  ln -sf /path/to/this/repo/agents/$agent.md /path/to/your/project/.claude/agents/$agent.md
-done
+```text
+/plugin marketplace add /path/to/this/repo
 ```
 
-## Skills Catalog
-
-### Generic Skills
-
-Work in any project, no configuration needed.
+## Skills
 
 | Skill | Description |
 |-------|-------------|
-| [babysit](skills/babysit/) | Watch a PR's CI, auto-fix failures, push until green |
-| [catchup](skills/catchup/) | Load branch context, show progress, sync with base branch |
-| [commit](skills/commit/) | Small, focused commits with conventional messages + push |
-| [fix-bug](skills/fix-bug/) | End-to-end bug-fix workflow: reproduce, diagnose, fix, verify via bug-fix-verifier |
-| [implement-plan](skills/implement-plan/) | Execute a feature plan end-to-end without TASKS.md, gated by acceptance-reviewer |
-| [newbranch](skills/newbranch/) | Create a new branch from the default branch |
-| [next](skills/next/) | Continue through TASKS.md — find next task, execute, mark done |
-| [plan-feature](skills/plan-feature/) | Interrogate the developer, then produce PLAN.md + DECISIONS.md |
-| [pr](skills/pr/) | Create a pull request for the current branch |
-| [research](skills/research/) | Research a topic, produce a filed report, build cumulative knowledge |
-| [retro](skills/retro/) | Write retrospectives capturing what went wrong, why, and what changed |
-| [review-branch](skills/review-branch/) | Code review all changes on current branch vs base |
-| [review-mcp-descriptions](skills/review-mcp-descriptions/) | Improve MCP tool/resource descriptions for discoverability |
-| [task-writer](skills/task-writer/) | Break down features into structured TASKS.md with verification |
-| [wireframe](skills/wireframe/) | Generate structured WIREFRAMES.md with ASCII layouts, design tokens, and interaction specs |
+| [babysit](plugins/core/skills/babysit/) | Watch a PR's CI, auto-fix failures, push until green |
+| [board-sync](plugins/core/skills/board-sync/) | Sync kendo board with GitHub branch/PR status |
+| [catchup](plugins/core/skills/catchup/) | Load branch context, show progress, sync with base branch |
+| [commit](plugins/core/skills/commit/) | Small, focused commits with conventional messages + push |
+| [fix-bug](plugins/core/skills/fix-bug/) | End-to-end bug-fix workflow: reproduce, diagnose, fix, verify via bug-fix-verifier |
+| [implement-plan](plugins/core/skills/implement-plan/) | Execute a feature plan end-to-end without TASKS.md, gated by acceptance-reviewer |
+| [kendo-cli](plugins/core/skills/kendo-cli/) | Kendo CLI for issues, sprints, epics, time tracking |
+| [kendo-mcp](plugins/core/skills/kendo-mcp/) | Kendo MCP server integration for issue management |
+| [newbranch](plugins/core/skills/newbranch/) | Create a new branch from the default branch |
+| [next](plugins/core/skills/next/) | Continue through TASKS.md — find next task, execute, mark done |
+| [nightwatch-mcp](plugins/core/skills/nightwatch-mcp/) | Nightwatch error monitoring and triage |
+| [plan-feature](plugins/core/skills/plan-feature/) | Interrogate the developer, then produce PLAN.md + DECISIONS.md |
+| [pr](plugins/core/skills/pr/) | Create a pull request for the current branch |
+| [prepare-issue](plugins/core/skills/prepare-issue/) | Prepare a kendo issue: assign, branch, link, move to In Progress |
+| [release-cli](plugins/core/skills/release-cli/) | Release the kendo Go CLI via GoReleaser |
+| [research](plugins/core/skills/research/) | Research a topic, produce a filed report, build cumulative knowledge |
+| [retro](plugins/core/skills/retro/) | Write retrospectives capturing what went wrong, why, and what changed |
+| [review-branch](plugins/core/skills/review-branch/) | Code review all changes on current branch vs base |
+| [review-mcp-descriptions](plugins/core/skills/review-mcp-descriptions/) | Improve MCP tool/resource descriptions for discoverability |
+| [startup](plugins/core/skills/startup/) | Full project setup with worktree support |
+| [task-writer](plugins/core/skills/task-writer/) | Break down features into structured TASKS.md with verification |
+| [wireframe](plugins/core/skills/wireframe/) | Generate structured WIREFRAMES.md with ASCII layouts, design tokens, and interaction specs |
 
-### Kendo PM Skills
-
-For any project using [Kendo](https://kendo.dev) for issue tracking. Requires the Kendo CLI or MCP server.
-
-| Skill | Description |
-|-------|-------------|
-| [board-sync](skills/board-sync/) | Sync kendo board with GitHub branch/PR status |
-| [kendo-cli](skills/kendo-cli/) | Kendo CLI for issues, sprints, epics, time tracking |
-| [kendo-mcp](skills/kendo-mcp/) | Kendo MCP server integration for issue management |
-| [prepare-issue](skills/prepare-issue/) | Prepare a kendo issue: assign, branch, link, move to In Progress |
-
-### Project-Specific Examples
-
-These are specific to the kendo.dev codebase. Included as reference implementations showing how to write monitoring, setup, and release skills.
-
-| Skill | Description |
-|-------|-------------|
-| [nightwatch-mcp](skills/nightwatch-mcp/) | Nightwatch error monitoring and triage |
-| [release-cli](skills/release-cli/) | Release the kendo Go CLI via GoReleaser |
-| [startup](skills/startup/) | Full project setup with worktree support |
-
-## Agents Catalog
-
-### Generic Agents
+## Agents
 
 | Agent | Description |
 |-------|-------------|
-| [acceptance-reviewer](agents/acceptance-reviewer.md) | Verify implementation satisfies plan's acceptance criteria and wireframe specs |
-| [agent-auditor](agents/agent-auditor.md) | Audit agent definitions for quality and consistency |
-| [bug-fix-verifier](agents/bug-fix-verifier.md) | Verify a bug fix actually resolves BUG.md's defect; gates `/fix-bug` before PR |
-| [docs-auditor](agents/docs-auditor.md) | Audit CLAUDE.md and docs against codebase for drift |
-| [efficiency-hunter](agents/efficiency-hunter.md) | Hunt N+1 queries, missed concurrency, hot-path bloat in branch diffs |
-| [librarian](agents/librarian.md) | Scan other repos for shareable skills/agents, grade and recommend imports |
-| [qa](agents/qa.md) | Diagnose CI failures or evaluate implementations against acceptance criteria |
-| [reviewer](agents/reviewer.md) | Review PRs for code quality, architecture, and pattern consistency |
-| [silent-failure-hunter](agents/silent-failure-hunter.md) | Hunt empty catches, swallowed errors, missing user feedback in branch diffs |
-| [simplicity-reviewer](agents/simplicity-reviewer.md) | Verify the implementation is the simplest shape that meets the plan |
-| [task-alignment-reviewer](agents/task-alignment-reviewer.md) | Verify TASKS.md fully covers PLAN.md — criteria, wireframes, scope |
-| [wireframe-reviewer](agents/wireframe-reviewer.md) | Verify WIREFRAMES.md completeness, token validity, and plan coverage |
-
-### Project-Specific Examples
-
-| Agent | Description |
-|-------|-------------|
-| [plan-reviewer](agents/plan-reviewer.md) | Review feature plans for codebase convention violations (kendo-specific) |
+| [acceptance-reviewer](plugins/core/agents/acceptance-reviewer.md) | Verify implementation satisfies plan's acceptance criteria and wireframe specs |
+| [agent-auditor](plugins/core/agents/agent-auditor.md) | Audit agent definitions for quality and consistency |
+| [bug-fix-verifier](plugins/core/agents/bug-fix-verifier.md) | Verify a bug fix actually resolves BUG.md's defect; gates `/fix-bug` before PR |
+| [docs-auditor](plugins/core/agents/docs-auditor.md) | Audit CLAUDE.md and docs against codebase for drift |
+| [efficiency-hunter](plugins/core/agents/efficiency-hunter.md) | Hunt N+1 queries, missed concurrency, hot-path bloat in branch diffs |
+| [librarian](plugins/core/agents/librarian.md) | Scan other repos for shareable skills/agents, grade and recommend imports |
+| [plan-reviewer](plugins/core/agents/plan-reviewer.md) | Review feature plans for codebase convention violations |
+| [qa](plugins/core/agents/qa.md) | Diagnose CI failures or evaluate implementations against acceptance criteria |
+| [reviewer](plugins/core/agents/reviewer.md) | Review PRs for code quality, architecture, and pattern consistency |
+| [silent-failure-hunter](plugins/core/agents/silent-failure-hunter.md) | Hunt empty catches, swallowed errors, missing user feedback in branch diffs |
+| [simplicity-reviewer](plugins/core/agents/simplicity-reviewer.md) | Verify the implementation is the simplest shape that meets the plan |
+| [task-alignment-reviewer](plugins/core/agents/task-alignment-reviewer.md) | Verify TASKS.md fully covers PLAN.md — criteria, wireframes, scope |
+| [wireframe-reviewer](plugins/core/agents/wireframe-reviewer.md) | Verify WIREFRAMES.md completeness, token validity, and plan coverage |
 
 ## Maintaining This Repo
 
@@ -131,3 +89,5 @@ See [docs/contributing.md](docs/contributing.md) for how to add new skills and a
 Use the templates in `templates/` as a starting point:
 - `templates/skill-template/` — skeleton for a new skill
 - `templates/agent-template.md` — skeleton for a new agent
+
+After adding a skill or agent, drop it into `plugins/core/skills/` or `plugins/core/agents/` and update the catalog tables above.

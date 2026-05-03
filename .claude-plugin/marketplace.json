@@ -1,0 +1,15 @@
+{
+  "name": "claude-skills",
+  "owner": {
+    "name": "Jasper Boerhof",
+    "email": "jasper@script.nl"
+  },
+  "description": "Shared library of Claude Code skills and agents",
+  "plugins": [
+    {
+      "name": "core",
+      "source": "./plugins/core",
+      "description": "Reusable Claude Code skills and agents covering planning, implementation, review, commits/PRs, research, retros, plus Kendo issue-tracker integration."
+    }
+  ]
+}
