@@ -97,7 +97,40 @@ Make a concrete list of what you found. This list goes into Phase 2 questioning 
 to the developer and confirm: "I found these existing pieces we can reuse. Anything I'm
 missing, or should any of these be replaced instead of reused?"
 
-### 1d. Validate against architecture rules
+### 1d. Sketch module shape (deep vs shallow)
+
+Before validating layers, decide what new modules this feature introduces and whether each is deep or shallow.
+
+A **deep module** hides a lot of behaviour behind a small interface and rarely changes — easy to test in isolation, hard to break. A **shallow module** is a thin wrapper whose interface is almost as complex as its implementation — usually a sign that the abstraction isn't carrying its weight.
+
+**In scope** — apply the deep/shallow lens to: actions, services, helpers, composables, stores, **domain models** (especially new ones introduced for this feature), and any class introduced specifically for this feature whose shape isn't dictated by a framework convention.
+
+**Exempt — framework-shaped artefacts.** Skip the lens for these; their shallowness is intrinsic to the role, not a design smell:
+
+- Email/notification envelope classes (e.g. Laravel Mailables, with only `envelope()` + `content()`)
+- Exception classes (carry a message, no behaviour)
+- Icon components (single `<svg>`)
+- Migration classes
+- DTO / ResourceData classes
+- Form-request / validation-only classes
+- Controllers (HTTP-layer dispatch)
+- MCP tool classes
+- **Single-purpose query scopes** (e.g. one `scopeFoo()` query-builder method added to an existing model — *not* whole new model classes)
+
+The model distinction matters: a `scopeVisibleTo()` method added to an existing `User` is exempt; a brand-new `IssueWatcher` model whose entire interface is `belongsTo user()` + `belongsTo issue()` is **not** exempt — it's the canonical shallow module a simplicity reviewer catches. If a new model class has zero domain behaviour beyond its relations, it earns nothing over a plain pivot relation and should be folded out.
+
+For each in-scope module, answer:
+
+- **Inputs/outputs** — the smallest interface that does the job
+- **Hidden behaviour** — what this module knows that callers don't have to
+- **Test seam** — what you'd test through the public interface, in plain English ("can register, then verify, then revoke")
+- **Verdict** — deep, shallow-but-justified (e.g. one-shot adapter or a precedent-cited pattern with explicit rationale), or shallow-and-suspect
+
+If a module comes back **shallow-and-suspect**, either fold it into the caller or expand its responsibility. Don't ship a five-shallow-modules-glued-together design. This is the single most common failure mode caught later by `simplicity-reviewer` — surface it now, while the design is cheap to change.
+
+The output goes into PLAN.md's "Key Design Decisions" table as one row per non-trivial module, with the test seam captured separately under "Testing Strategy".
+
+### 1e. Validate against architecture rules
 
 **Before proposing where classes live, check the architecture rules that enforce layer boundaries.**
 Placing a class in the wrong layer will cause CI failures that force restructuring later.
@@ -121,10 +154,40 @@ Common patterns to verify against arch tests (adapt to the project's stack):
 Include findings in the plan: "Proposed class X in layer Y — verified architecture rules allow
 Y to depend on [list of needed layers]."
 
+## Phase 1.5: Gap analysis (mandatory, fail-closed)
+
+Before any drafting and before deciding how deep to interrogate, produce a literal checklist of what a complete plan needs and mark each row as **✓ Covered**, **? Partial**, or **✗ Missing**. This gate exists because the path of least resistance — "this looks crisp, let me draft and we can iterate" — is the most expensive failure mode in planning. A draft built on partial information costs a full restart later. The checklist makes "is the input complete?" a binary question instead of a feel.
+
+**The rule:** every ✓ requires a quoted source. Every ? or ✗ is a topic for Phase 2 interrogation. **You may not proceed past Phase 1.5 with any ? or ✗ row.** Fail-closed.
+
+| Required for a plan | Marker | Source (must quote / cite) |
+|---|---|---|
+| **Goal** — one sentence the developer would re-read and agree with | ✓ / ? / ✗ | issue body / first prompt — quote the line |
+| **Acceptance criteria** — testable, observable, distinct from the goal (≥ 3) | ✓ / ? / ✗ | issue body — quote each, or mark missing |
+| **In-scope** — explicit file list or domain boundary | ✓ / ? / ✗ | issue body / prompt / Phase 1b research |
+| **Out-of-scope** — at least one explicit non-goal | ✓ / ? / ✗ | usually missing — interrogate |
+| **Edge cases** — empty states, auth, errors, race conditions, scale | ✓ / ? / ✗ | usually missing — interrogate with concrete cases drawn from Phase 1b |
+| **Architecture fit** — which existing feature does this resemble; what gets reused | ✓ / ? / ✗ | Phase 1b/1c findings — cite file paths |
+| **Module shape** — deep modules identified; shallow-and-suspect modules resolved | ✓ / ? / ✗ | Phase 1d output |
+| **Risk / uncertainty** — what could go wrong, what's unknown | ✓ / ? / ✗ | usually missing — interrogate |
+
+**Output the table verbatim to the developer** with marks and citations filled in. Then either:
+
+- **All ✓** — say "All eight checks pass with cited evidence. Proceeding to Phase 3 confirmation." Skip Phase 2 interrogation; the input is genuinely complete.
+- **Any ? or ✗** — list the missing rows and proceed to Phase 2 to fill them. Phase 2 questions target only ? and ✗ rows. Don't sweep.
+
+**Sycophancy guards:**
+
+- A ✓ without a quoted source is invalid. If you can't cite it, mark ?.
+- An issue body of "Add settings page for X" cannot mark Acceptance Criteria ✓ — there's nothing testable in there.
+- A long developer prompt is not evidence of completeness. Length doesn't make a row ✓; only specifics do.
+- "Edge cases will be handled during implementation" is ✗, not ✓.
+
+This gate also gives `plan-reviewer` something concrete to verify post-hoc — every ✓ in the checklist must have produced a corresponding section of PLAN.md grounded in that evidence.
+
 ## Phase 2: Interrogate
 
-Now ask questions. Your questions should demonstrate that you've read the codebase — reference
-specific files, patterns, and existing behavior.
+Now ask questions, **targeting only the ? and ✗ rows from Phase 1.5**. No generic sweep. Your questions should demonstrate that you've read the codebase — reference specific files, patterns, and existing behavior.
 
 ### Use AskUserQuestion, not text walls
 
@@ -366,6 +429,40 @@ If the feature changes any user-facing capability or API surface, list which doc
 ## Risks
 <what could go wrong, what to watch for during implementation>
 ```
+
+### 4d. Template completeness check (mandatory, fail-closed)
+
+Before spawning `plan-reviewer`, verify every section of the saved PLAN.md has substantive content. This is the **output gate** — the symmetric pair to Phase 1.5's input gate. The two gates catch different failure modes: the input gate catches "drafted on partial information," and this gate catches "drafted with thin filler text in the gaps."
+
+For each section below, mark **OK** if the bullet rule is met **OR** if the section explicitly declares `N/A — <one-line reason>` (e.g. "Wireframes — N/A, backend-only feature"). Otherwise **THIN** and re-work the section before continuing.
+
+The N/A carve-out exists because pure-content plans (translation work, refactor-only changes, backend-only features) legitimately have empty Wireframes / Migration / Documentation Sync sections, and treating those as THIN would block them. An explicit N/A with a reason is substance — silent emptiness or "TBD" is not.
+
+| Section | OK requires |
+|---|---|
+| Goal | one sentence; describes user-visible outcome, not implementation |
+| Key Design Decisions | ≥ 1 row per non-trivial new module; every choice cites a concrete codebase reference |
+| Scope — In | explicit list, not "the feature" |
+| Scope — Out | ≥ 1 explicit non-goal |
+| Approach | enumerates files/components in implementation order |
+| Acceptance Criteria | ≥ 3 verifiable rows with a Verification column filled in |
+| Shared Reuse | ≥ 1 entry **or** an explicit "no reuse — building from scratch because X" line |
+| Patterns to Follow | ≥ 1 file path; not "follow project conventions" |
+| Testing Strategy | per-PR test table with named test files and behavioural descriptions, not "add tests" |
+| Edge Cases | ≥ 3 cases drawn from the Phase 1.5 ✓ Edge Cases evidence |
+| Risks | ≥ 1 specific risk; not "the implementation may have bugs" |
+| Wireframes / Migration / Documentation Sync | substance OR explicit `N/A — <reason>` |
+
+**Sycophancy guards specific to the output:**
+
+- "TBD" in any row is THIN, not OK. If you don't know yet, you shouldn't be at Phase 4.
+- A section consisting of one bullet is THIN unless the bullet rule explicitly allows it.
+- Acceptance Criteria written as goals ("the feature should work well") are THIN. Each row is a binary observable.
+- Restating the Goal in different sections doesn't count toward those sections' bulk.
+
+If any row is THIN, fix the section using evidence from Phase 1.5 / Phase 2 transcripts. Do not invent new content here — that's a sign the input gate let something slip and you should re-open Phase 2 for that topic.
+
+When every row is OK, proceed to Phase 5.
 
 ## Phase 5: Plan convention review
 

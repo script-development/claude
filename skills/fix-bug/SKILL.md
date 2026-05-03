@@ -67,6 +67,33 @@ First, read the code paths the bug touches — route → controller → service 
 model on the backend, page → component → store on the frontend. You can't
 pick a repro path without knowing what the feature is supposed to do.
 
+### 3.0 Validate the issue's expected behaviour against the existing feature
+
+Before picking a path, read the issue's *Expected behaviour* / *Steps to
+reproduce* section against the feature it touches. The reporter writes
+user-language; the code encodes maintainer-language. Common gaps:
+
+- A bullet says "X should always do Y" but the feature already supports a
+  Y-overriding gesture (e.g. multi-select). The bullet may be the reporter's
+  *symptom* description, not a behaviour contract.
+- A bullet uses a name that resembles a code identifier but means something
+  different in the user's head (e.g. "selected report" in the issue vs.
+  `selectedReports` prop in code).
+- Two bullets contradict each other under realistic feature usage.
+
+If you spot any of these, **do not write failing tests yet**. Surface the
+contradiction to the developer in plain prose and ask which model is
+canonical:
+
+> The issue says *"X should always do Y"*, but the feature uses gesture Z
+> which would override Y in case W. Is bullet 3 the desired behaviour, or
+> the reporter's symptom-language?
+
+Only after the developer confirms the canonical model, pick a path and
+write tests. Otherwise the failing tests become contractual on a contract
+the developer never signed off on, and Phase 6 has to walk back the
+assertions.
+
 Every fix needs **something executable or describable that demonstrates the
 defect** — that's what Phase 8's verifier checks against. Three valid paths:
 
@@ -207,19 +234,82 @@ and Verification empty — they get filled as you progress. Set Status:
 
 ## Phase 6: Diagnose & propose solution
 
-Explain the bug to the developer and get explicit approval before any code
-moves. **No source files are edited in this phase.** The gate exists to
-catch a wrong diagnosis or a wrong choice of fix before the diff starts
-growing.
+Explain the bug to the developer and get explicit approval before any
+shipping code moves. **No shipping code is edited in this phase** — only
+tagged debug instrumentation (see "Debug instrumentation hygiene" below).
+The gate exists to catch a wrong diagnosis or a wrong choice of fix before
+the diff starts growing.
+
+### Generate hypotheses (skip for path 3b)
+
+Before naming a single root cause, generate **3-5 ranked hypotheses** about
+what's causing the defect. Anchoring on the first plausible idea is the
+single most common debugging failure — multiple hypotheses force you to
+actually compare instead of confirming.
+
+Each hypothesis must be **falsifiable**:
+
+> Format: "If `<X>` is the cause, then `<changing Y>` makes the bug
+> disappear / `<changing Z>` makes it worse."
+
+If you cannot state the prediction, the hypothesis is a vibe — discard or
+sharpen it.
+
+When the ranking is genuinely ambiguous and the developer is around,
+surface the ranked list via `AskUserQuestion` before instrumenting — they
+often have domain knowledge that re-ranks instantly ("we just changed #3
+last week") or know what's already been ruled out. Don't block on it;
+proceed with your top pick if no answer.
+
+Skip this step for path 3b (stack trace + mechanical fix) — the trace
+already tells you the cause; ranking strawmen wastes effort.
 
 ### Pin down the root cause
 
-Read the code paths again with the repro evidence in hand. Identify the
-mechanism, not the symptom. Write 2-4 sentences into BUG.md's **Root
-Cause**, citing `file:line`. If you can't write a coherent root cause, you
-don't understand the bug yet — go back to Phase 3.
+Read the code paths again with the repro evidence and the hypothesis
+ranking in hand. Identify the mechanism, not the symptom. Write 2-4
+sentences into BUG.md's **Root Cause**, citing `file:line`. If you can't
+write a coherent root cause, you don't understand the bug yet — go back to
+Phase 3 or sharpen your hypotheses.
 
 Update BUG.md Status to `Diagnosed`.
+
+### Debug instrumentation hygiene
+
+If a hypothesis needs probes (extra logs, dumping a value, breakpoint
+inspection), prefer a debugger / REPL / inline dump at a breakpoint when
+the env supports it — one inspection beats ten logs. When you do add
+temporary logs, **tag them** with a fresh 4-hex prefix per investigation:
+
+```
+log.info('[DEBUG-a4f2] handler reached', { id })
+console.log('[DEBUG-a4f2]', 'broadcast payload', payload)
+```
+
+Cleanup at the end is then a single `grep -rn '\[DEBUG-a4f2\]'` across the
+source tree — every hit is a leak. Untagged debug logs survive into PRs
+and pollute production output; tagged logs die together. Run the grep
+before Phase 8 — any leaked `[DEBUG-` in the diff is obvious regression
+noise to the verifier and to human reviewers.
+
+### Decompose the fix surface
+
+Before writing candidates, list the **independent sub-concerns** the fix has
+to address. For each, classify:
+
+- **Settled** — every reasonable implementer would do the same thing. One
+  line, no debate. (e.g. "remove dismissed id from set" — trivial regardless
+  of the click-side decision.)
+- **Ambiguous** — multiple defensible behaviours exist; the developer needs
+  to pick. (e.g. "what should clicking do to the multi-select?")
+
+Only **ambiguous** sub-concerns go through the candidate matrix below.
+Settled sub-concerns are stated up front as "we're going to do X — anyone
+object?" and implemented in Phase 7 without ceremony.
+
+Bundling settled sub-concerns into the matrix makes the trivial part look
+hard and dilutes the actual decision. If your candidate list contains
+entries that all agree on most points, decompose first.
 
 ### Explain and propose
 
@@ -266,6 +356,15 @@ message above the question, so labels don't need to repeat them.
 If the developer picks "discuss" or "Other", iterate the proposal and
 re-ask. Don't start coding. If the diagnosis itself was wrong, update Root
 Cause before re-asking.
+
+**If a question is rejected with a clarify-request** (i.e. the developer
+dismisses the AskUserQuestion entirely rather than picking an option): drop
+the AskUserQuestion shape on the next turn. Ask in plain prose: *"What would
+you like to clarify about the candidates?"* The rejection signal means the
+question *framing* is wrong — re-posing with extra options or rearranged
+labels usually makes it worse. Two consecutive AskUserQuestion rejections
+is a strong signal the diagnosis itself drifted; return to Root Cause and
+re-pin before asking again.
 
 Once a candidate is picked, write a one-liner into BUG.md's **Chosen
 Approach**, then proceed to Phase 7.
@@ -333,3 +432,26 @@ PR title names the defect (`fix: modal backdrop sticks after escape during
 open animation`) rather than the issue key alone. PR body cites the issue
 key plus a one-paragraph summary lifted from BUG.md's Fix section so
 reviewers can grasp the change without opening the file.
+
+## Phase 10: Post-mortem prompt (optional)
+
+Once `/pr` is open and the verifier has signed off, you have more
+information than when Phase 3 started. Spend 30 seconds asking: **what
+would have prevented this bug?**
+
+If the answer is architectural — no good test seam (flagged in BUG.md
+Notes), tangled callers, hidden coupling, a class of bug that keeps
+recurring at the same boundary — surface it via `AskUserQuestion`:
+
+> Would an architecture-improvement pass help here? Reason: `<one specific
+> line — e.g. "no correct seam for the regression test" or "third null-deref
+> at the controller→action boundary this quarter">`.
+
+If "yes," hand off with the specific pointer — an architecture skill (if the
+project has one) works best with a concrete starting point, not "improve
+something."
+
+**Skip this phase entirely for path 3b mechanical fixes** (typos,
+off-by-ones, missing null checks). Asking after every trivial fix turns
+the prompt into noise the developer learns to ignore. Reserve it for
+fixes where the diagnosis surfaced a structural smell.
