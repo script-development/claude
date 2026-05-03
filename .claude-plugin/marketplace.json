@@ -7,7 +7,7 @@
   "description": "Shared library of Claude Code skills and agents",
   "plugins": [
     {
-      "name": "core",
+      "name": "script-skills",
       "source": "./plugins/core",
       "description": "Reusable Claude Code skills and agents covering planning, implementation, review, commits/PRs, research, retros, plus Kendo issue-tracker integration."
     }
