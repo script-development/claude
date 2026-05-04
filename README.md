@@ -26,6 +26,16 @@ Work in any project, no configuration needed.
 | [task-writer](skills/task-writer/) | Break down features into structured TASKS.md with verification |
 | [wireframe](skills/wireframe/) | Generate structured WIREFRAMES.md with ASCII layouts, design tokens, and interaction specs |
 
+### Stack-Specific Skills
+
+Generic across any project on a given stack, but assume that stack is in use.
+
+| Skill | Stack | Description |
+|-------|-------|-------------|
+| [nightwatch-mcp](skills/nightwatch-mcp/) | Nightwatch MCP | Error and performance monitoring, exception triage |
+| [release-cli](skills/release-cli/) | Go + GoReleaser | Tag and release a Go CLI via GoReleaser on tag push |
+| [startup](skills/startup/) | Laravel + Vue + MinIO | Full project setup with worktree support and parallel backend/frontend/MCP agents |
+
 ### Kendo PM Skills
 
 For any project using [Kendo](https://kendo.dev) for issue tracking. Requires the Kendo CLI or MCP server.
@@ -36,16 +46,6 @@ For any project using [Kendo](https://kendo.dev) for issue tracking. Requires th
 | [kendo-cli](skills/kendo-cli/) | Kendo CLI for issues, sprints, epics, time tracking |
 | [kendo-mcp](skills/kendo-mcp/) | Kendo MCP server integration for issue management |
 | [prepare-issue](skills/prepare-issue/) | Prepare a kendo issue: assign, branch, link, move to In Progress |
-
-### Project-Specific Examples
-
-These are specific to the kendo.dev codebase. Included as reference implementations showing how to write monitoring, setup, and release skills.
-
-| Skill | Description |
-|-------|-------------|
-| [nightwatch-mcp](skills/nightwatch-mcp/) | Nightwatch error monitoring and triage |
-| [release-cli](skills/release-cli/) | Release the kendo Go CLI via GoReleaser |
-| [startup](skills/startup/) | Full project setup with worktree support |
 
 ## Agents Catalog
 
@@ -66,11 +66,11 @@ These are specific to the kendo.dev codebase. Included as reference implementati
 | [task-alignment-reviewer](agents/task-alignment-reviewer.md) | Verify TASKS.md fully covers PLAN.md — criteria, wireframes, scope |
 | [wireframe-reviewer](agents/wireframe-reviewer.md) | Verify WIREFRAMES.md completeness, token validity, and plan coverage |
 
-### Project-Specific Examples
+### Stack-Specific Agents
 
-| Agent | Description |
-|-------|-------------|
-| [plan-reviewer](agents/plan-reviewer.md) | Review feature plans for codebase convention violations (kendo-specific) |
+| Agent | Stack | Description |
+|-------|-------|-------------|
+| [plan-reviewer](agents/plan-reviewer.md) | Laravel + Vue | Review feature plans for codebase convention violations against arch tests and CLAUDE.md |
 
 ## Maintaining This Repo
 
