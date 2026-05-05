@@ -46,6 +46,7 @@ For any project using [Kendo](https://kendo.dev) for issue tracking. Requires th
 | [kendo-cli](skills/kendo-cli/) | Kendo CLI for issues, sprints, epics, time tracking |
 | [kendo-mcp](skills/kendo-mcp/) | Kendo MCP server integration for issue management |
 | [prepare-issue](skills/prepare-issue/) | Prepare a kendo issue: assign, branch, link, move to In Progress |
+| [triage-reports](skills/triage-reports/) | Walk pending Kendo reports one-by-one; promote to issue, dismiss, or combine |
 
 ## Agents Catalog
 

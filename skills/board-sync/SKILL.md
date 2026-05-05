@@ -97,7 +97,7 @@ Wait for user confirmation before executing any moves.
 
 ### Step 7: Execute (only after confirmation)
 
-Move confirmed issues to the Done lane using `mcp__kendo.dev__update-issue-tool` with `lane_id`.
+Move confirmed issues to the Done lane using `mcp__kendo__update-issue-tool` with `lane_id`.
 Execute all moves in parallel since they're independent.
 
 Report the result:
