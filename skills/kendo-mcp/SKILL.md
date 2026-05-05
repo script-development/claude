@@ -160,4 +160,4 @@ Note: this searches text fields only — it does not match on numeric database I
 | File | Content |
 |------|---------|
 | [setup.md](references/setup.md) | MCP server setup instructions |
-| [user-story-format.md](references/user-story-format.md) | Dutch user story template |
+| [issue-templates.md](references/issue-templates.md) | Issue templates (feature user story + bug report) — single source of truth, referenced by `/newbranch`, `/triage-reports`, `/plan-feature`, `/task-writer`, `/kendo-cli` |
