@@ -52,8 +52,9 @@ Use this ID for all `project_id` parameters and resource URIs below.
 | `mcp__kendo__add-comment-tool` | Add comment to issue (max 2000 chars) |
 | `mcp__kendo__delete-issue-tool` | Delete issue (destructive) |
 | `mcp__kendo__link-branch-tool` | Link a git branch to an issue |
-| `mcp__kendo__prepare-issue-context-tool` | Read-only bundle: returns `issue + epic + active_sprint + lanes + current_user` in one call. Use as the gather step before `start-work-on-issue`; replaces separate reads of `kendo://issues/{key}`, `kendo://projects/{id}/lanes`, `kendo://projects/{id}/sprints`, plus the legacy `git config user.email` heuristic |
-| `mcp__kendo__start-work-on-issue-tool` | Idempotent one-call write: assigns user, moves to lane, optionally updates sprint, and links a git branch. The act step that pairs with `prepare-issue-context`. Repo is auto-resolved from the project's primary GitHub repo |
+| `mcp__kendo__prepare-project-context-tool` | Read-only bundle: returns `project + lanes + active_sprint + members + members_count + current_user` in one call. Use as the gather step for any project-scoped flow (triage, board sync, branch creation, picking up an issue); replaces separate reads of `kendo://projects/{id}`, `kendo://projects/{id}/lanes`, `kendo://projects/{id}/sprints`, `kendo://projects/{id}/members`, plus the legacy `git config user.email` heuristic |
+| `mcp__kendo__prepare-issue-context-tool` | Read-only bundle: returns `issue + epic` (full issue payload with comments, branches, attachments). For project meta, fire `prepare-project-context-tool` in parallel — see the parallel-gather pattern below |
+| `mcp__kendo__start-work-on-issue-tool` | Idempotent one-call write: assigns user, moves to lane, optionally updates sprint, and links a git branch. The act step that pairs with the gather tools. Repo is auto-resolved from the project's primary GitHub repo |
 
 ### Time Logging
 
@@ -150,8 +151,23 @@ project_id: <your-project-id> (optional)
 ### Workflow
 
 1. Read `kendo://projects` to find your project ID
-2. Read `kendo://projects/{id}/lanes` to find lane IDs
+2. Call `mcp__kendo__prepare-project-context-tool` to bundle lanes, active sprint, members, and the calling user
 3. Use tools to create/update issues
+
+### Parallel-gather pattern
+
+When a flow needs **both** project meta and issue payload (e.g. "pick up issue {{ISSUE_KEY_PREFIX}}-0042"), fire
+both gather tools in the same tool-call block — same wall-clock as one round-trip:
+
+```
+parallel:
+  mcp__kendo__prepare-project-context-tool(project_id: <your-project-id>)
+  mcp__kendo__prepare-issue-context-tool(issue_key: "{{ISSUE_KEY_PREFIX}}-0042")
+```
+
+Use only the project tool when no specific issue is in play (triage queue scan, board alignment
+sweep). Use only the issue tool when project meta is already in context (commenting on an
+existing issue you just looked up). The two tools are sized to be cheap to call independently.
 
 ### Get Issue by ID
 
