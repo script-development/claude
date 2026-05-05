@@ -2,7 +2,7 @@
 name: kendo-mcp
 description: |
   MCP integration for kendo project management. Use when creating, updating, moving, or
-  searching issues via MCP tools. Also use when writing Dutch user stories, logging time,
+  searching issues via MCP tools. Also use when writing user stories, logging time,
   managing epics, linking branches to issues, or triaging reports (bug reports, feedback).
   Provides access to projects, issues, lanes, sprints, epics, reports, and teams through
   MCP resources and tools.
@@ -47,45 +47,54 @@ Use this ID for all `project_id` parameters and resource URIs below.
 
 | Tool | Purpose |
 |------|---------|
-| `mcp__kendo.dev__create-issue-tool` | Create new issue |
-| `mcp__kendo.dev__update-issue-tool` | Update issue fields (including lane changes via `lane_id`) |
-| `mcp__kendo.dev__add-comment-tool` | Add comment to issue (max 2000 chars) |
-| `mcp__kendo.dev__delete-issue-tool` | Delete issue (destructive) |
-| `mcp__kendo.dev__link-branch-tool` | Link a git branch to an issue |
+| `mcp__kendo__create-issue-tool` | Create new issue |
+| `mcp__kendo__update-issue-tool` | Update issue fields (including lane changes via `lane_id`) |
+| `mcp__kendo__add-comment-tool` | Add comment to issue (max 2000 chars) |
+| `mcp__kendo__delete-issue-tool` | Delete issue (destructive) |
+| `mcp__kendo__link-branch-tool` | Link a git branch to an issue |
+| `mcp__kendo__prepare-issue-context-tool` | Read-only bundle: returns `issue + epic + active_sprint + lanes + current_user` in one call. Use as the gather step before `start-work-on-issue`; replaces separate reads of `kendo://issues/{key}`, `kendo://projects/{id}/lanes`, `kendo://projects/{id}/sprints`, plus the legacy `git config user.email` heuristic |
+| `mcp__kendo__start-work-on-issue-tool` | Idempotent one-call write: assigns user, moves to lane, optionally updates sprint, and links a git branch. The act step that pairs with `prepare-issue-context`. Repo is auto-resolved from the project's primary GitHub repo |
 
 ### Time Logging
 
 | Tool | Purpose |
 |------|---------|
-| `mcp__kendo.dev__get-time-entries-tool` | Query time entries (filter by project, user, team, issue, sprint; group by user/project/team/issue/day) |
-| `mcp__kendo.dev__create-time-entry-tool` | Log time spent on an issue (1-479 minutes) |
+| `mcp__kendo__get-time-entries-tool` | Query time entries (filter by project, user, team, issue, sprint; group by user/project/team/issue/day) |
+| `mcp__kendo__create-time-entry-tool` | Log time spent on an issue (1-479 minutes) |
 
 ### Epics
 
 | Tool | Purpose |
 |------|---------|
-| `mcp__kendo.dev__get-epics-tool` | Get epics with full issue details and progress (filter by status) |
-| `mcp__kendo.dev__create-epic-tool` | Create a new epic (with color, dates, linked issues) |
-| `mcp__kendo.dev__update-epic-tool` | Update epic details, status, dates, or issue assignments |
-| `mcp__kendo.dev__delete-epic-tool` | Delete an epic (destructive). Issues are kept. |
+| `mcp__kendo__get-epics-tool` | Get epics with full issue details and progress (filter by status) |
+| `mcp__kendo__create-epic-tool` | Create a new epic (with color, dates, linked issues) |
+| `mcp__kendo__update-epic-tool` | Update epic details, status, dates, or issue assignments |
+| `mcp__kendo__delete-epic-tool` | Delete an epic (destructive). Issues are kept. |
 
 ### Sprints
 
 | Tool | Purpose |
 |------|---------|
-| `mcp__kendo.dev__create-sprint-tool` | Create a new sprint (title, start/end dates). Created as Planned. |
-| `mcp__kendo.dev__update-sprint-tool` | Update sprint title, dates, or status (partial updates supported) |
-| `mcp__kendo.dev__complete-sprint-tool` | Complete the active sprint, move incomplete issues to target sprint |
+| `mcp__kendo__create-sprint-tool` | Create a new sprint (title, start/end dates). Created as Planned. |
+| `mcp__kendo__update-sprint-tool` | Update sprint title, dates, or status (partial updates supported) |
+| `mcp__kendo__complete-sprint-tool` | Complete the active sprint, move incomplete issues to target sprint |
+| `mcp__kendo__assign-issues-to-sprint-tool` | Bulk-assign up to 100 issues to a sprint (or `null` to clear). Prefer over looping `update-issue` when the only change is sprint membership |
 
 ### Reports
 
 | Tool | Purpose |
 |------|---------|
-| `mcp__kendo.dev__list-reports-tool` | List reports (bug reports, feedback) for a project with triage status |
-| `mcp__kendo.dev__create-report-tool` | Create a new report (bug report, feature request, feedback) |
-| `mcp__kendo.dev__promote-reports-tool` | Promote/convert one or more reports into a single issue (core triage action) |
-| `mcp__kendo.dev__dismiss-report-tool` | Dismiss a report as not actionable (soft-archive) |
-| `mcp__kendo.dev__delete-report-tool` | Delete a report permanently (destructive) |
+| `mcp__kendo__list-reports-tool` | List reports (bug reports, feedback) for a project with triage status |
+| `mcp__kendo__create-report-tool` | Create a new report (bug report, feature request, feedback) |
+| `mcp__kendo__promote-reports-tool` | Promote/convert one or more reports into a single issue (core triage action) |
+| `mcp__kendo__dismiss-report-tool` | Dismiss a report as not actionable (soft-archive) |
+| `mcp__kendo__delete-report-tool` | Delete a report permanently (destructive) |
+
+### Attachments
+
+| Tool | Purpose |
+|------|---------|
+| `mcp__kendo__fetch-attachment-tool` | Fetch attachment bytes by ID — returns image block for `image/*`, text block for `text/*` + `application/json`. Capped at 5 MB images / 500 KB text; binary types (PDF, zip, video) return an error with `download_url` fallback hint. |
 
 ## Common Operations
 
