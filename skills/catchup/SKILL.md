@@ -1,15 +1,17 @@
 ---
 name: catchup
 description: |
-  Load the full context of the current branch: git diff summary, commit history, plan/task files,
-  and alignment with the base branch. Reports how far behind the base the branch is and offers to
-  merge on confirmation. Resolves merge conflicts intelligently (auto-resolves obvious ones, asks
-  on ambiguous ones). Use this skill whenever the user wants to understand what the current branch
+  Load the full context of the current branch and check alignment with the base: git diff summary,
+  commit history, plan/task files, decisions, and (if the project has an issue-tracker skill) the
+  upstream issue details. Reports how far behind the base the branch is and offers to merge on
+  confirmation. Resolves merge conflicts intelligently (auto-resolves obvious ones, asks on
+  ambiguous ones). Use this skill whenever the user wants to understand what the current branch
   is about, needs context after a /clear, starts a new session, says "what am I working on",
   "load context", "catch me up", "branch context", "where was I", "summarize this branch",
-  "catchup", "sync my branch", "update branch", or any variant of wanting to understand or sync
-  the current state of work. Trigger on session start when the branch is not the default branch
-  and the user's first message implies they want to resume work.
+  "catchup", "sync my branch", "align with base", "update branch", or any variant of wanting to
+  understand or sync the current state of work. Also use when the user just passes a branch name
+  or issue key and expects you to load its context. Trigger on session start when the branch is
+  not the default branch and the user's first message implies they want to resume work.
 ---
 
 # Branch Catchup
@@ -17,7 +19,7 @@ description: |
 Load everything about the current branch, check alignment with the base branch, and produce a
 concise working summary so you (and the user) can hit the ground running.
 
-## Step 1: Identify the branch and base
+## Step 1: Identify the branch, base, and any issue key
 
 1. Run `git branch --show-current` to get the branch name
 2. Determine the base branch:
@@ -25,8 +27,9 @@ concise working summary so you (and the user) can hit the ground running.
    gh pr view --json baseRefName --jq '.baseRefName' 2>/dev/null || git symbolic-ref refs/remotes/origin/HEAD --short 2>/dev/null | sed 's|origin/||'
    ```
 3. If on the default branch (main/master/develop), skip alignment reporting — just output context
-4. Look for plan/task files — check common locations like `PLAN.md`, `TASKS.md`, or a `docs/plans/`
-   directory. Use the branch name or any issue key in the branch name to find relevant files.
+4. Extract any issue key prefix from the branch name (e.g. `KD-0341` from `KD-0341-oauth-login-integratie`). If found, derive the plan directory as `docs/plans/<issue-key>/` (or whatever convention the project uses) — this is the simple lookup path. If no issue key, fall back to common locations: `PLAN.md`, `TASKS.md`, or any `docs/plans/` directory whose name overlaps with branch keywords.
+
+`/catchup` deliberately uses a simpler plan-directory derivation than the canonical algorithm in [`../plan-feature/references/plan-directory.md`](../plan-feature/references/plan-directory.md) — see the "Catchup variant" section there. Don't unify them.
 
 ## Step 2: Gather context (run all in parallel)
 
@@ -36,11 +39,13 @@ Collect these data sources simultaneously:
 |--------|---------------|-----------------|
 | **Commits** | `git log <base>..HEAD --oneline` | All commits on this branch |
 | **Diff stat** | `git diff <base>...HEAD --stat` | Files changed + insertions/deletions |
-| **Task file** | `TASKS.md` or similar | Progress: count completed vs total tasks |
-| **Plan file** | `PLAN.md` or similar | High-level plan summary (first ~50 lines) |
+| **TASKS.md** | `TASKS.md` or `<plan-dir>/TASKS.md` | Progress: count completed vs total tasks |
+| **PLAN.md** | `PLAN.md` or `<plan-dir>/PLAN.md` | High-level plan summary (first ~50 lines) |
+| **DECISIONS.md** | `<plan-dir>/DECISIONS.md` | Key architectural decisions and their status |
+| **Issue tracker** | `/kendo-mcp` (or whatever PM-tool skill the project ships) | Issue title, description, status, assignee — only if the branch has an issue key and the project has an issue-tracker skill |
 | **Divergence** | `git fetch origin && git rev-list --left-right --count origin/<base>...HEAD` | Commits behind/ahead of base |
 
-If any source doesn't exist, skip it silently — don't error.
+If any source doesn't exist (no plan dir, no DECISIONS.md, no issue tracker), skip it silently — don't error.
 
 ## Step 3: Output a working summary
 
@@ -48,6 +53,8 @@ Present the summary in this format — keep it concise, not a wall of text:
 
 ```
 ## Branch: <branch-name>
+**Issue:** <ISSUE-KEY> — <issue title>             ← only if issue tracker integration produced data
+**Status:** <issue status from tracker>            ← only if issue tracker integration produced data
 
 ### Alignment with <base>
 <"Up to date" OR "X commits behind — say 'sync' to merge">
@@ -61,6 +68,9 @@ Present the summary in this format — keep it concise, not a wall of text:
 - [ ] **Next up:** <first incomplete task with brief description>
 - [ ] Remaining tasks (one line each)
 
+### Key decisions                                  ← only if DECISIONS.md exists
+<Only list decisions that matter for continuing work — skip obvious or already-resolved ones>
+
 ### Recent commits (last 5)
 <short log>
 
@@ -72,6 +82,7 @@ Present the summary in this format — keep it concise, not a wall of text:
 - The summary should be scannable in under 30 seconds
 - Don't reproduce full plan text — summarize it
 - For tasks, show the status and what's next, not the full task details
+- For decisions, only surface ones that affect how to continue (skip resolved/obvious ones)
 - If all tasks are complete, say so and suggest next steps (PR, review, etc.)
 - Always report the alignment status — the user should know whether they're on stale code
 
@@ -109,13 +120,19 @@ Report how many commits were pulled in and move on.
 For each conflicting file:
 
 1. **Read the conflict markers** — understand what both sides changed and why
-2. **Check the git log for both sides** to understand the intent behind each change
-3. **Read the surrounding code** for broader context
+2. **Check the git log for both sides** — `git log --oneline origin/<base> -- <file>` and
+   `git log --oneline HEAD -- <file>` to understand the intent behind each change
+3. **Read the surrounding code** — understand the broader context of the conflicting area
 4. **Resolve based on clarity:**
    - **Clear-cut conflicts** (one side didn't touch the area, or changes are in different logical
-     sections) → resolve automatically
-   - **Ambiguous conflicts** (both sides changed the same logic) → describe the conflict to the
-     user and ask for guidance before resolving
+     sections) → resolve automatically:
+     - Base changed something the feature branch didn't touch nearby → take base's version
+     - Feature branch changed something base didn't touch nearby → keep the feature branch version
+     - Generated files (lock files, compiled assets) → regenerate after resolving source conflicts
+     - Migration timestamp collisions → rename the feature branch migration to a later timestamp
+   - **Ambiguous conflicts** (both sides changed the same logic, or changes seem contradictory) →
+     describe the conflict to the user and ask for guidance before resolving. Show what each side
+     intended and propose a resolution, but wait for confirmation.
 5. **Stage the resolved file** — `git add <file>`
 
 After all conflicts are resolved:
