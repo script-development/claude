@@ -32,9 +32,10 @@ file) to understand available tokens and naming conventions.
 
 ### Step 1: Locate the plan
 
-1. `git branch --show-current`
-2. Look for `docs/plans/<branch-slug>/PLAN.md`
-3. Read PLAN.md — extract frontend PR file list, acceptance criteria, and scope
+Use the canonical algorithm in
+[`plan-feature/references/plan-directory.md`](../plan-feature/references/plan-directory.md),
+then read `PLAN.md`. Extract the frontend PR file list, acceptance
+criteria, and scope.
 
 ### Step 2: Research existing layout patterns
 

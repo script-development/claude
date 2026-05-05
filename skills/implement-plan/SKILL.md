@@ -37,19 +37,11 @@ for anything that genuinely benefits from per-task acceptance gating.
 
 ## Step 1: Locate the plan directory
 
-Derive the plan directory from the current git branch:
+Derive the plan directory from the current git branch using the canonical algorithm in
+[`plan-feature/references/plan-directory.md`](../plan-feature/references/plan-directory.md), then
+look for `PLAN.md` inside it. If not found, ask the user where the plan lives — don't guess.
 
-1. Run `git branch --show-current`
-2. Strip prefix up to and including the first `/` (e.g. `claude/` → removed, `feature/` → removed)
-3. Strip any random suffix — e.g. a trailing `-XXXXX` segment where X is alphanumeric
-4. Look for `docs/plans/<result>/PLAN.md`
-5. If not found, ask the user where the plan lives — don't guess
-
-**Example:** Branch `PROJ-0461-listeners-apply-payload-directly` → directory
-`PROJ-0461-listeners-apply-payload-directly` → file
-`docs/plans/PROJ-0461-listeners-apply-payload-directly/PLAN.md`
-
-If you find a `TASKS.md` next to PLAN.md, **stop and tell the user** — they probably want `/next`,
+If you find a `TASKS.md` next to `PLAN.md`, **stop and tell the user** — they probably want `/next`,
 not this skill. Confirm before continuing.
 
 ## Step 2: Load the full plan context
