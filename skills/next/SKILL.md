@@ -24,17 +24,12 @@ following TDD flow, and mark it done with learnings.
 
 ## Step 1: Locate TASKS.md
 
-Derive the plan directory from the current git branch:
+Derive the plan directory from the current git branch using the canonical algorithm in
+[`plan-feature/references/plan-directory.md`](../plan-feature/references/plan-directory.md), then
+look for `TASKS.md` inside it.
 
-1. Run `git branch --show-current`
-2. Strip prefix up to and including the first `/` (e.g. `claude/` → removed, `feature/` → removed)
-3. Strip any random suffix — e.g. a trailing `-XXXXX` segment where X is alphanumeric
-4. Look for `docs/plans/<result>/TASKS.md`
-5. If not found, fall back to `TASKS.md` in the repository root
-6. If still not found, ask the user where their task file is
-
-**Example:** Branch `claude/claude-code-sdk-integration-0L8sI` → directory `claude-code-sdk-integration`
-→ file `docs/plans/claude-code-sdk-integration/TASKS.md`
+If the plan directory exists but has no `TASKS.md`, fall back to `TASKS.md` in the repository
+root. If neither exists, ask the user where their task file is.
 
 ## Step 2: Show progress and find next task
 
