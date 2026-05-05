@@ -372,6 +372,6 @@ The backend accepts both formats. Prefer keys for readability.
 
 ## User Stories
 
-When creating issues, write descriptions in Dutch following the user story format:
-"Als [rol] wil ik [functionaliteit] zodat [doel]". See the kendo-mcp skill's
-`references/user-story-format.md` for the full template.
+When creating issues, write descriptions in English following the user story format:
+"As a [role], I want [functionality] so that [goal]". See the kendo-mcp skill's
+`references/issue-templates.md` for the full feature + bug templates.
