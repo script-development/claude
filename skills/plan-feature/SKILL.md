@@ -21,16 +21,16 @@ entire conversation.
 
 ## Phase 0: Parse arguments
 
-The developer may pass an issue tracker URL or key as an argument (e.g., a Linear/Jira/Kendo/
-GitHub issue key or full URL).
+The developer may pass a Kendo issue URL or key as an argument (e.g.,
+`https://{{TENANT}}.kendo.dev/projects/{{PROJECT_ID}}/issues/{{ISSUE_KEY_PREFIX}}-0325` or just
+`{{ISSUE_KEY_PREFIX}}-0325`).
 
-**IMPORTANT: Issue key ≠ issue ID.** A key like `PROJ-0343` does NOT mean the database ID is 343.
-These are different values. Never extract the number from a key and use it as an ID.
+**IMPORTANT: Issue key ≠ issue ID.** A key like `{{ISSUE_KEY_PREFIX}}-0343` does NOT mean the database
+ID is 343. These are different values. Never extract the number from a key and use it as an ID.
 
 If an argument is provided:
-1. Extract the issue key from the URL or string
-2. Search for the issue in the project's issue tracker to get the actual issue (including its
-   real database ID where relevant)
+1. Extract the issue key — for URLs, pull the `{{ISSUE_KEY_PREFIX}}-XXXX` segment from the path
+2. Read `kendo://issues/{key}` to get the actual issue (including its real database ID)
 3. Use this as your starting context for Phase 1 — skip the blind search and go straight
    to viewing the issue and any related epics
 
@@ -38,19 +38,18 @@ If an argument is provided:
 
 Before asking a single question, do these things:
 
-### 1a. Check the issue tracker
+### 1a. Check the Kendo board
 
-If the project uses an issue tracker (Linear, Jira, Kendo, GitHub Issues), search for existing
-issues, epics, and sprint context for the feature. The scope may already be broken down on the
-board.
+Use `/kendo-mcp` to find existing issues, epics, and sprint context for the feature. Check if
+there's already an epic with issues defined — the scope may already be broken down.
 
-- Search for related issues
-- Check for relevant epics
-- If issues exist, read each one to understand the scope before asking questions the board
-  already answers
+- Search for related issues using `mcp__kendo__search-issues-tool` with `project_id: {{PROJECT_ID}}`
+- Read `kendo://projects/{{PROJECT_ID}}/epics` to check for relevant epics
+- If issues exist, read each one via `kendo://issues/{key}` to understand the scope before
+  asking questions the board already answers
 
-If no issue exists for this feature, note it — you may want to create one before producing the
-plan, depending on the project's conventions.
+If no issue exists for this feature, note it — you will create one before producing the plan
+(see Phase 4a).
 
 ### 1b. Find the closest existing feature
 
@@ -282,11 +281,12 @@ confirm again.
 
 Once the developer confirms, do the following:
 
-### 4a. Ensure an issue exists (if the project uses an issue tracker)
+### 4a. Ensure a Kendo issue exists
 
-If no issue was found in Phase 1a and the project uses an issue tracker:
-1. Use the project's issue-creation tooling (CLI, MCP, web UI) to create one
-2. Note the returned issue key
+If no issue was found in Phase 1a:
+1. Read the [issue-templates.md](../kendo-mcp/references/issue-templates.md) for the feature + bug templates
+2. Create an issue via `mcp__kendo__create-issue-tool` with `project_id: {{PROJECT_ID}}` and a clear title and description
+3. Note the returned issue key (e.g., `{{ISSUE_KEY_PREFIX}}-0244`)
 
 If an issue already exists, use its key.
 

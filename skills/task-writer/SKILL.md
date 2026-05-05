@@ -460,13 +460,26 @@ Before finalizing tasks, check:
 
 ## Output
 
-Write tasks to `TASKS.md` alongside the plan document (e.g., `docs/plans/<slug>/TASKS.md`). If
-the directory doesn't exist yet, create it.
+Write tasks to `docs/plans/{{ISSUE_KEY_PREFIX}}-XXXX-short-description/TASKS.md` (same
+directory as the plan). If the directory doesn't exist yet, create it.
 
-**TASKS.md header** should link back to the plan and decisions if they exist:
+**Determine the ticket key from:**
+
+1. The current branch name (e.g. `{{ISSUE_KEY_PREFIX}}-1234-feature` → `{{ISSUE_KEY_PREFIX}}-1234`)
+2. The plan file if one exists in `docs/plans/`
+3. Ask the user if neither is available
+
+**If no issue exists yet**, create one using the `/kendo-mcp` skill:
+
+1. Read `kendo://projects` to confirm the project ID
+2. Read the [issue-templates.md](../kendo-mcp/references/issue-templates.md) for the feature + bug templates
+3. Create the issue with `mcp__kendo__create-issue-tool` and `project_id: {{PROJECT_ID}}`
+4. Use the returned issue key (e.g. `{{ISSUE_KEY_PREFIX}}-115`) for the directory name
+
+**TASKS.md header** should include the ticket key and links to the plan and decisions:
 
 ```markdown
-# <Feature Name>
+# {{ISSUE_KEY_PREFIX}}-XXXX: Short Description
 
 > Plan: [PLAN.md](PLAN.md) | Decisions: [DECISIONS.md](DECISIONS.md)
 ```

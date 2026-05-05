@@ -1,55 +1,108 @@
 ---
 name: newbranch
 description: >
-  Create a new branch from the default branch with a descriptive name. Use whenever the user wants
-  to start a new feature, create a branch, begin work on an issue, or says "new branch",
-  "start feature", "create branch".
-argument-hint: "[branch name or description]"
+  Create a new branch from `{{DEFAULT_BRANCH}}`, named after a Kendo issue (e.g. `{{ISSUE_KEY_PREFIX}}-0141-short-description`).
+  Use whenever the user wants to start a new feature, create a branch, begin work on an issue,
+  or says "new branch".
 ---
 
 # New Branch
 
-Create a new git branch from the latest default branch with a well-formed name.
+Create a new git branch from `origin/{{DEFAULT_BRANCH}}`, named after a Kendo issue — and prepare the
+issue for work (assign to the developer, add to the active sprint, move to In Progress).
+
+**Project:** project_id `{{PROJECT_ID}}`, issue key prefix `{{ISSUE_KEY_PREFIX}}`.
 
 ## Workflow
 
 ### 1. Fetch latest
 
-Determine the default branch and fetch it:
-
 ```bash
-DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD --short 2>/dev/null | sed 's|origin/||')
-git fetch origin "$DEFAULT_BRANCH"
+git fetch origin {{DEFAULT_BRANCH}}
 ```
 
-If `refs/remotes/origin/HEAD` is not set, fall back to checking for `main` or `master`.
+### 2. Find or create the issue
 
-### 2. Determine the branch name
+Ask the user which issue to branch from. Options:
 
-Use `$ARGUMENTS` if provided. Otherwise, ask the user what they're working on.
+- **User provides an issue number or key** — Read `kendo://issues/{id-or-key}` and use its `key` field.
+- **User provides a search query as the argument** — Try `kendo://issues/{arg}` first; if that fails,
+  use `mcp__kendo__search-issues-tool` with `project_id: {{PROJECT_ID}}` and the argument as the query.
+- **User wants a new issue** — Create one via `mcp__kendo__create-issue-tool` with `project_id: {{PROJECT_ID}}`.
+  **Follow the issue templates in
+  [`kendo-mcp/references/issue-templates.md`](../kendo-mcp/references/issue-templates.md)** — that
+  file is the single source of truth for the feature user-story format and the bug-report format
+  used across this project. Don't improvise a structure; readers of the issue (reviewers, future
+  developers searching the backlog) rely on the template being consistent.
 
-Construct a branch name following these rules:
-- Use kebab-case (lowercase letters, numbers, hyphens only)
-- If there's an issue/ticket number, prefix with it (e.g., `PROJ-123-add-user-auth`)
-- If no issue number, use a descriptive slug (e.g., `add-user-authentication`)
-- Keep it concise — max ~5 words after any prefix
-- Optionally add a type prefix: `feature/`, `fix/`, `chore/` — follow the project's existing
-  convention (check `git branch -a` for patterns)
+After creating or resolving the issue, capture its **key** (for branch naming and the bundle call
+in step 3).
 
-### 3. Create the branch
+### 3. Bundle the issue context
 
-```bash
-git checkout -b <branch-name> --no-track origin/<default-branch>
-git push -u origin HEAD
+Single read that replaces the old four-resource fan-out (`kendo://issues/{key}` +
+`kendo://projects/{{PROJECT_ID}}/lanes` + `kendo://projects/{{PROJECT_ID}}/sprints` +
+`git config user.email` heuristic):
+
+```
+mcp__kendo__prepare-issue-context-tool
+  issue_key: "{{ISSUE_KEY_PREFIX}}-0141"
 ```
 
-**CRITICAL:** Always use `--no-track` to prevent the new branch from inheriting the default
-branch as its upstream. Then immediately push with `-u` to set tracking to the correct remote
-branch. Without this, `git push` will push directly to the default branch.
+The response carries everything the rest of the workflow needs:
 
-### 4. Confirm
+- `issue.id` / `issue.title` — branch slug source
+- `lanes[]` — find the entry whose `title === "In Progress"` and capture its `id` for step 5
+- `active_sprint` — `id` for step 5, or `null` if the project has no Active sprint (skip sprint then)
+- `current_user` — authoritative MCP-auth'd developer; use `current_user.id` as the default
+  `assignee_id`. No `git config user.email` heuristic needed — the token is bound to the user.
+  Confirm with the user: "Assigning to **{current_user.name}** — correct?" If they want to assign
+  to someone else, fall back to `kendo://projects/{{PROJECT_ID}}/members` (not in the bundle by design)
+  and let them pick.
 
-Tell the user:
-- The branch name that was created
-- That it's based on the latest default branch
-- That tracking is set to the correct remote branch
+### 4. Create the branch
+
+Use the issue `key` (e.g. `{{ISSUE_KEY_PREFIX}}-0141`) and a kebab-case summary of the title:
+
+```bash
+git checkout -b {{ISSUE_KEY_PREFIX}}-0141-short-description --no-track origin/{{DEFAULT_BRANCH}}
+git push -u --no-verify origin HEAD
+```
+
+**Why `--no-track`:** Git's default `autosetupmerge=always` makes the new local branch inherit
+`origin/{{DEFAULT_BRANCH}}` as its upstream. Without `--no-track`, a later `git push` would push directly
+to `{{DEFAULT_BRANCH}}` and bypass PR review. `--no-track` breaks that link; the following `push -u` then
+wires the branch to its own remote.
+
+Branch naming rules:
+- Prefix with the full issue key (e.g. `{{ISSUE_KEY_PREFIX}}-0141`, not `{{ISSUE_KEY_PREFIX}}-141`)
+- Append a kebab-case slug from the issue title (max ~5 words)
+- Use only lowercase letters, numbers, and hyphens
+
+### 5. Start work on the issue (assign + sprint + lane + branch link in one call)
+
+One idempotent write that bundles the four state changes the developer would otherwise make
+separately. The GitHub repo is auto-resolved from the project's primary repo — don't pass it.
+
+```
+mcp__kendo__start-work-on-issue-tool
+  issue_key:    "{{ISSUE_KEY_PREFIX}}-0141"
+  branch_name:  "{{ISSUE_KEY_PREFIX}}-0141-short-description"
+  assignee_id:  <current_user.id from step 3, or chosen alternate>
+  lane_id:      <In Progress lane id from step 3>
+  sprint_id:    <active_sprint.id from step 3>   # omit when active_sprint is null
+```
+
+**Sprint semantics:** omitting `sprint_id` preserves the existing value; passing `null` clears
+the sprint; passing an id sets it. So omit when there is no active sprint — don't pass `null`.
+
+**Idempotency:** re-running with the same inputs is a no-op per field — fine to retry.
+
+### 6. Confirm
+
+Tell the user in one concise block:
+- The branch name (and its GitHub URL if you have it from the push output)
+- The issue key + title + link
+- Who it's assigned to (or "no assignment — could not resolve current user")
+- The active sprint it was added to (or "no active sprint — skipped")
+- That the lane is now In Progress
