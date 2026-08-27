@@ -15,12 +15,11 @@ WT_BRANCH=$(echo "$input" | jq -r '.worktree.branch // empty')
 # and the display.
 TOKENS=$(echo "$input" | jq -r '.context_window.total_input_tokens // 0' | cut -d. -f1)
 
-# Hoisted out of the ports block below so the ports display and the context advisory
-# share one definition instead of two.
+# Used by the ports display only. The context gauge carries its own colours as function
+# locals (see lib/context-gauge.sh): it has to render on a machine whose statusline defines
+# none of these, and self-containment there is worth more than sharing an ANSI literal here.
 GREEN='\033[32m'
-YELLOW='\033[33m'
 RED='\033[31m'
-BOLD='\033[1m'
 RESET='\033[0m'
 
 # Use worktree fields if available, otherwise derive from git
@@ -83,36 +82,28 @@ if [ -n "$REPO_ROOT" ] && [ -f "$REPO_ROOT/backend/.env" ]; then
   fi
 fi
 
-# ── Context-reset advisory ─────────────────────────────
-# Two stages: NOTICE is informational, URGE is actionable. Below NOTICE only the bare token
-# count shows — no colour, no denominator. This statusline re-renders several times per tool
-# call (measured: ~4), so a marker that is always on goes blind, and the threshold is only
-# worth naming once it is close enough to act on.
+# ── Context-reset advisory ──────────────────────
+# Rendered by the gauge, sourced rather than reimplemented. This statusline is one CONSUMER
+# of the gauge, not its owner: the two-stage rule, the thresholds it reads and the wording of
+# the advisory all live in lib/context-gauge.sh, so a second statusline -- on another machine,
+# in another repo -- gets the same gauge by sourcing one file instead of copying this block.
+# What stays here is only what is genuinely this statusline's: where the token count comes
+# from, and where in the line the segment goes.
 #
-# The denominator is CTX_URGE_TOKENS, printed rather than hardcoded, so a yellow
-# `152k/200k` explains itself without the reader having to know the rule. It cannot drift
-# from the comparison beside it: both read the same sourced variable.
+# Located at ~/.claude/lib rather than relative to this script because neither relative path
+# works from both places: installed, this file sits at ~/.claude/statusline.sh (so ../lib is
+# wrong); in the repo it sits at plugins/context-economy/statusline/ (so ./lib is wrong). The
+# override exists so the test suite can exercise the repo's copy rather than the installed one.
 #
-# The thresholds are sourced, never restated here. If the file is missing (mission_control
-# not checked out beside claude-dotfiles, or install.sh not re-run) the advisory does not
-# render and the token count still does — degrade capability, never execution. Restating the
-# numbers as a local fallback would recreate the second copy that file exists to prevent.
-# Note the -n guards rather than ${CTX_*:-0}: a :-0 default would make every session
-# instantly URGE if the file ever loaded empty, so this fails OPEN (never advise).
-CTX_THRESHOLDS_FILE="${CTX_THRESHOLDS_FILE:-$HOME/.claude/lib/context-thresholds.sh}"
-CTX_DISPLAY="ctx:$((TOKENS / 1000))k"
-if [ "${TOKENS:-0}" -gt 0 ] 2>/dev/null && [ -f "$CTX_THRESHOLDS_FILE" ]; then
-  . "$CTX_THRESHOLDS_FILE"
-  if [ -n "$CTX_URGE_TOKENS" ] && [ "$TOKENS" -ge "$CTX_URGE_TOKENS" ]; then
-    # `handoff?` names a command that actually exists now: /handoff is reachable from any
-    # session through the ~/.claude/skills/handoff symlink (see mission_control's README link
-    # table). It stayed `reset?` until that was true, and must go back to a blunter word if
-    # that link ever goes: a statusline advertising a command the reader cannot run is worse
-    # than one naming a coarser action they can.
-    CTX_DISPLAY="${BOLD}${RED}ctx:$((TOKENS / 1000))k/$((CTX_URGE_TOKENS / 1000))k handoff?${RESET}"
-  elif [ -n "$CTX_NOTICE_TOKENS" ] && [ "$TOKENS" -ge "$CTX_NOTICE_TOKENS" ]; then
-    CTX_DISPLAY="${YELLOW}ctx:$((TOKENS / 1000))k/$((CTX_URGE_TOKENS / 1000))k${RESET}"
-  fi
+# A missing gauge silences the whole segment rather than falling back to a bare count. That is
+# deliberate: a local fallback would be a second rendering of the gauge, which is the thing
+# this extraction removed. It fails loudly rather than silently -- install.sh lists
+# context-gauge.sh among its required libs and reports it MISSING.
+CTX_GAUGE_FILE="${CTX_GAUGE_FILE:-$HOME/.claude/lib/context-gauge.sh}"
+CTX_DISPLAY=""
+if [ -f "$CTX_GAUGE_FILE" ]; then
+  . "$CTX_GAUGE_FILE"
+  CTX_DISPLAY=$(context_gauge "$TOKENS")
 fi
 
-echo -e "[$NAME:$BRANCH]${DEV_URL}${PORTS_DISPLAY} ${CTX_DISPLAY}"
+echo -e "[$NAME:$BRANCH]${DEV_URL}${PORTS_DISPLAY}${CTX_DISPLAY:+ $CTX_DISPLAY}"
