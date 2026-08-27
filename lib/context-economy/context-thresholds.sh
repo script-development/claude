@@ -1,7 +1,7 @@
 #!/bin/bash
 # Context-reset thresholds, in resident input tokens.
 #
-# SINGLE SOURCE OF TRUTH. `claude-dotfiles`' statusline.sh renders against these; the
+# SINGLE SOURCE OF TRUTH. lib/context-gauge.sh renders against these; the
 # threshold hook that will later inject a one-shot advisory for unattended runs decides
 # against the same numbers. Two copies would drift silently — and worse, drift in
 # different units (one in tokens, one in percent) — with nothing failing to announce it.
@@ -9,10 +9,11 @@
 # default. A missing file means "no advisory", not "guess" — degrade capability, never
 # execution.
 #
-# Lives here rather than in claude-dotfiles because the numbers are a finding of this
-# repo's research, and a number separated from its justification is how a stale threshold
-# survives. install.sh in claude-dotfiles symlinks it to ~/.claude/lib/ so the global
-# statusline can reach it without hardcoding a sibling-checkout path.
+# Kept beside the research that produced the numbers rather than beside a consumer, because a
+# number separated from its justification is how a stale threshold survives. install.sh
+# symlinks it to ~/.claude/lib/ so a global consumer can reach it without hardcoding a
+# checkout path. (It lived in the separate claude-dotfiles repo until the 2026-08-27 merge;
+# that split is what the sibling-checkout wording here used to be about.)
 #
 # WHY TOKENS AND NOT PERCENT: the statusline payload's `context_window.used_percentage`
 # is an integer against `context_window_size`. On a 1M window that is 10k tokens per point
@@ -116,7 +117,7 @@ CTX_URGE_TOKENS=200000
 #   model_hook         -- NOT cleared. An agent or prompt hook cannot run for a cloud call at all.
 #
 # THE HAZARD FOR THIS REPO IS `in_reach`, BECAUSE WE INSTALL BY SYMLINK. ~/.claude/hooks/* point into
-# claude-dotfiles and ~/.claude/lib/* point into mission_control, so a hook whose realpath lands
+# mission_control and ~/.claude/lib/* do too, so a hook whose realpath lands
 # inside whichever repo the cloud session has synced is held regardless of settings scope. If item 4's
 # hook must survive cloud-served calls, it needs a real file outside any synced checkout -- not a
 # symlink into one.

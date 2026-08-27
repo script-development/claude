@@ -54,7 +54,7 @@ set -uo pipefail
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 verifier="$script_dir/verify-citations.sh"
 
-# Sourced, never restated — same rule as claude-dotfiles' statusline.sh. Resolved
+# Sourced, never restated — same rule as lib/context-gauge.sh. Resolved
 # relative to this script rather than through ~/.claude/lib/ because this tool
 # lives in the same repo as the thresholds; the statusline needs the symlink only
 # because it does not.
