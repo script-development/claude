@@ -1,0 +1,14 @@
+{
+  "name": "context-economy",
+  "displayName": "Context Economy",
+  "version": "0.1.0",
+  "description": "Handoffs that survive a context reset: a /handoff skill that writes and verifies them, plus hooks that urge one before the window runs out and inject the right one into the next session.",
+  "keywords": [
+    "handoff",
+    "context",
+    "compaction",
+    "session",
+    "statusline"
+  ],
+  "license": "MIT"
+}

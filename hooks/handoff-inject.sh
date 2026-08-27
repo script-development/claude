@@ -192,8 +192,9 @@ fi
 
 # ── The gate ───────────────────────────────────────────────────────────────────────────────
 #
-# Probed in the same order as the skill: the installed copy first, then the in-repo path for a
-# session already inside mission_control. Never through a sibling path like
+# Probed beside this hook first -- one path that holds in-repo, installed and as a plugin --
+# then the in-repo path for a session already inside mission_control. It used to lead with
+# $HOME/.claude/lib, which a plugin install never creates. Never through a sibling path like
 # `<project>/../mission_control/tools/`, which is layout config of exactly the kind this repo
 # refuses to make configurable.
 verdicts=""
@@ -201,7 +202,7 @@ status_line=""
 if [ "$handoff_present" = true ]; then
     gate="${VERIFY_HANDOFF_GATE:-}"
     if [ -z "$gate" ]; then
-        for g in "$HOME/.claude/lib/verify-handoff.sh" "$here/plugins/context-economy/lib/verify-handoff.sh"; do
+        for g in "$hook_dir/../lib/verify-handoff.sh" "$here/plugins/context-economy/lib/verify-handoff.sh"; do
             [ -x "$g" ] && gate=$g && break
         done
     fi

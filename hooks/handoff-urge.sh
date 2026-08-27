@@ -50,7 +50,17 @@ input=$(cat)
 # real ceiling without editing a file that is checked in and shared across every machine.
 declared_ceiling="${CTX_COMPACT_THRESHOLD_TOKENS:-}"
 
-CTX_THRESHOLDS_FILE="${CTX_THRESHOLDS_FILE:-$HOME/.claude/lib/context-thresholds.sh}"
+# RESOLVED BESIDE THIS HOOK, NOT FROM $HOME. One expression, correct in all three positions
+# this hook can occupy: in-repo (plugins/context-economy/hooks -> ../lib), installed
+# (~/.claude/hooks -> ~/.claude/lib), and inside a plugin (${CLAUDE_PLUGIN_ROOT}/hooks -> ../lib).
+# `pwd` WITHOUT -P is deliberate, exactly as handoff-inject.sh does it: through the install
+# symlink that dirname must stay ~/.claude/hooks rather than resolving back to the checkout.
+#
+# It reaches the NESTED context-economy/ subpath, which is what retired the flat
+# ~/.claude/lib/context-thresholds.sh that install.sh used to create for this one line. A
+# plugin has no ~/.claude/lib to read, so the old path could never have worked there.
+hook_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+CTX_THRESHOLDS_FILE="${CTX_THRESHOLDS_FILE:-$hook_dir/../lib/context-economy/context-thresholds.sh}"
 [ -f "$CTX_THRESHOLDS_FILE" ] || exit 0
 # shellcheck source=/dev/null
 . "$CTX_THRESHOLDS_FILE"
