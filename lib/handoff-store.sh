@@ -7,9 +7,9 @@
 #
 # Handoffs used to live at `<main-worktree>/.claude/handoff/<branch>.md`, derived from the
 # session's own cwd. That worked only while the session's repository and the repository the
-# work is in were the same thing, and in this setup they routinely are not: a mission_control
+# work is in were the same thing, and in this setup they routinely are not: an orchestrating
 # session drives a sibling checkout with `git -C`, and its cwd never moves. So the document
-# was written to mission_control, keyed to mission_control's branch, while its citations
+# was written to the ORCHESTRATOR, keyed to the ORCHESTRATOR's branch, while its citations
 # described someone else's tree -- two branches of work driven from the same session branch
 # overwrote each other's handoff, and the gate was aimed at the wrong repository by default.
 #
@@ -28,6 +28,21 @@
 # for that reason. A handoff holds Dead ends and Traps -- which is exactly where candid
 # remarks about a project's tooling end up -- and committing that into a client repository
 # puts it in `git log` permanently, long after the PR that carried it is closed.
+#
+# ── THE STORE ROOT IS A PUBLISHED CONTRACT ─────────────────────────────────────────────────
+#
+# `~/.claude/context-economy/` is this bundle's data root, and it is depended on from OUTSIDE the
+# bundle -- so it is DECLARED here rather than merely observed. Two subdirectories, two owners:
+#
+#   handoffs/     written and read by this bundle. Resolved below; HANDOFF_STORE_DIR overrides it
+#                 for tests.
+#   compactions/  RESERVED. Never touched by this bundle. Written by an external capture hook via
+#                 its own COMPACTION_CORPUS_DIR. It sits here because the argument above applies
+#                 to it identically, not because this bundle manages it.
+#
+# Renaming the root is a MIGRATION, not a rename. Handoffs are found by ENUMERATING this
+# directory, so a changed root resolves to an empty store and every lookup reports "no handoff"
+# -- the failure is silent and reads exactly like "there was nothing to resume".
 #
 # ── WHAT THE FILENAME IS FOR ───────────────────────────────────────────────────────────────
 #
