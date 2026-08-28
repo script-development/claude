@@ -42,17 +42,54 @@
 #
 # Run it as:
 #
-#   bash tests/gate.sh          # structure only
-#   bash tests/gate.sh --run    # structure, then execute every discovered suite
+#   bash tests/gate.sh                 # structure only, over this bundle
+#   bash tests/gate.sh --run           # structure, then execute every discovered suite
+#   bash tests/gate.sh --root DIR      # the same checks, over a different tree
+#
+# WHY --root EXISTS. mission_control's personal/ side has suites too (statusline.test.sh,
+# compaction-capture.test.sh) and they deserve the same shape checks. The alternative was a second
+# copy of this file over there, and two copies of one gate in one repo drift -- which is the exact
+# failure the g2 comment describes install.sh already paying for. So the tree is a parameter and
+# there is one implementation. personal/tests/gate.sh is a delegation to this file, not a fork.
+#
+# The default is unchanged and must stay that way: this bundle ships as its own repository, where
+# `bash tests/gate.sh` with no arguments is the only invocation that exists. --root is additive.
 
 set -uo pipefail
 
 run_suites=0
-if [ "${1:-}" = "--run" ]; then
-    run_suites=1
-fi
+root=""
 
-root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --run)
+            run_suites=1
+            shift
+            ;;
+        --root)
+            # Fail loudly on a missing or bad tree. A gate that quietly gates nothing is the
+            # failure mode this whole file exists to prevent, and --root is the one input that
+            # can point it at a directory that is not there.
+            if [ -z "${2:-}" ]; then
+                printf 'FAIL  --root given with no directory\n' >&2
+                exit 2
+            fi
+            if [ ! -d "$2" ]; then
+                printf 'FAIL  --root %s is not a directory\n' "$2" >&2
+                exit 2
+            fi
+            root=$(cd "$2" && pwd)
+            shift 2
+            ;;
+        *)
+            printf 'FAIL  unknown argument: %s\n' "$1" >&2
+            printf '      usage: gate.sh [--root DIR] [--run]\n' >&2
+            exit 2
+            ;;
+    esac
+done
+
+[ -n "$root" ] || root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
 pass=0
 fail=0
@@ -76,6 +113,11 @@ fi
 
 n=$(printf '%s\n' "$suites" | grep -c .)
 ok "g1 discovery -- $n suites found"
+
+# Name the tree, always. Now that --root exists, every verdict below is relative to a tree the
+# reader cannot see from the output otherwise -- and a clean run over the WRONG tree reads exactly
+# like a clean run over the right one. verify-handoff.sh prints its checkout for the same reason.
+printf '      root: %s\n' "$root"
 
 # --- Per-suite structure ---------------------------------------------------
 
