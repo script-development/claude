@@ -27,7 +27,7 @@
 #
 # No framework, matching the sibling hook suites. Run it as:
 #
-#   bash plugins/context-economy/hooks/session-end-marker.test.sh
+#   bash hooks/session-end-marker.test.sh
 
 set -uo pipefail
 

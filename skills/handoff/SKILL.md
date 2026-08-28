@@ -69,7 +69,7 @@ against the wrong repository entirely.
 its cwd and nothing else. Putting the file in the *target* repo fixes the keying and makes the
 document undiscoverable: no path derived from cwd can reach a sibling checkout. Listing one known
 root can. That is the whole reason the store is centralised rather than distributed — see
-`plugins/context-economy/lib/handoff-store.sh` for the resolution order.
+`lib/handoff-store.sh` for the resolution order.
 
 **It must survive its own worktree.** An automated run works inside a throwaway worktree that its
 caller's Phase Omega deletes (`skills/prepare-agent-run/SKILL.md:99`). A handoff written there dies

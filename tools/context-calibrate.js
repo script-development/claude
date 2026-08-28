@@ -3,7 +3,7 @@
 //
 // WHY THIS EXISTS: `context-audit.js` divides character counts by a single constant
 // (CHARS_PER_TOKEN = 4) to report composition and tool volume, and
-// `plugins/context-economy/lib/context-economy/context-thresholds.sh` carries a calibrated 2.68 for the
+// `lib/context-economy/context-thresholds.sh` carries a calibrated 2.68 for the
 // handoff budget. Both are single ratios. A single ratio is invariant under a
 // PROPORTIONAL split — which is why finding #4's attribution table survives the
 // 4-vs-2.68 discrepancy unharmed — but it is NOT invariant to the ratio VARYING

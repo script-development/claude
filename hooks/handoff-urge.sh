@@ -51,7 +51,7 @@ input=$(cat)
 declared_ceiling="${CTX_COMPACT_THRESHOLD_TOKENS:-}"
 
 # RESOLVED BESIDE THIS HOOK, NOT FROM $HOME. One expression, correct in all three positions
-# this hook can occupy: in-repo (plugins/context-economy/hooks -> ../lib), installed
+# this hook can occupy: in-repo (hooks/ -> ../lib), installed
 # (~/.claude/hooks -> ~/.claude/lib), and inside a plugin (${CLAUDE_PLUGIN_ROOT}/hooks -> ../lib).
 # `pwd` WITHOUT -P is deliberate, exactly as handoff-inject.sh does it: through the install
 # symlink that dirname must stay ~/.claude/hooks rather than resolving back to the checkout.

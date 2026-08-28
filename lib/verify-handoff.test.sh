@@ -38,7 +38,7 @@
 #
 # No framework, matching verify-citations.test.sh. Run it the same way:
 #
-#   bash plugins/context-economy/lib/verify-handoff.test.sh
+#   bash lib/verify-handoff.test.sh
 
 set -uo pipefail
 

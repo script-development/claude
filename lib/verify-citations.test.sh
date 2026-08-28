@@ -26,7 +26,7 @@
 # No framework by design — this repo has no bats and no shell test harness, and
 # scripts here run as plain `bash <path>`. Run it the same way:
 #
-#   bash plugins/context-economy/lib/verify-citations.test.sh
+#   bash lib/verify-citations.test.sh
 #
 # One divergence from the Kendo suite: its OK cases resolve against the real repo
 # tree, which is a layout dependency the ported script exists not to have. A

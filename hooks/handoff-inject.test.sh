@@ -36,7 +36,7 @@
 #
 # No framework, matching handoff-urge.test.sh. Run it as:
 #
-#   bash plugins/context-economy/hooks/handoff-inject.test.sh
+#   bash hooks/handoff-inject.test.sh
 
 set -uo pipefail
 

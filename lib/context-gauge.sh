@@ -39,7 +39,7 @@
 # at the nested `context-economy/` subpath -- the same resolution verify-handoff.sh uses, for
 # the same reason. Through the install symlink that dirname is ~/.claude/lib, where the
 # installer's mirror has recreated the nested subpath verbatim; in the repo it is
-# plugins/context-economy/lib. One expression, correct from both, no readlink and no
+# lib/. One expression, correct from both, no readlink and no
 # checkout-path derivation. Do not "simplify" it to $HOME/.claude/lib: that would work only
 # installed, and the test suite would then be testing the installed copy rather than the
 # file under review.

@@ -23,7 +23,7 @@
 #
 # Run it as:
 #
-#   bash plugins/context-economy/lib/context-economy/context-thresholds.test.sh
+#   bash lib/context-economy/context-thresholds.test.sh
 
 set -uo pipefail
 

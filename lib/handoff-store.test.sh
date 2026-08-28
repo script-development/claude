@@ -17,7 +17,7 @@
 #
 # No framework, matching the hook suites. Run it as:
 #
-#   bash plugins/context-economy/lib/handoff-store.test.sh
+#   bash lib/handoff-store.test.sh
 
 set -uo pipefail
 

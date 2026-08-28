@@ -29,9 +29,9 @@
 #       "ceiling unknown" message reappeared at every turn boundary for the rest of the session --
 #       the exact nag-fatigue the fire path was careful to avoid.
 #
-# No framework, matching statusline.test.sh and mission_control's verify-*.test.sh. Run it as:
+# No framework, matching the sibling verify-*.test.sh suites. Run it as:
 #
-#   bash plugins/context-economy/hooks/handoff-urge.test.sh
+#   bash hooks/handoff-urge.test.sh
 
 set -uo pipefail
 
