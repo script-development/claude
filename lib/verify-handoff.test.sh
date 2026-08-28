@@ -522,7 +522,34 @@ assert_exit 2 'an unreadable path fails as a contract violation' "$fixture/nope.
 
 # Arrange
 prose="$fixture/prose.md"
-cp "$script_dir/../README.md" "$prose" 2>/dev/null || echo "not a handoff" > "$prose"
+#
+# The document is generated here rather than copied out of the tree. The
+# previous fixture did `cp "$script_dir/../README.md"` against a path that has
+# never existed, so it fell through to `echo "not a handoff"` and the case
+# tested "refuse a three-word file" -- which the subject would refuse for the
+# wrong reason. It has to be plausible to be worth anything: headings, a fenced
+# block, and a backticked path carrying a line reference, so that the refusal is
+# about the missing contract sections and not about there being nothing to read.
+cat > "$prose" <<'PROSEEOF'
+# context-economy
+
+A bundle of hooks, a statusline gauge and two skills.
+
+## Install
+
+Run `install.sh` from the primary checkout. It symlinks `~/.claude` into the
+working tree, so a branch checkout swaps live code under every session on the
+machine.
+
+## Layout
+
+- `lib/verify-handoff.sh:1` -- the format gate
+- `hooks/handoff-inject.sh` -- the SessionStart briefing
+
+```sh
+bash lib/verify-handoff.test.sh
+```
+PROSEEOF
 # Act & Assert
 assert_exit 2 'an arbitrary document is refused as malformed, not reported as rot' "$prose"
 
