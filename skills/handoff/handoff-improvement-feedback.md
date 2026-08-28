@@ -45,7 +45,7 @@ Noted while merging. `f015abd` ("Handoffs: key by the target tree, declare the c
 document out of every checkout entirely — `~/.claude/context-economy/handoffs/<repo>-<branch>-<hash8>.md`,
 computed by `handoff_store_path` (`lib/handoff-store.sh`), never hand-built — and `SKILL.md` no longer
 cites `D`-labels at all. So "`D15`'s branch slug stands as written" now points at a decision whose
-**location half has been superseded**: `docs/design/2026-08-21-context-economy-skills.md:486` still reads
+**location half has been superseded**: `docs/design.md:486` still reads
 "the **main** working tree" and still rejects putting the file outside the repo, which is what the new
 store does. The **slug** half did survive — `skills/handoff/SKILL.md:93` still slugs `/` out of branch
 names.

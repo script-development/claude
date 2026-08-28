@@ -33,7 +33,7 @@
 # citation pointing past the end of a file that has since shrunk.
 #
 # Ported from <kendo>/.claude/skills/plan-feature/scripts/verify-citations.sh.
-# Per D3 in docs/design/2026-08-21-context-economy-skills.md: mechanism verbatim,
+# Per D3 in docs/design.md: mechanism verbatim,
 # layout derived (D9), process not ported, three outcomes added (D5).
 #
 # The long comments that remain are Kendo's, and they stay. Each records a bug

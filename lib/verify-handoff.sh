@@ -46,7 +46,7 @@
 # checks whether a citation is true, this one checks whether the document put its
 # citations somewhere the first script will actually see. Merging them would give
 # the citation resolver a second job and a markdown parser, and O8 in
-# docs/design/2026-08-21-context-economy-skills.md is the record of what happens
+# docs/design.md is the record of what happens
 # when a resolver is fed a document.
 
 set -uo pipefail

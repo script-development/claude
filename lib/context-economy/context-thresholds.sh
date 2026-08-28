@@ -27,7 +27,7 @@
 # taking our threshold with it. Never consume it, not even as a cross-check: a cross-check
 # against a field we do not control is still a dependency on it.
 #
-# WHERE THE NUMBERS COME FROM: reports/2026-08-21-context-economy-measured.md finding #7 —
+# WHERE THE NUMBERS COME FROM: docs/measured.md finding #7 —
 # simulated against each context's own measured growth rate, resetting at 120k would have
 # saved 77% and at 200k 66%. Two stages because the evidence supports two: 120k is where the
 # saving becomes large, 200k is where it is still large and the session is unambiguously deep.
@@ -189,7 +189,7 @@ CTX_COMPACT_THRESHOLD_TOKENS=
 # are labelled as such -- the safe direction for a term inside a fail-CLOSED check is too
 # LARGE, which is the opposite of the safe direction for a displayed figure.
 #
-# FAT TURN: reports/2026-08-24-harness-automation-surface.md F4b(1) -- Stop fires once per TURN,
+# FAT TURN: mission_control's reports/2026-08-24-harness-automation-surface.md F4b(1) -- external to this bundle -- Stop fires once per TURN,
 # never at the intermediate requests where context actually grows, so the check's resolution is
 # one whole turn, and one turn containing an unscoped Read or a wide grep "can add 50k+". Taken
 # at that stated 50k rather than the 2.07k mean, because a mean is precisely the wrong statistic

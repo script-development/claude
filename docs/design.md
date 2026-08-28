@@ -1,0 +1,916 @@
+# Context economy — skills design
+
+**Date:** 2026-08-21
+**Status:** Principles settled. Format open — see [Open questions](#open-questions).
+**Evidence:** `docs/measured.md`. Every quantitative claim here comes
+from that report; nothing below re-derives it.
+**Amended 2026-08-24** against `reports/2026-08-24-harness-automation-surface.md` (in mission_control, not carried here), which inventories
+the harness's hook, flag and control-protocol surface — the thing this document assumed rather than
+enumerated. Claims it refutes are struck or narrowed **in place**, each citing the finding (F1–F8)
+that did it, on the same reasoning as O1 and O3 below: _why_ a claim was wrong is the reusable part.
+Nothing the first report measured changed.
+
+This document exists because the reasoning that produced it is the part that cannot be recovered.
+The measurement is reproducible (`node tools/context-audit.js`) and the tooling is on disk; the
+decisions, and the alternatives they beat, existed only in one session's context. That asymmetry is
+itself the subject of the design — see [D6](#d6).
+
+---
+
+## The problem in one paragraph
+
+Cost per turn _is_ the resident context size, so total cost is quadratic in session length. Measured
+across 8,888 API requests of real prior work: 98.1% of all tokens are cache reads, corpus
+amplification is 51.6× (worst context 111×), and 90% of spend occurs at context depths above 100k.
+A session does not end when the terminal closes — resuming appends to the same context, and the
+largest session here spans four calendar days. Simulated against each context's own measured growth
+rate, resetting at 200k instead of the 1M ceiling would have saved 66%.
+
+---
+
+## What already exists
+
+Establishing this first, because the most expensive mistake available here is rebuilding it.
+
+| piece                      | status                                                                                                                                                                                                                                                                                                                                                                                      |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Reset mechanism**        | **Exists.** Auto-compaction, `trigger:"auto"`, compresses ~1.0M to ~20k — a 98% reduction, _smaller_ than the 25k handoff assumed by the simulation. **~1.0M is the default window, not the mechanism's** — it is settable to any value in 100k–1M (F1).                                                                                                                                    |
+| **Threshold trigger**      | ~~Missing, but nearly free~~ — **refuted by F1.** `autoCompactThreshold` / `--autocompact` has always let the existing machinery fire at 200k, which is the whole 66%. What was genuinely missing is a threshold **whose response we control** — compaction's only response is compaction. The statusline half stands: it already receives `context_window` and used it only to draw a bar. |
+| **Citation checking**      | **Exists** — `<kendo>/.claude/skills/plan-feature/scripts/verify-citations.sh`, 137 lines, with `verify-citations.test.sh`. Resolves paths and symbols; discards line references. **Now ported** to `tools/verify-citations.sh` + `tools/verify-citations.test.sh` (50 assertions) — see [D4](#d4), [D9](#d9).                                                                              |
+| **Externalisation habit**  | **Exists, hand-rolled** — Kendo's `docs/plans/KD-XXXX/PLAN.md` + `DECISIONS.md`. The most re-read files in the entire corpus (one at 40× within a single session tree).                                                                                                                                                                                                                     |
+| **Handoff skill + format** | New.                                                                                                                                                                                                                                                                                                                                                                                        |
+| **Hygiene hook**           | New, small, optional.                                                                                                                                                                                                                                                                                                                                                                       |
+
+The mechanism is not the problem. **The trigger is.** By 1M the quadratic bill is already paid;
+firing the same machinery at 200k is the 66%.
+
+---
+
+## Decisions
+
+Each records the alternative it beat, because that is the part no citation can recover.
+
+### D1 — Attack the threshold, not the mechanism
+
+Auto-compaction already compresses well. A `/handoff` skill that tries to _replace_ it is solving a
+solved problem.
+
+_Rejected:_ building a better summariser. Measured post-compaction size is ~20k from ~1M; there is
+no headroom worth chasing there, and a hand-written summariser would be worse.
+
+### D2 — A written artifact, in addition to compaction, not instead of it
+
+Compaction produces an in-context summary, selected by a process we cannot audit, ~~that dies with the
+session~~. A file survives, is inspectable, is mechanically verifiable, and can be corrected when
+wrong.
+
+_Amended 2026-08-24 (F3):_ the summary need **not** die with the session — `PostCompact` hands it over
+as `compact_summary`, so it can be persisted for nothing. The rest of D2 stands unchanged, and it is
+the load-bearing rest: unauditable selection, not impermanence, is why a written artifact wins. The
+correction pays off elsewhere — it makes this document's own falsification test cheap; see
+[What would falsify this design](#what-would-falsify-this-design).
+
+_Rejected:_ relying on compaction alone, triggered earlier. Cheaper, and would capture most of the
+66% — but it forfeits verifiability, and [D6](#d6) argues the selection process is exactly what we
+should not trust.
+
+### D3 — The three-way port test
+
+The README names one axis (codebase specifics → inject via `context/{project}/`). `CLAUDE.md` names
+a second (human process artifacts → detect at runtime). Generalising an existing project-specific
+script needs a third distinction neither covers:
+
+| kind                                           | treatment                                             |
+| ---------------------------------------------- | ----------------------------------------------------- |
+| **mechanism** — a bug someone already paid for | port verbatim, comments included                      |
+| **layout** — where files happen to live        | detect first; inject only as override                 |
+| **process** — how _that team_ works            | do not port; borrow the shape, re-derive the artifact |
+
+_Why it matters:_ `baseline-fix` emitted ticket drafts because it was extracted from a context where
+the user was the planner — a _process_ assumption ported as if it were mechanism. This test names
+the category that failure falls into.
+
+### D4 — `verify-citations` generalisation stops at three things
+
+**In scope:** (1) port the mechanism verbatim, comments and `verify-citations.test.sh` included;
+(2) derive `prefixes` and `search_roots` rather than hardcoding Kendo's layout; (3) keep the line
+reference instead of stripping it, and check the cited line's content.
+
+**Out of scope, each for a stated reason:**
+
+- **No rewrite in Node.** The bash is tested, and its comments encode real bugs already paid for —
+  the punctuation-before-line-reference ordering, the `sed -E` portability trap, the
+  `is_path_shaped` guard. A rewrite discards the test suite and re-earns the bugs.
+- **No semantic verification.** "Does line 756 _support_ the claim" needs a model, which forfeits
+  deterministic and zero-token — the entire reason it beats a reviewer.
+- **No additional citation types** (URLs, commands, test names). Each one that cannot fail
+  deterministically dilutes the guarantee. A gate is worth exactly as much as its weakest check.
+
+_Rejected:_ a general-purpose claim verifier. Strictly more capable and strictly less trustworthy.
+
+**Built**, 2026-08-21: `tools/verify-citations.sh`, `tools/verify-citations.test.sh`. All three
+in-scope items landed; every out-of-scope item stayed out. Two things the port turned up that this
+decision had not anticipated are recorded as O6 and O7 rather than absorbed into the scope.
+
+### D5 — The gate reports MISSING; the agent re-locates
+
+The script's answer is binary. The moment it says _"probably moved to X"_ it has made a claim that
+can itself be wrong, and the gate needs a gate.
+
+Keeping the line reference yields three outcomes rather than two:
+
+| result                         | meaning                    | cost to resolve    |
+| ------------------------------ | -------------------------- | ------------------ |
+| path resolves, content matches | claim intact               | free               |
+| path missing                   | **moved** — re-locate      | one grep           |
+| path resolves, content differs | **claim may now be false** | re-derive properly |
+
+Path-only checking collapses rows 2 and 3 into "fine", and row 3 is the dangerous one: the file is
+still there, so it reads as verified while the thing it was cited for has changed underneath.
+
+This is also `CLAUDE.md`'s _degrade capability, never execution_ — a stale citation narrows what the
+run can trust; it does not halt it.
+
+### D6 — Two classes of handoff content; protect the non-citable one by construction
+
+- **Citable** — facts about the code. High volume, low value each, cheap to re-derive even when the
+  pointer rots. Citations make this half safe to carry across a reset without keeping the material:
+  `AuditTest.php:756 opens with app_path('Audit'), so it cannot see an Action` is ~20 tokens and
+  re-checkable in one call; the file is 5k.
+- **Non-citable** — the decision and the alternative it beat; the approach already tried that does
+  not work; why the obvious thing is wrong here. Nothing to point at, and no way to recover it
+  except redoing the work.
+
+**The failure mode this guards against:** summarisation preserves what reads like fact and drops
+what reads like conversation — precisely backwards. Both directions are attested in the initiating
+session (`reports/sources/2026-08-21-reviewer-token-economy.md`): a confidently wrong `:756` claim
+survived, while the four times the trial runs corrected the shared brief were preserved only because
+those runs _invented_ a findings section the skill never asked for.
+
+Citations are therefore **not** the valuable payload. They are what makes the cheap half safe. The
+format must protect the expensive half deliberately rather than trust a summariser to notice.
+
+### D7 — The handoff lives in the target repo
+
+`<project>/.claude/handoff/<branch>.md`. In the target repo because citations resolve against _that_
+git root — the same anchoring `verify-citations.sh` already uses. Disposable, one per task.
+
+_Rejected:_ writing it into mission_control. Would break relative citation resolution and couple a
+project's working state to this repo.
+
+### D8 — Borrow one shape from `PLAN.md`/`DECISIONS.md`, port nothing else
+
+Take **a decision recorded with the alternative it beat** — the thing that makes a decision
+non-re-derivable and therefore worth its tokens. Not the filenames, not `docs/plans/`, not the
+lifecycle, not the assumption that a plan exists or that the user is the planner.
+
+Those files are a _pre-work planning_ convention tied to a directory layout, a ticket key, and a
+role split. A handoff is mid-work, machine-authored, disposable. Per [D3](#d3): process, not
+mechanism.
+
+### D9 — Derive the layout by exclusion, not by selection
+
+_Resolves O1, which this document called its least-confident decision._
+
+Derive, not configure — but the reason O1 was close is that it weighed the wrong pair. The hazard
+O1 named ("a missed source root turns a real symbol into MISSING") is not a property of _deriving_.
+It is a property of deriving a **whitelist**. Kendo selected eight known roots by name; anything
+outside them was invisible, so a project growing a ninth broke the gate silently.
+
+Deriving by **exclusion** removes the failure rather than trading against it. The default is
+everything `git ls-files` reports, minus dependency and prose trees. There is no root left to miss,
+and adding a language, service or package to a project cannot silently narrow the search.
+
+That inverts which error survives, which is the whole point:
+
+| derivation           | error left over                                                   | cost                                                        |
+| -------------------- | ----------------------------------------------------------------- | ----------------------------------------------------------- |
+| whitelist (Kendo)    | a real symbol in an unlisted tree → **MISSING**                   | false positive in a fail-closed gate — the expensive one    |
+| denylist (this port) | a phantom symbol vouched for by an unexcluded prose tree → **OK** | missed phantom — the cheap one, by the script's own comment |
+
+So both knobs — search roots and path prefixes — err toward the **larger** set, deliberately and
+for that one reason. `--exclude='*.md'` remains the generic prose guard, since markdown is where
+prose lives whatever the directory is called; the directory denylist catches the rest.
+
+Two consequences, both handled by _reporting_ rather than by narrowing:
+
+- A larger prefix list can resolve one citation in two places. Kendo's `src/shared/` means
+  `frontend/` under its two hardcoded prefixes and matches `extension/` as well under derivation.
+  The verdict stays OK — the citation is real — but every alternative is printed, so nobody
+  discovers later that a citation resolved through a tree they did not mean.
+- A missing _symbol_ is the only verdict the derivation can be wrong about, so it is the only one
+  that prints the roots it searched. O1's objection was that deriving fails silently; that line is
+  what stops it, and it costs nothing on the runs where it does not matter.
+
+_Rejected:_ a `context/{project}/` entry as the primary mechanism. It puts a config file between a
+new project and a working gate, and a stale entry fails in the expensive direction — the same
+staleness argument `CLAUDE.md` already makes about planning from a committed artifact. Kept as an
+**override** (`VERIFY_CITATIONS_PREFIXES`, `VERIFY_CITATIONS_SEARCH_ROOTS`) for a layout the
+derivation gets wrong, which is what [D3](#d3) means by "detect first; inject only as override".
+
+_Evidence:_ run against Kendo's own tree, the derivation reproduces every verdict its hardcoded
+list produces for its own test citations, with no configuration.
+
+### D10 — The threshold advisory is passive, two-stage, and costs zero tokens
+
+Built, 2026-08-21. `statusline.sh` compares resident context against 120k / 200k and renders
+yellow / bold-red `handoff?` (`reset?` until item 3 landed the skill that word names, 2026-08-24 —
+see [D11](#d11)). Below 120k it shows the bare token count with no colour and no
+threshold named — the threshold is only worth printing once it is close enough to act on, and
+this statusline re-renders ~4× per tool call, so a permanent marker goes blind.
+
+Zero tokens is the load-bearing property, not a nicety. Measured against the alternative: an
+advisory injected into context on every prompt is replayed by every subsequent turn, so at the
+report's own measured growth rate (2.07k/turn, 200k → 1M ≈ 386 turns) a ~120-token nudge costs
+≈ A·N²/2 ≈ **8.9M tokens against a ~232M baseline — ~4%**. A mechanism whose purpose is to shrink
+context would spend 4% of the session enlarging it. Latched to fire once, the same nudge costs
+≈ A·N ≈ 46k, or 0.02% — a 386× difference. **If an advisory ever reaches the model, it must latch.**
+The statusline sidesteps the question entirely by never entering context.
+
+Three findings from probing the live statusline payload rather than assuming its shape, each of
+which changed the implementation:
+
+- **`context_window.total_input_tokens` is the resident context size** (it equals the sum of
+  `current_usage`'s input components). Both the threshold and the display use it; `used_percentage`
+  is not used at all, for the reasons in [D12](#d12).
+- **The payload ships `exceeds_200k_tokens`** — a native boolean at exactly this design's chosen
+  number. **Deliberately not consumed, not even as a cross-check.** It is a pricing-tier flag owned
+  by Claude Code; it can be removed or redefined without notice, taking our threshold with it. A
+  cross-check against a field we do not control is still a dependency on it. The coincidence of
+  values is a coincidence, not a definition.
+- **The statusline is a hot path** — measured at ~4 invocations per tool call, including mid-turn.
+  It must stay pure: no logging, no notifications, no state writes. This is why the notification and
+  log-only options for O3 are hook work, not statusline work, and it is also why the advisory renders
+  nothing below 120k — a marker that is always on goes blind.
+
+_Rejected:_ blocking (`PreToolUse` deny / `Stop` hook). Not for being too aggressive — the objection
+is ordering. O2 is unresolved, so blocking would force resets with nothing to hand off to, which is
+strictly worse than not resetting. And a block landing inside `baseline-fix` between "PR pushed" and
+Phase Omega leaves the worktree undeleted — the exact state that phase exists to prevent. Back on the
+table after item 3, when its objection dissolves.
+
+**Now on the table — and the pairing was the error (F4).** Item 3 landed, so the ordering objection is
+spent; what is worth recording is that lumping `Stop` in with a `PreToolUse` deny mis-read what `Stop`
+is. It is not only a veto: `decision: "block"` returns control to the model with `reason` as its
+instruction, which makes it the **write trigger**, not a way to stop work. Three of this paragraph's
+own worries are then answered by the event's own timing rather than by design — `stop_hook_active` is
+a platform-provided re-entry latch, so the latch [D11](#d11) demands comes free; and `Stop` fires
+after the model has finished its turn, so there is no mid-phase landing to prevent. The
+undeleted-worktree case is not a counter-example but the clearest illustration: a `PreToolUse` deny
+could land between "PR pushed" and Phase Omega, and `Stop` cannot, because by then the model has
+stopped. What does _not_ come free: no hook payload carries a token count (F5), so the comparison
+reads the last usage record out of `transcript_path` itself. The statusline stays pure.
+
+_Corrected 2026-08-24, same day:_ an earlier version of this paragraph claimed `background_tasks` is
+what covers the undeleted-worktree case. It is not, and the mistake is worth keeping because it is
+easy to repeat. That field's own description says it distinguishes _"session is done"_ from _"session
+is paused waiting for background work to wake it"_ — it answers **will something wake this session on
+its own**, not **has the model finished its work**. The latter is invisible in every payload by
+construction: the model stopping _is_ its claim to be finished. So `background_tasks` (and
+`session_crons`, which carries the same meaning for `ScheduleWakeup` / `/loop` / cron) is not a
+mid-task guard; it tells the hook when a block would be pointless because a wake is already coming,
+and each wake ends in another `Stop`.
+
+**Measured 2026-08-26, and it closes build item 4's headroom question.** The ceiling this trigger has
+to sit below was treated as harness-internal and untraced. It is neither. Traced in `claude.exe`
+2.1.246 (`vHe`, `iL`, `cCt`, `uCt`, constants `MYn=13000`, `OYn=3000`, `kHe=0.2`), auto-compaction
+fires at a **fixed offset below the window, not a percentage of it**:
+
+```
+resolved_window   = min(window_source, model_max_context_window)   # the harness states this itself
+effective_window  = resolved_window - reserved_output_tokens       # iL
+compact_threshold = effective_window - 13_000                      # vHe, default path
+blocked           = effective_window -  3_000                      # uCt
+warn              = compact_threshold - 20_000                     # uCt
+```
+
+`window_source` resolves `CLAUDE_CODE_AUTO_COMPACT_WINDOW` → the `autoCompactWindow` setting
+(`.int().min(1e5).max(1e6)`) → `auto`'s per-model table. The `min` against the model window is not
+inferred: `/config`'s own string says _"The actual threshold is the minimum of this setting and your
+model's maximum context window."_
+
+**Neither operand of that `min` is a constant, and one is account-scoped** — so the guard reads the
+ceiling at runtime, it does not carry a table. `model_max_context_window` is static per binary (a
+compiled-in model table: `context:{window:200000,supports_1m_beta:!0,...}`,
+`max_output_tokens:{default:32000,...}` — the latter being what `iL` reserves) *except* for the 1M
+beta, which `Pp` gates on the beta header plus `context.supports_1m_beta`; that is what the `[1m]`
+suffix requests. And the `auto` window is delivered by the server per organisation —
+`autoCompactWindowsCache` from the bootstrap response's `auto_compact_windows`, keyed by organization
+UUID and populated only when `apiProvider === "firstParty"`. So the effective ceiling can differ
+between two accounts on the same binary, and change between two sessions of one account with no
+version bump. On subscription tier specifically: the client knows it (`CLAUDE_CODE_SUBSCRIPTION_TYPE`,
+`CLAUDE_CODE_RATE_LIMIT_TIER`) but no path was found reading it to compute a window — the dependence is
+indirect, via per-org config and beta entitlement, and any plan-to-window mapping is unestablished.
+
+**Probed 2026-08-26 — the window is the one value a hook cannot read, so "read it at runtime" is not
+the instruction.** The model-to-window map is compiled into the binary with no CLI to query it, and
+`context_window_size` is absent from the transcript. What *is* reachable, verified against a live
+transcript and `~/.claude.json`:
+
+| value | source | verified |
+| --- | --- | --- |
+| resident size | last `usage` in `transcript_path` (`input` + `cache_creation` + `cache_read`) | 229,678 |
+| **suffixed** model id | `modelUsage` keys | `claude-opus-5[1m]` |
+| explicit window | env — hooks inherit the parent env (spawn is `{...parentEnv}` less a targeted `omit` list, plus `CLAUDE_PROJECT_DIR`) | unset |
+| compaction on/off | `autoCompactEnabled`, `DISABLE_AUTO_COMPACT` | on |
+
+So the rule is narrower than "read the ceiling": **detect the `[1m]` suffix in `modelUsage`** — not
+`message.model`, which drops it (the same session shows `"model":"claude-opus-5"` on assistant lines
+and `claude-opus-5[1m]` in `modelUsage`) — **accept an explicitly declared ceiling** over any
+detection, and **decline otherwise, naming the missing signal**. The suffix is what requests the beta,
+so its presence is evidence the beta was *granted*: an observation, not a table that goes stale.
+Defaulting to 1M stays the unsafe direction — it is exactly what manufactures the negative-slack case
+above.
+
+_Not to build on:_ `~/.claude.json`'s `autoCompactWindowsCache`. Readable, but the bootstrap schema
+types it `record(string, unknown)` — values unvalidated by the client's own parser — and it is `null`
+on a first-party account with no org override, so an implementation tested only locally would never
+exercise the populated path.
+
+_A trap for any transcript parser,_ worth recording because it cost a wrong conclusion here: grepping
+a transcript for a field name also matches the session **talking about** that field. 22 hits for
+`context_window` turned out to be this repo's own `statusline.sh` being read into context. Match on
+parsed JSON structure, never on a substring of the raw line.
+
+So the headroom available to `T` is arithmetic, and it is **window-dependent in a way `T` is not**:
+
+| window | compact fires | slack at `T` = 200k           |
+| ------ | ------------- | ----------------------------- |
+| 1M     | ~987k         | ~787k — one fat turn is noise |
+| 200k   | ~187k         | **−13k**                      |
+
+At 200k the harness's threshold sits _below_ `T`. That is not a race and not thin headroom — the
+`Stop` hook can never fire, so item 4 becomes dead code and no handoff is ever written. **A trigger
+denominated in absolute tokens is only safe on the window it was chosen for**, which is the one cost
+[D12](#d12) did not price when it judged loss of auto-compaction visibility "near-zero" — the figure
+is dispensable, the _distance_ is not. The constraint now lives beside the number it constrains, in
+`tools/context-economy/context-thresholds.sh`.
+
+_Consequence for the build:_ the guard belongs in the hook, which is the only place the real window
+is known, and it must **refuse to arm and say so** rather than warn — an armed hook with negative
+slack manufactures `compacted: yes` handoffs, which is worse than the status quo. Install-time and
+statusline are both wrong homes: the former cannot know the runtime window, the latter is a hot path
+that must stay pure.
+
+_Rejected:_ log-only-then-decide. It would re-measure what finding #2 already measured — 90% of spend
+above 100k _is_ the crossing data, retrospectively.
+
+### D11 — The two signals are complementary; the shared constant is the coupling
+
+`statusline.sh` (level, continuous, for a human) and the future injected advisory (instruction,
+one-shot, for the model) are **not successive versions of the same thing**. B does not supersede A;
+they address different recipients and both survive. That matters now rather than later: the
+statusline was built to last, not built cheap-and-disposable.
+
+They do share one thing — the decision "are we past the threshold" — and that is the drift hazard
+`CLAUDE.md` already names, self-inflicted. So the numbers live in exactly one file,
+`tools/context-economy/context-thresholds.sh`, in this repo rather than in claude-dotfiles, because a
+number separated from the report that derives it is how a stale threshold survives. Consumers source
+it and **never restate the numbers, not even as a fallback default** — a local default is the second
+copy. A missing file means _no advisory_, not _guess_: [D5](#d5)'s degrade-capability-never-execution
+applied to a threshold instead of a citation.
+
+Two ordering consequences:
+
+- The injected advisory is **blocked on O2, not undecided.** Its payload is an instruction, and an
+  instruction needs a referent — "externalise and reset" means nothing until `/handoff` exists. The
+  statusline had no such dependency because it emits a number.
+- ~~The statusline says `reset?`, not `handoff?`. Naming a command that does not exist yet is the
+  cheapest possible way to teach a reader that the advisory is wrong. Item 3 changes the word.~~
+  **Done in item 3, 2026-08-24** — the word is now `handoff?`. Left standing above rather than
+  deleted, because the constraint is not spent: it still binds, it has just been satisfied. What made
+  the word honest is a symlink (`~/.claude/skills/handoff`), not the existence of a file in this repo,
+  so it can become dishonest again without anything here changing. That dependency is recorded as a
+  comment at the change site in `statusline.sh` rather than only here, on the same reasoning as the
+  rest of this section: the reader who needs it is the one editing that line.
+
+### D12 — Show tokens, and drop the percentage entirely
+
+The statusline had shown `ctx:N%` since long before this design. It is now gone, not merely
+demoted, and the reason is that it was **actively contrary to the design** rather than redundant.
+
+`used_percentage` is denominated in `context_window_size`. On a 1M window it therefore measures
+_distance to auto-compaction_ — the ~1M ceiling that [D1](#d1) and the report's finding #6 identify
+as the thing not to rely on, because by then the quadratic bill is already paid. A session sitting
+at the 200k reset threshold renders `20%`, which reads as "loads of room" at precisely the depth
+where 90% of spend begins. The one number on screen was inviting the wrong conclusion at the wrong
+moment, in the same glance the advisory is trying to correct.
+
+Two lesser problems it also had: the field is an integer, so on a 1M window its granularity is 10k
+tokens per point — coarser than the distance between the two thresholds is wide; and the same
+percentage means a different token count per model (200k here, 40k on a 200k-window session) while
+looking like one stable rule.
+
+So: bare `ctx:72k` below NOTICE, and `ctx:152k/200k` once a stage fires, with the denominator
+_printed from_ `CTX_URGE_TOKENS` rather than hardcoded — a coloured `152k/200k` explains itself
+without the reader knowing the rule, and cannot drift from the comparison beside it. A test asserts
+`%` never reappears in the segment, so reintroducing it as a harmless extra fails a test instead of
+quietly re-teaching the wrong intuition. Removing it also drops one `jq` spawn from a path that runs
+~4× per tool call.
+
+_What this gives up:_ visibility of how close a session is to auto-compaction. Judged near-zero —
+compaction remains as a backstop whether or not it is displayed, and anyone who needs the figure can
+divide by a window size they already know. Deliberately not shown alongside, because the whole point
+is that two denominators on one line is how the wrong one gets read.
+
+_Credited:_ raised by the user mid-build, not caught in the D10 design pass. Worth recording as a
+[D6](#d6) instance in miniature — the decision _not_ to show a number is exactly the kind of
+non-citable content that would evaporate from a summary, leaving a later reader to "helpfully" add
+the percentage back.
+
+### D13 — The handoff's price is turns of work, not tokens
+
+_The number that governs [O2](#open-questions), derived rather than chosen._
+
+With the reset threshold `T` fixed and measured growth `g`, a segment starting from a handoff of size
+`H` costs `~(T² − H²)/2g` and buys `(T − H)/g` turns of work. Divide: **mean cost per turn of work is
+`(T + H)/2`.** A handoff therefore does not add a one-off cost — it makes every turn of the session it
+seeds dearer, and it costs `H/g` turns outright.
+
+At `T` = 200k and `g` = 2.07k/turn (finding #6's measured pre-compaction rate):
+
+| handoff                           | turns of work per segment | cost per turn |
+| --------------------------------- | ------------------------- | ------------- |
+| 0                                 | 96.6                      | 100k          |
+| 4k                                | 94.7                      | 102k          |
+| 8k                                | 92.8                      | 104k          |
+| 25k (the simulation's assumption) | 84.5                      | 113k          |
+
+So **every ~2.07k of handoff costs one turn of work**, and the test for a paragraph is _"this, or one
+more turn?"_ — which is why `tools/verify-handoff.sh` prints turns and not only tokens. Target 4k,
+ceiling 8k, both **advisory and unable to fail the gate**: a size gate makes cutting the non-citable
+half the cheapest way to pass, exactly inverting [D6](#d6). When over budget the line to cut is a
+Pointer, because pointers re-derive from the tree and a decision does not re-derive at all.
+
+**The larger cost is not the file.** `/handoff` runs at maximum depth by construction, so each of its
+own tool calls costs ~`T` — about **two turns of work per call** at the numbers above. Ten calls
+gathering citations would spend ~2M tokens, ~21% of the segment just ended. Hence the skill's hard
+rule: **write from what is already in context; never read or grep to author a handoff.** That is not
+only frugality — anything needing a re-read to write down is by definition re-derivable, so it belongs
+in Pointers as a pointer, not in the body as content. The cost argument and [D6](#d6) agree.
+
+_Rejected:_ the simulation's 25k. It was a placeholder, and it is ~12 turns of work per reset.
+
+### D14 — Verified on write **and** on read, and a verdict can only ever demote the cheap half
+
+_Resolves O4._ Both — and "both is safest" was the wrong reason. They catch different failures and are
+not substitutes:
+
+- **On write** catches _fabrication_, which is attested: a confidently wrong `:756` survived
+  summarisation in the initiating session. An unverified citation is worse than none, because it reads
+  as verified.
+- **On read** catches _rot_, the expected case whenever anything happened in between — a rebase, a
+  sibling PR merging, the hours a killed run was absent.
+
+Paying twice costs two zero-token shell calls, so price was never the question.
+
+The consequence worth stating loudly: **a citation verdict can only ever demote the cheap half.** The
+non-citable half has no citations to rot; that is what makes it expensive. A reader seeing `3 of 12
+CHANGED` must not conclude the handoff is untrustworthy — three claims are untrusted and every
+decision still stands.
+
+And on read, **do not re-derive eagerly.** A CHANGED citation whose claim is not needed yet costs
+nothing. Re-deriving at resume puts the material in context for the whole session; re-deriving at the
+point of use puts it in later, and cost is size × remaining lifetime.
+
+_Extended 2026-08-24 (F2):_ the read leg can be automated — a `SessionStart` hook fires on
+`source: "clear"` and may return `additionalContext`, so the handoff can be injected into the fresh
+session with no command typed and no model action. **An automated read must carry the gate with it.**
+Injecting the document alone deletes this decision's read-side half, and that is the half catching
+_rot_ — the expected failure whenever anything happened in between, which is precisely the situation a
+fresh session is in. Worse, injected material reads as more authoritative than a file the model chose
+to open, so an unverified injection is the first bullet's fabrication failure with the volume turned
+up. The hook runs `tools/verify-handoff.sh` — checkout argument included, per [D15](#d15) — and
+injects the verdicts alongside the document, or it injects nothing.
+
+### D15 — The handoff lives in the **main** working tree, not the one the work happened in
+
+_Flags and resolves a collision between two settled decisions._ [D7](#d7) fixes the path
+(`<project>/.claude/handoff/<branch>.md`) and its reason: citations resolve against that git root.
+`CLAUDE.md`'s Phase Omega deletes the throwaway worktree an automated run works in. Taken together and
+left unpinned, the natural reading — the handoff goes where the work is — makes **Phase Omega delete
+the handoff**, and a handoff that dies with its worktree is not a handoff.
+
+So `<project>` is pinned to the **main** working tree (`git worktree list` first entry), which
+[D7](#d7)'s path shape already permits; only the ambiguity is removed. Three consequences:
+
+- Citations still belong to the _branch's_ checkout, so verification takes an explicit checkout
+  argument and always prints which tree it used and that tree's HEAD. Resolving against the wrong tree
+  yields MISSING and CHANGED verdicts indistinguishable from rot.
+- `.claude/` is **tracked** in kendo, emmie and codebook, so an untracked `handoff/` shows up in
+  `git status` and can be swept into someone else's commit. It goes in `.git/info/exclude` — local,
+  shared across every worktree through the common git dir, and never an edit to the project's committed
+  `.gitignore` for our tooling's benefit.
+- Branch names contain `/` (observed: kendo-4's `fix/stripe-http-timeout-config-type`), so the filename
+  slugs them; detached HEAD falls back to the short SHA.
+
+_Rejected:_ `<common-git-dir>/handoff/`. Never appears in `git status`, needs no exclude entry, survives
+everything — but it silently overrides a settled decision's stated path, and hiding a document written
+for a human inside `.git/` is worse than one exclude line.
+
+**Superseded in part, 2026-08-27 -- the location half no longer holds.** `f015abd` ("Handoffs: key by
+the target tree, declare the checkout") moved the document out of every checkout into a machine-local
+store, `~/.claude/context-economy/handoffs/<repo>-<branch>-<hash8>.md`, computed by `handoff_store_path`
+(`claude-dotfiles/dotfiles/lib/handoff-store.sh`) and never hand-built. What this decision missed:
+pinning `<project>` to the main working tree fixes *which* tree, but a `SessionStart` hook has only
+`cwd`, so it can derive exactly one candidate path and would never find a handoff belonging to a
+**sibling** checkout -- the normal case when a mission_control session drives one with `git -C`, its own
+cwd never moving. Discovery therefore had to become **enumeration** of a central store, not derivation.
+
+The *rejection* above is retracted with it: `.git/` was indeed the wrong destination, but "outside every
+checkout" was right for a reason not considered here -- a handoff's Dead ends and Traps are exactly the
+candid material about a project's tooling that should not enter a client repo's `git log` permanently.
+
+Surviving unchanged: the branch slug (`skills/handoff/SKILL.md:93`), the detached-HEAD SHA fallback, and
+the gate's explicit checkout argument -- which this move promoted from advisable to load-bearing, per
+[D16](#d16)'s `checkout:` amendment.
+
+### D16 — The format is a machine-checked contract, not a template a skill remembers
+
+_Answers O2._ Sections, in file order, which is also **authoring order — by irrecoverability**:
+
+```
+# Handoff — <task>
+branch: / checkout: / compacted: / status:
+                                        <- envelope + one-line orientation
+## Do not re-derive                     <- the reason the file exists
+###  Decisions | Dead ends | Traps      <- exactly D6's three non-citable kinds
+## Next                                 <- 1-5 concrete steps
+## Pointers                             <- fenced; `path:line | fragment`, gate input verbatim
+## Unverifiable                         <- optional; cross-repo, declared unchecked (O6)
+```
+
+Four things make this a contract rather than a suggestion, all enforced by `tools/verify-handoff.sh`
+(58 assertions) so that no skill has to be trusted to remember them:
+
+- **The three subsections are required and required to be non-empty.** `None.` is a legitimate answer
+  and passes; silence does not — per `CLAUDE.md`, an absent section cannot be distinguished from a run
+  that never looked. This is [D6](#d6)'s "protect the non-citable half by construction" made
+  structural: the only content the format _compels_ is the half a summariser drops.
+- **Coverage, in two tiers.** A citation in the prose but absent from Pointers is never seen by the gate,
+  and reads as verified because the rest of the document was — [D5](#d5)'s dangerous row 3, one level up.
+  But _cited_ is not one thing. **Evidence** carries a numeric line reference — that is what someone
+  writes when pointing at a specific fact, and it is the shape [D6](#d6)'s model is about
+  (`AuditTest.php:756`); it **fails**. A **mention** is merely path-shaped; it **warns**. `## Next` and
+  `## Unverifiable` are excluded from both, because neither makes a claim about the tree as it stands.
+
+  The first version had one tier and called any backticked token containing `/` a citation. The first
+  real handoff produced **eight failures, every one wrong**: `/clear`, `/compact`, `/handoff`,
+  `~/.claude/lib/`, `(T + H)/2`, `/` alone, and two paths the plan was proposing to _create_. That is
+  [D9](#d9)'s expensive error, self-inflicted — and it is the calibration O2 said a real handoff was
+  needed for, arriving on the very first one.
+
+- **Three exit codes, mirroring the resolver.** 0 / 1 gate failure / 2 contract violation — and a
+  contract violation **suppresses the resolver entirely**, because running it on a document already
+  known to be malformed reproduces O8 exactly.
+- **Advisory checks can never change the exit code** — size, a mention, an unbackticked citation, a
+  Pointer nothing refers to. Which side of that line each check sits on is the only real design question
+  in the script. A corollary learned the hard way one fix later: _a wrong warning is worse than a missing
+  one_, because it is the whole reason anyone stops reading warnings. "Should this demand a Pointers
+  entry" and "does anything refer to this" are opposite questions and need opposite zones — sharing one
+  zone warned that a Pointer was unreferenced while `## Next` referred to it twice. Refined once more
+  by a third warning that was perfectly _accurate_ and still worthless — `$HOME/.claude/lib/x.sh` is
+  indeed unchecked, and cannot be anything else, because a shell expression has no literal path to
+  resolve. **The cost of a warning is not whether it is true but whether it is actionable**, which is
+  the sharper form of the same rule and the one to apply to the next advisory check.
+
+_Rejected:_ footnote keys (`[C3]`) joining a claim to its citation. The `path:line` string is already a
+unique join key, so the keys bought nothing — but the join does have to be mechanical, because
+otherwise a CHANGED verdict names a line and no reader can tell which conclusion just became suspect.
+
+_Rejected:_ a summary or narrative section. That is what compaction is good at and [D1](#d1) says not to
+rebuild it. The handoff carries what compaction loses; duplicating its strong half is pure cost.
+
+_Extends [D6](#d6):_ the two classes are about _knowledge_, and a handoff also needs an **envelope**
+(which branch, which checkout, was this written first-hand) and an **instruction** (`## Next`). Neither
+is a third class of knowledge; both are required anyway, and `compacted:` is gated precisely because
+ungated it would simply be omitted — the one answer that tells a reader nothing.
+
+**Amended 2026-08-27 -- `checkout:` joined the gated envelope, and it is load-bearing.** Added by
+`f015abd` alongside [D15](#d15)'s relocation and gated at `tools/verify-handoff.sh:240`. The block and
+the assertion count above are corrected in place rather than appended to, because both merely restate a
+machine-checked contract; this note records the decision.
+
+The field exists *because* of the relocation. Once the document lives outside every checkout its own path
+no longer implies which tree it describes, and the filename cannot carry an absolute path -- the `hash8`
+is a hash *of* the path, not the path itself. The envelope is therefore the only authority, and two
+consumers depend on it: the resolver reads `HANDOFF_CHECKOUT` out of the picked candidate's header rather
+than trusting its name (`handoff-store.sh:149`), and the read leg falls back to the session's own cwd
+without it (`handoff-inject.sh:133`) -- which, for a session driving a sibling checkout, aims the gate at
+the wrong repository and returns a page of MISSING indistinguishable from real rot. That is [D15](#d15)'s
+third consequence one level up: it is no longer enough for verification to *accept* a checkout argument,
+the document has to *declare* one. Hence `_Extends [D6](#d6):_` below, which named "which checkout" as
+part of the envelope from the start, is now literally true rather than aspirational.
+
+
+---
+
+## Open questions
+
+Genuinely unresolved. Recorded so that "was more design interrogation worthwhile" is answered by
+this list rather than by recollection.
+
+- **O1 — Derive `search_roots`, or configure it?** ~~Deriving (git-tracked directories minus
+  vendor/prose trees) drops the config surface to near zero and keeps the script project-agnostic
+  without requiring a `context/{project}/` entry. But it is more code than a config file and it can
+  be wrong _silently_ — a missed source root turns a real symbol into MISSING, and per the script's
+  own comment, _"a false positive in a fail-closed gate is worse than a missed one: it teaches the
+  planner the script is wrong and can be ignored."_ Least-confident decision in this document.~~
+  **Resolved by [D9](#d9)** — derive by exclusion. Left standing above rather than deleted, because
+  _why_ it was close is the reusable part: the hazard belonged to whitelisting, not to deriving, and
+  the question as posed could not see that.
+- **O2 — The handoff template.** ~~[D6](#d6) fixes the two classes; the actual sections, ordering and
+  length budget are unwritten. Needs at least one real handoff to calibrate against.~~
+  **Resolved by [D16](#d16)** (sections, ordering, and the four rules that make it a contract) and
+  **[D13](#d13)** (the budget). Left standing because the _needs a real handoff to calibrate against_
+  clause was wrong in an instructive way: the length budget did not need calibrating, it needed
+  deriving. `(T + H)/2` falls straight out of figures the report already had, and it gives a sharper
+  answer than any single example would — a _unit_ (one turn of work per ~2.07k) rather than a number
+  someone would later have to defend. What a real handoff is still needed for is whether the three
+  required subsections are the right three; that is a claim [D6](#d6) makes and this format only
+  enforces.
+- **O3 — What the threshold _does_ when it fires.** ~~Passive advisory in the statusline, a prompt,
+  or something that blocks? A nag that is ignored is worse than nothing, because it converts a real
+  signal into noise.~~ **Answered for attended sessions by [D10](#d10)** — passive advisory, built.
+  **Still open for unattended ones:** a `claude --bg` run, or anything `monitor-agent-runs` is
+  watching, has no one at the statusline, and that is exactly where a session runs to 1M
+  unchallenged. The remaining half is the one-shot injected advisory ([D11](#d11)), which is blocked
+  on [O2](#o2) rather than undecided. O3 should not be closed until that lands.
+
+  **Amended by build-order item 3, and the amendment changes what the advisory can say.** A model
+  cannot reset its own context — there is no tool for it, `/clear` and `/compact` are user commands,
+  and finding #6's own evidence agrees from the other direction: all three compactions in the corpus
+  carry `trigger:"auto"` and _not one was invoked manually_, by a human either. So half of
+  [D11](#d11)'s stated payload — _"externalise and reset"_ — is unactionable by its own recipient.
+  The instruction an unattended run can actually obey is **"write a handoff now"**; the reset needs an
+  actor that can perform one, which is a human or `monitor-agent-runs` killing and relaunching the run
+  against the handoff it just wrote. Worth noting that this makes the handoff valuable with **no reset
+  at all** — a file on disk survives the summariser, so it is also insurance against compaction
+  dropping the non-citable half, which strengthens [D2](#d2) independently of the threshold.
+
+  **Amended again 2026-08-24, and this closes O3 for the attended case.** The amendment above is
+  right that a model cannot reset its own context, and then generalises too far — it concludes the
+  automation is blocked on an actor, having never asked which of the three legs (write / reset / read)
+  need one. Two of them do not. The **write** leg is a `Stop` hook returning `decision: "block"` with
+  the instruction as `reason` (F4, and see [D10](#d10)); the **read** leg is a `SessionStart` hook
+  firing on `source: "clear"` and returning `additionalContext` (F2, and see [D14](#d14) for the
+  condition that injection must carry the gate). Only the reset itself needs an actor, so the human
+  gesture shrinks to the single word `/clear` — and under a driver it disappears, because there the
+  reset is a process boundary (F8: the control protocol exposes `get_context_usage` but no
+  clear/compact command, so a long-lived headless session cannot be told to clear itself, and does not
+  need to be — one segment is one process).
+
+  Two things not to conclude from that. Injected context does **not** start a turn (F6), so the
+  attended case cannot reach zero keystrokes by this route however much is automated. And the harness
+  already ships the full write → clear → read cycle behind one keystroke for _plans_ —
+  `ExitPlanMode`'s "clear conversation and start with only the plan" (F7) — which is a precedent worth
+  copying the shape of, and the wrong artifact to reuse: a plan carries `## Next` well and Decisions /
+  Dead ends / Traps not at all, i.e. exactly the half [D6](#d6) exists to protect.
+
+- **O4 — When is a handoff verified?** ~~On write (the producing session proves its own citations), on
+  read (the consuming session checks before trusting), or both. Both is safest and pays twice.~~
+  **Resolved by [D14](#d14)** — both, because they catch different failures (fabrication vs. rot) and
+  are not substitutes; "pays twice" priced two zero-token shell calls, so cost was never the real
+  question. The load-bearing part is not the answer but its corollary: a citation verdict can only
+  ever demote the _cheap_ half, and a reader must not read `3 of 12 CHANGED` as "this handoff is
+  unreliable".
+- **O5 — Hygiene hook scope.** Measured: 68.2% of Reads are unscoped, 55.8% of large shell calls
+  uncapped, 16.1% of Reads are repeats. A `PreToolUse` hook is the right _form_ — it must fire on
+  every call, not be remembered by a skill — but warn-only versus block is unresolved, and the same
+  nag-fatigue risk as O3 applies.
+
+- **O6 — A cross-repo citation and a fabricated one are the same verdict.** Found by running the
+  gate on this document. Citations resolve against one git root ([D7](#d7)), so
+  `<kendo>/.claude/skills/plan-feature/scripts/verify-citations.sh` and
+  `claude-dotfiles/dotfiles/statusline/statusline.sh` — both real files in sibling checkouts —
+  report MISSING, indistinguishable from a phantom. The design work this repo does is _inherently_
+  cross-repo, so this is not an edge case here even though it is one in Kendo. Options: resolve a
+  `<name>/` prefix against a sibling-checkout map; accept it and require cross-repo citations be
+  marked so the gate can skip them (honest, and keeps the guarantee undiluted); or leave it. Not
+  decided. Note that a _template_ path (`<project>/.claude/handoff/<branch>.md`, `context/{project}/`)
+  is the same shape but a different problem: those are not citations at all, and keeping them out is
+  is the job of whatever assembles the citation list, not of the gate.
+
+  **Answered for the handoff by [D16](#d16), still open for the gate.** The format takes O6's second
+  option — mark and skip: cross-repo pointers go in a `## Unverifiable` section that is excluded from
+  both the coverage check and the resolver, and labelled unchecked. Two reasons beyond cheapness.
+  First, the first option is worse than it looks: **a sibling-checkout map reproduces exactly the
+  whitelist failure [D9](#d9) removed** — a project added beside the others is invisible, and the
+  error left over is a MISSING on a real file, the expensive direction. Deriving by exclusion is not
+  available across repositories, because no git index spans them. Second, template paths turned out
+  to need the same exclusion for a different reason, so this note's own closing sentence is now
+  implemented: `verify-handoff.sh` drops any candidate containing `<` or `>`.
+
+- **O7 — `path:symbol` is a false MISSING on a real file.** `tools/context-audit.js:simulate`
+  appears in `docs/measured.md` and reports MISSING: the trailing-
+  reference rule matches digits, so a non-numeric anchor stays glued to the path. This is the
+  v2/v3 failure class — a false positive in a fail-closed gate, the error the mechanism comments
+  call worse than a missed phantom — and it is _inherited_, not introduced: Kendo's copy behaves
+  identically. Deliberately left unfixed, because [D4](#d4) fixed the scope at three changes and
+  this is a fourth. The fix that preserves the guarantee is not "strip it" (which would hand a real
+  file a free OK with an unverified anchor) but "treat the identifier as the content fragment", which
+  reuses [D5](#d5)'s machinery and can only turn a MISSING into OK or CHANGED, never the reverse.
+
+  **Routed around rather than fixed, and the route is better than the fix.** `verify-handoff.sh`
+  _refuses_ a `path:symbol` anchor at exit 2 — a contract violation, not a gate failure, because the
+  citation may well be true and the document merely asked the wrong question. Refusing costs the
+  format nothing: `Foo.php:24 | someMethod` verifies that line 24 still holds the symbol, where
+  `Foo.php:someMethod` could at best confirm the file exists. So the weaker form has no use case to
+  protect, and [D4](#d4)'s scope stays shut. Still open as an inherited defect for _other_ callers of
+  the resolver, Kendo's included.
+
+- **O8 — Misusing the gate manufactured 219 false positives, and it read as rot.** ~~Found by piping
+  this document straight into `verify-citations.sh` instead of a citation list: every prose sentence
+  became a candidate and 219 of 227 "failed". The output was shape-identical to catastrophic citation
+  rot — the error [D9](#d9) calls the expensive one — produced not by the resolver but by a caller
+  mistake the script did nothing to distinguish from the real thing.~~ **Resolved, 2026-08-21** —
+  input contract guard, exit 2, 8 new assertions (58 total). Left standing rather than deleted,
+  because the generalisable part is _why it was invisible_: [D4](#d4) fixed the scope at what the
+  gate **checks**, and nobody asked what happens when the gate is **fed the wrong thing**. A
+  fail-closed gate has a second trust surface — its input contract — and violating it is
+  indistinguishable from the failure it reports. Reporting a misuse as MISSING also collapses two
+  outcomes needing different work into one verdict, which is [D5](#d5)'s own bug one level up; hence
+  a distinct exit 2 rather than joining the existing binary. Kendo's copy has the same gap; flowed
+  back via `upstream-feedback/kendo.md`.
+
+  _Conservative in one direction, deliberately:_ the guard refuses only at ≥5 candidate lines **and**
+  a strict majority of them non-citation-shaped, because a guard that refused a real citation list
+  would be the same class of error it exists to prevent. The discriminator — whitespace in the
+  pre-`|` half — measures ~0% on a real list against ~95% on prose, so the majority test has room to
+  spare. The `|` fragment half is excluded from the test, since it is prose by design.
+
+---
+
+## Build order
+
+1. ~~`verify-citations` generalisation~~ — **done**, 2026-08-21. `tools/verify-citations.sh` +
+   `tools/verify-citations.test.sh`, 50 assertions passing. Scope per [D4](#d4), layout per
+   [D9](#d9), three outcomes per [D5](#d5). Flowed back via `upstream-feedback/kendo.md`, which also
+   carries the two findings the port made against Kendo's own copy.
+2. ~~Threshold advisory in `statusline.sh`~~ — **done**, 2026-08-21. Context now shown in
+   tokens, not percent ([D12](#d12)); two-stage passive advisory (yellow `152k/200k` at 120k,
+   bold red `+ reset?` at 200k — the word became `handoff?` in item 3). Thresholds owned by
+   `tools/context-economy/context-thresholds.sh`, symlinked into `~/.claude/lib/` by
+   claude-dotfiles' `install.sh`. `dotfiles/statusline/statusline.test.sh`, 15 assertions
+   passing. Partially resolves O3 — see [D10](#d10) for what it does and does not settle.
+3. ~~`/handoff` skill and format~~ — **done**; format and gate 2026-08-21, skill and wiring
+   2026-08-24. The format and its gate: `tools/verify-handoff.sh` + `tools/verify-handoff.test.sh`,
+   54 assertions passing, plus the handoff budget added to
+   `tools/context-economy/context-thresholds.sh`. Sections and the four contract rules per
+   [D16](#d16), budget per [D13](#d13), verification per [D14](#d14), location per [D15](#d15).
+   Resolves O2 and O4; answers the handoff's half of O6 and O7; amends O3. Then
+   `skills/handoff/SKILL.md` (write and `--read` modes, four steps and three tool calls each,
+   markers per `CLAUDE.md`), four symlinks under `~/.claude/`, the README entries, and the
+   `reset?` → `handoff?` word change in `statusline.sh` plus its two assertions ([D11](#d11);
+   15 passing).
+
+   Two things the build found that the plan had not:
+
+   - **The gate needed three `lib/` symlinks, not one.** Bash does not resolve symlinks in
+     `BASH_SOURCE`, so `$(dirname "$0")` through the link is `~/.claude/lib/` — which is where
+     `verify-handoff.sh` then looks for both `verify-citations.sh` (exit 2 without it) and
+     `context-economy/context-thresholds.sh` (no size line without it, though the tool says so
+     rather than dropping it silently, and still checks every citation). Fixed with links rather
+     than by teaching the script `readlink -f`, which is absent on BSD/older macOS and so is
+     exactly the portability trap this repo's porting rule exists to avoid.
+   - **`ln -s` outperforms the documented command.** PowerShell's `New-Item -ItemType
+SymbolicLink` fails with `Administrator privilege required`, where git-bash's `ln -s`
+     succeeds unelevated for the same target. `README.md` claimed the opposite; corrected there,
+     with `MSYS=winsymlinks:nativestrict` so a failure is loud rather than a silent file copy.
+
+4. ~~**The automated write/read cycle**~~ — **done**, 2026-08-26, per
+   `reports/2026-08-24-harness-automation-surface.md`. Four hooks in `claude-dotfiles`, all
+   registered in **user** settings, all with suites alongside as with items 1–3:
+
+   - `hooks/handoff-urge.sh` (`Stop`) — the write leg. Measures resident context out of
+     `transcript_path` (F5), compares against `CTX_URGE_TOKENS`, and blocks once with the
+     instruction to run `/handoff` (F4). 30 assertions.
+   - `hooks/handoff-inject.sh` (`SessionStart`, `source: "clear"`) — the read leg. Runs
+     `tools/verify-handoff.sh` and injects document-with-verdicts (F2, [D14](#d14)), and surfaces
+     the `/clear` marker below. 54 assertions.
+   - `hooks/compaction-capture.sh` (`PostCompact`) — the corpus (F3). 30 assertions.
+   - `hooks/session-end-marker.sh` (`SessionEnd`, matcher `clear`) — records the loss (F9).
+     29 assertions.
+
+   The human keystroke in the middle stays: `additionalContext` does not start a turn (F6), so this
+   is zero-**typing**, not zero-touch.
+
+   Four things the build found that the plan had not:
+
+   - **The `[1m]` detection channel is far thinner than assumed.** `modelUsage` appears only on
+     `cost-state` lines — a 2.1.246 addition, and sporadic even there (measured: 1 of 4 transcripts
+     on that version, 0 of 26 on 2.1.235/2.1.228). So *declining to arm* is the common outcome of
+     the headroom check, not its edge case, and a machine that wants the trigger armed should
+     declare `CTX_COMPACT_THRESHOLD_TOKENS`. Recorded in full beside the instruction it qualifies,
+     in `tools/context-economy/context-thresholds.sh`.
+   - **The `/clear` marker had to be surfaced by the read leg, not by a hook of its own.** The only
+     question worth answering — does the handoff on disk describe the session just discarded, or an
+     older one? — needs the marker and the handoff in one place. Two hooks would emit two blobs and
+     leave the reader to join them at the most expensive moment in a session. So the read leg reads
+     both, compares the handoff's mtime against the clear, and says which.
+   - **A recorded path and a path used for local reads are different values.** Both the marker and
+     the corpus record `transcript_path`, and that value is followed *by the model*, which hands it
+     to a file-reading tool wanting a native path. Passing it through `cygpath -u` first yields
+     `/c/Users/...` — readable to bash and to nothing else — so the most valuable field in the
+     marker would have named a file its only consumer could not open. The converted form is now
+     kept separately, for the hooks' own reads.
+   - **jq writes stdout in text mode on Windows**, so text round-tripped through `jq -r` into a
+     shell variable returns with CRLF. Cosmetic in most hooks; in the corpus it rewrote the
+     evidence. See the falsification section above for the measurement and the fix.
+
+   Two things settled before writing it, and one deliberately not:
+
+   - **Do not set `autoCompactThreshold` to the reset threshold**, tempting as F1 makes it. With
+     compaction and the `Stop` trigger at the same depth the two race, and when compaction wins the
+     handoff is authored from a summary — the degradation `compacted:` is gated to record
+     ([D16](#d16)). Leave auto-compaction at its default so it stays the backstop [D1](#d1) wants:
+     one mechanism owns the threshold.
+   - **Capture `compact_summary` from `PostCompact` at the same time** (F3). It is nearly free and it
+     is the experiment this document's own falsification section names.
+   - **There is no last-chance trigger at `/clear`** (F9). `Stop` does not fire there — traced: the
+     clear handler's first statement runs `SessionEnd` hooks with `reason: "clear"`, and the binary's
+     own hook table is wrong on this point. `SessionEnd` is awaited and sees full depth, but it cannot
+     inject and cannot make the model write, so a clear typed ahead of the threshold `Stop` loses the
+     session outright. Mitigate in the pair rather than the single hook: `SessionEnd` records that a
+     clear happened over the threshold with no fresh handoff, and the `SessionStart` hook surfaces
+     that in the next session's injected context.
+   - **No longer open, and it was the wrong question (F10).** Skipping when `background_tasks` or
+     `session_crons` is non-empty was meant to protect in-flight work from the block. Nothing needs
+     protecting: a block yields a turn, the task registry runs independently of turns, and `/clear`
+     kills running **foreground** tasks while **preserving** backgrounded ones — so `background_tasks`,
+     whose predicate excludes `isBackgrounded === false`, lists a clear's survivors and never its
+     casualties. The block may fire whatever those fields say. What replaces the question is a
+     **format** requirement, and the useful framing is that the harness **already transfers background
+     work across a reset** — preserved in the registry, ids carried over, still able to wake the
+     session — while transferring none of the _intent_. So the handoff supplies the intent, and it
+     supplies a **disposition** rather than a bare identity: a surviving task's result arrives in the
+     fresh context, which is the most expensive moment there is (cost is size × remaining lifetime), so
+     the disposition has **three** states and the section encodes it: a task that **blocks** a `## Next`
+     step says so on that step _and carries a fallback_ (`TaskOutput <id>`, or how to re-derive) —
+     read-mode's default is to start item 1 immediately, and a bare wait is unbounded, which unattended
+     is a hang; a task that **feeds** a step without blocking says to fold its result in there; a task
+     that feeds nothing gets one `### Traps` line so an unprompted report reads as expected. So
+     [D16](#d16)'s contract absorbs this with no new section and no gate change — a task id carries no
+     `path:line`. One line of `skills/handoff/SKILL.md` read-mode Step 3 changes with it: _start the
+     first unblocked item_, not item 1.
+
+     _On the token cost, now traced:_ a completion delivers `status`, a `summary` string and an
+     `output_file` **path** — never the body. The result enters context only if the receiving session
+     reads it, so the unbidden tax is one line and the rest is deferrable, which is [D14](#d14)'s
+     resolve-at-point-of-use rule arriving from a second direction. That also retires the earlier
+     reason for killing unwanted work before a clear: the reason is wasted compute and side effects,
+     not context.
+
+   - **The latch must be on disk, not `stop_hook_active`** (F10, REASONED). That flag marks the current
+     continuation as stop-hook-induced, so it only breaks the tight loop; a background task waking the
+     session later starts a turn with it false, threshold still crossed and the handoff already
+     written. Fire-once state is keyed by `session_id`.
+   - ~~**Still open:** how much headroom `T` needs. The check's resolution is one turn — ~2.07k at
+     `CTX_GROWTH_TOKENS_PER_TURN`, but unbounded at the tail, since one turn that reads widely can add
+     50k+ — so `T` must sit far enough below any hard ceiling to absorb a single fat turn.~~
+     **Resolved 2026-08-26 by tracing the ceiling** ([D10](#d10)): auto-compaction fires at
+     `effective_window - 13_000`, a fixed offset, so the slack is computable rather than open. At the
+     1M default it is ~787k and a fat turn is noise; at a 200k window it is **negative** and the hook
+     can never fire. Two terms the original bullet undercounted: the **authoring turn** is itself wide
+     (writing a handoff means reading files to cite them, and F4b prices block → write → re-fire at one
+     extra turn), and `reserved_output_tokens` comes off the window before any of this. So the
+     invariant is `T + fat_turn + authoring_turn < effective_window - 13_000`, and the hook must
+     evaluate it at fire time and decline to arm when it fails.
+   - **Also open, and not the same question:** a session parked above the threshold that is simply
+     left alone produces no further `Stop` at all, yet its context survives — resuming appends to the
+     same transcript (measured report, "What was measured"). That case belongs to
+     `SessionStart(source: "resume")`, not to `Stop`.
+
+5. Hygiene hook — last, and optional.
+
+---
+
+## What would falsify this design
+
+- A handoff that costs more to author and re-read than the reset saves. The simulation assumes a 25k
+  brief and does **not** price authoring, re-reading, or work lost to a bad handoff.
+- Auto-compaction turning out to preserve the non-citable half well. [D2](#d2) and [D6](#d6) both
+  assume it does not; that assumption is _reasoned, not measured_. Comparing a real compaction
+  summary against a hand-written handoff for the same session would settle it, and is the cheapest
+  experiment available. **Cheaper than this said (F3):** `PostCompact` is handed the summary as
+  `compact_summary`, so a three-line hook accumulates the corpus automatically from ordinary work.
+  There is no longer a reason for the load-bearing assumption under [D2](#d2) and [D6](#d6) to stay
+  unmeasured — hence its place in build-order item 4, wired alongside the hook that needs it.
+
+  _Wired 2026-08-26._ `claude-dotfiles/dotfiles/hooks/compaction-capture.sh`, registered on
+  `PostCompact`. Records accumulate at `~/.claude/context-economy/compactions/` — outside every
+  checkout, because they hold verbatim conversation content and mission_control gets pushed.
+  **The corpus is not merely a pile of summaries:** each record snapshots the branch's handoff
+  *body* alongside the summary, because a handoff is overwritten by the next `/handoff` run on
+  that branch and a record holding only a path would decay into an unpaired summary pointing at
+  a later handoff about later work, with nothing saying so. `trigger` is kept because `auto` and
+  `manual` are different events and pooling them answers a different question than the one asked.
+  Nothing analyses this yet — it only accrues; the comparison is still someone's to run.
+
+  One thing the wiring taught, which the "three-line hook" estimate did not anticipate: on Windows
+  `jq` writes stdout in text mode, so pulling the summary through `jq -r` into a shell variable
+  returns it with CRLF endings. The first version stored `line1\nline2` as `line1\r\r\nline2\r\n`
+  while every single-line field tested clean. For most hooks that is cosmetic; for this one it
+  rewrites the evidence. The record is now built in a single `jq` invocation reading the original
+  payload, so the summary reaches the file without a shell variable touching it.
+- Threshold resets fragmenting work badly enough to cause rework that exceeds the token saving.
