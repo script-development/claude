@@ -13,6 +13,7 @@
 # session sails past 200k in one turn and nobody notices which side of >= it landed on), so
 # exact-value cases are asserted on both sides of both stages.
 
+# Arrange
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GAUGE="$SCRIPT_DIR/context-gauge.sh"
 REAL_THRESHOLDS="$SCRIPT_DIR/context-economy/context-thresholds.sh"
@@ -56,6 +57,8 @@ gauge() {
 ) || exit 1
 
 # ── Below NOTICE: bare token count, no colour, no denominator ─────
+# Act & Assert — gauge() runs the unit and assert_eq compares; each case's arrange is
+# its token count, and where it differs, its thresholds file.
 assert_eq "zero tokens is bare"             "ctx:0k"    "$(gauge 0)"
 assert_eq "well below notice is bare"       "ctx:72k"   "$(gauge 72346)"
 assert_eq "one token below notice is bare"  "ctx:119k"  "$(gauge 119999)"
@@ -91,8 +94,10 @@ assert_eq "missing thresholds file: count renders, no advisory" \
 
 # An empty/garbage thresholds file must fail OPEN. With ${CTX_*:-0} instead of -n guards,
 # this case would render URGE for a 12k-token session.
+# Arrange
 EMPTY_THRESHOLDS="$(mktemp)"
 : > "$EMPTY_THRESHOLDS"
+# Act & Assert
 assert_eq "empty thresholds file fails open, not to URGE" \
   "ctx:12k" "$(gauge 12000 "$EMPTY_THRESHOLDS")"
 rm -f "$EMPTY_THRESHOLDS"
@@ -101,16 +106,20 @@ rm -f "$EMPTY_THRESHOLDS"
 # statusline guarded only CTX_NOTICE_TOKENS on this branch while printing CTX_URGE_TOKENS as
 # the denominator, so a half-written thresholds file would have advertised a threshold of
 # zero -- which reads as a rule, not as an absent one.
+# Arrange
 HALF_THRESHOLDS="$(mktemp)"
 echo 'CTX_NOTICE_TOKENS=120000' > "$HALF_THRESHOLDS"
+# Act & Assert
 assert_eq "notice without urge renders no denominator" \
   "ctx:152k" "$(gauge 152400 "$HALF_THRESHOLDS")"
 rm -f "$HALF_THRESHOLDS"
 
 # The mirror case: URGE alone is enough to render URGE, because it is its own denominator.
 # Below it, with no NOTICE defined, the count stays bare rather than borrowing URGE's colour.
+# Arrange
 URGE_ONLY="$(mktemp)"
 echo 'CTX_URGE_TOKENS=200000' > "$URGE_ONLY"
+# Act & Assert
 assert_eq "urge without notice still reaches URGE" \
   "<BOLD><RED>ctx:200k/200k handoff?<RESET>" "$(gauge 200000 "$URGE_ONLY")"
 assert_eq "urge without notice leaves the notice band bare" \
@@ -121,15 +130,19 @@ rm -f "$URGE_ONLY"
 # leave a blank where the count belongs. The gauge is called from display paths where a crash
 # costs the consumer its whole line, so both halves matter: the subshell keeps the abort
 # contained, the empty-result fallback keeps the segment readable.
+# Arrange
 ABORTING="$(mktemp)"
 printf 'exit 1\nCTX_URGE_TOKENS=200000\n' > "$ABORTING"
+# Act & Assert
 assert_eq "a thresholds file that exits degrades to the plain count" \
   "ctx:881k" "$(gauge 881000 "$ABORTING")"
 rm -f "$ABORTING"
 
 # Same for one that will not parse at all.
+# Arrange
 BROKEN="$(mktemp)"
 printf 'if [ \n' > "$BROKEN"
+# Act & Assert
 assert_eq "an unparseable thresholds file degrades to the plain count" \
   "ctx:881k" "$(gauge 881000 "$BROKEN")"
 rm -f "$BROKEN"
@@ -138,8 +151,10 @@ rm -f "$BROKEN"
 # sits in an OR-list, where set -e does not apply, so it runs to completion. Asserted so the
 # distinction from the two cases above is recorded rather than rediscovered by whoever next
 # wonders why one broken thresholds file degrades and another does not.
+# Arrange
 NOISY="$(mktemp)"
 printf 'set -e\nfalse\nCTX_URGE_TOKENS=200000\n' > "$NOISY"
+# Act & Assert
 assert_eq "a noisy but complete thresholds file is still honoured" \
   "<BOLD><RED>ctx:881k/200k handoff?<RESET>" "$(gauge 881000 "$NOISY")"
 rm -f "$NOISY"
@@ -154,6 +169,7 @@ assert_eq "a float is 0k, not 12k"   "ctx:0k" "$(gauge "12000.4")"
 # gauge and calling it must leave both untouched: the colours are function-locals and the
 # thresholds are sourced inside a subshell. Before the extraction the statusline sourced the
 # thresholds into its own scope, so this is a property the unit gained by moving.
+# Act
 leakage="$(
   RED='CONSUMER-RED'
   CTX_URGE_TOKENS='CONSUMER-URGE'
@@ -162,6 +178,7 @@ leakage="$(
   context_gauge 881000 >/dev/null
   printf '%s|%s' "$RED" "$CTX_URGE_TOKENS"
 )"
+# Assert
 assert_eq "sourcing and calling clobbers neither colours nor thresholds" \
   "CONSUMER-RED|CONSUMER-URGE" "$leakage"
 
@@ -169,12 +186,15 @@ assert_eq "sourcing and calling clobbers neither colours nor thresholds" \
 # With no CTX_THRESHOLDS_FILE set at all, the gauge must still find the thresholds by its own
 # BASH_SOURCE-relative path. This is the case a foreign consumer actually hits, and the one a
 # "simplify it to $HOME/.claude/lib" change would silently break in the repo.
+# Act & Assert
 assert_eq "default resolution finds the nested thresholds unaided" \
   "<BOLD><RED>ctx:881k/200k handoff?<RESET>" \
   "$( ( unset CTX_THRESHOLDS_FILE; . "$GAUGE"; context_gauge 881000 ) | visible )"
 
 # It emits no trailing newline, so a consumer can interpolate it mid-line.
+# Act
 raw_len=$( ( unset CTX_THRESHOLDS_FILE; . "$GAUGE"; context_gauge 72346 ) | wc -c | tr -d ' ')
+# Assert
 assert_eq "no trailing newline" "7" "$raw_len"
 
 echo ""

@@ -35,6 +35,7 @@
 
 set -uo pipefail
 
+# Arrange
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 subject="$script_dir/handoff-urge.sh"
 
@@ -176,11 +177,15 @@ reset_latches() { rm -rf "$fixture/home/.claude/state"; }
 
 # --- Below the threshold ---------------------------------------------------
 
+# Arrange — four transcripts, reused by the cases below
 shallow=$(make_transcript shallow 90000)
 deep=$(make_transcript deep 250000)
 deep_1m=$(make_transcript deep1m 250000 'claude-opus-5[1m]')
 deep_no1m=$(make_transcript deepno1m 250000 'claude-opus-5')
 
+# Arrange & Act & Assert — the shape of every case below: reset_latches arranges, and the
+# assert_* helper both acts (runs the hook) and asserts on its output. Each case's own
+# arrange is its payload and env assignments. Sections that add a fixture label it.
 reset_latches
 assert_silent 'a shallow session is left alone' "$(payload "$shallow")" \
     CTX_COMPACT_THRESHOLD_TOKENS=900000
@@ -254,6 +259,7 @@ assert_field 'an environment ceiling survives sourcing the file that blanks it' 
     '.decision' 'block' "$(payload "$deep_no1m")" CTX_COMPACT_THRESHOLD_TOKENS=900000
 
 # And the file wins when the environment says nothing.
+# Arrange
 declared="$fixture/thresholds-declared.sh"
 write_thresholds "$declared" 900000
 reset_latches
@@ -263,8 +269,11 @@ assert_field 'a ceiling declared in the file alone is honoured' \
 # --- Latching --------------------------------------------------------------
 
 # h4 — fire once per session, keyed on session_id and not on stop_hook_active.
+# Arrange
 reset_latches
+# Act — fire once, so the latch is set
 run "$(payload "$deep" sess-latch)" CTX_COMPACT_THRESHOLD_TOKENS=900000 >/dev/null
+# Act & Assert
 assert_silent 'a second Stop in the same session does not fire again' \
     "$(payload "$deep" sess-latch)" CTX_COMPACT_THRESHOLD_TOKENS=900000
 
@@ -272,8 +281,11 @@ assert_field 'a different session is unaffected by that latch' \
     '.decision' 'block' "$(payload "$deep" sess-other)" CTX_COMPACT_THRESHOLD_TOKENS=900000
 
 # h5 — a decline latches too, or its message repeats at every turn boundary thereafter.
+# Arrange
 reset_latches
+# Act — decline once, so the decline latch is set
 run "$(payload "$deep_no1m" sess-decline)" >/dev/null
+# Act & Assert
 assert_silent 'a decline is said once, not at every subsequent turn' \
     "$(payload "$deep_no1m" sess-decline)"
 
@@ -311,6 +323,7 @@ assert_silent 'a missing thresholds file disables the hook entirely' \
     "$(payload "$deep")" CTX_THRESHOLDS_FILE="$fixture/nonexistent.sh" CTX_COMPACT_THRESHOLD_TOKENS=900000
 
 # h3 — a thresholds file older than this hook.
+# Arrange
 old="$fixture/thresholds-old.sh"
 printf 'CTX_NOTICE_TOKENS=120000\nCTX_URGE_TOKENS=200000\nCTX_COMPACT_THRESHOLD_TOKENS=\n' > "$old"
 reset_latches
@@ -321,12 +334,14 @@ reset_latches
 assert_silent 'an unreadable transcript disables the hook' \
     "$(payload "$fixture/no-such-transcript.jsonl")" CTX_COMPACT_THRESHOLD_TOKENS=900000
 
+# Arrange
 empty="$fixture/empty.jsonl"
 : > "$empty"
 reset_latches
 assert_silent 'a transcript with no usage record disables the hook' \
     "$(payload "$empty")" CTX_COMPACT_THRESHOLD_TOKENS=900000
 
+# Arrange
 garbage="$fixture/garbage.jsonl"
 printf 'not json at all\n{"partial":\n' > "$garbage"
 reset_latches

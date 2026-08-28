@@ -19,6 +19,7 @@
 # Only the trailing ctx segment is matched: the rest of the statusline reads the real git tree
 # and real listening ports, so it is environment-dependent by design.
 
+# Arrange
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STATUSLINE="$SCRIPT_DIR/statusline.sh"
 
@@ -77,6 +78,8 @@ assert_ctx() {
 # the plain form travel different paths out of this file: the segment is interpolated into an
 # `echo -e` line whose other fields still carry unresolved `\033` sequences, so a stage that
 # renders correctly in the gauge can still arrive mangled here.
+# Act & Assert — ctx_segment() runs the statusline and assert_ctx compares; each case's
+# arrange is its token count.
 assert_ctx "below notice reaches the line bare"   "ctx:72k"                                  "$(ctx_segment 72346)"
 assert_ctx "notice reaches the line yellow"       "<YELLOW>ctx:152k/200k<RESET>"              "$(ctx_segment 152400)"
 assert_ctx "urge reaches the line bold red"       "<BOLD><RED>ctx:881k/200k handoff?<RESET>"  "$(ctx_segment 881000)"
@@ -85,7 +88,9 @@ assert_ctx "urge reaches the line bold red"       "<BOLD><RED>ctx:881k/200k hand
 # The separator moved into a `${CTX_DISPLAY:+ ...}` expansion when the gauge was extracted, so
 # that an absent segment leaves no trailing space. That made the space conditional, and a
 # conditional separator is worth asserting in both states.
+# Act
 line="$(statusline 72346)"
+# Assert
 case "$line" in
   *'] ctx:72k') PASS=$((PASS + 1)) ;;
   *) FAIL=$((FAIL + 1)); printf 'FAIL: segment is not last with one space: %s\n' "$line" ;;
@@ -95,7 +100,9 @@ esac
 # A missing gauge silences the context segment; the statusline still renders, with no dangling
 # separator. This is the case that regresses if someone reintroduces a local `ctx:NNNk` fallback
 # here -- which would be a second rendering of the gauge, the thing the extraction removed.
+# Act
 line="$(statusline 881000 "$SCRIPT_DIR/does-not-exist.sh")"
+# Assert
 case "$line" in
   *ctx:*)  FAIL=$((FAIL + 1)); printf 'FAIL: missing gauge still rendered a count: %s\n' "$line" ;;
   *'] ')   FAIL=$((FAIL + 1)); printf 'FAIL: missing gauge left a trailing separator: %s\n' "$line" ;;
@@ -109,6 +116,7 @@ esac
 # invites the wrong conclusion at exactly the wrong depth. Asserted at the statusline as well as
 # at the gauge, because this file is where a "nice extra" would most plausibly be added -- it is
 # the one with the payload in hand.
+# Act & Assert
 for t in 0 72346 152400 881000; do
   seg="$(ctx_segment "$t")"
   case "$seg" in
@@ -121,6 +129,7 @@ done
 # 0k with no advisory, and must NOT reconstruct an estimate from the percentage -- that field
 # is an integer against a 1M window, so a reconstruction has 10k granularity and would
 # straddle the threshold.
+# Act & Assert
 assert_ctx "percentage-only payload: 0k, no advisory, no estimate" "ctx:0k" \
   "$(printf '{"context_window":{"used_percentage":88},"workspace":{}}' \
      | CTX_GAUGE_FILE="$GAUGE" CTX_THRESHOLDS_FILE="$THRESHOLDS" bash "$STATUSLINE" 2>/dev/null \

@@ -27,10 +27,11 @@
 #
 # No framework, matching the sibling hook suites. Run it as:
 #
-#   bash dotfiles/hooks/session-end-marker.test.sh
+#   bash plugins/context-economy/hooks/session-end-marker.test.sh
 
 set -uo pipefail
 
+# Arrange
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 subject="$script_dir/session-end-marker.sh"
 
@@ -114,6 +115,7 @@ assert_field() {  # assert_field <label> <marker-path> <jq-filter> <expected>
 # resetting it, and the next one is a `startup`, where nothing is surfaced — a report about a
 # session the human deliberately walked away from would be noise, not news.
 
+# Arrange & Act & Assert — one reason per iteration: reset, run, count.
 for r in resume logout prompt_input_exit other; do
     reset_state
     run "$(payload "$r")" >/dev/null
@@ -123,8 +125,11 @@ done
 
 # --- A real clear ----------------------------------------------------------
 
+# Arrange
 reset_state
+# Act
 out=$(run "$(payload clear)")
+# Assert
 [ -z "$out" ] && pass 'the hook prints nothing (SessionEnd cannot inject)' \
               || fail 'the hook prints nothing (SessionEnd cannot inject)' "got: $out"
 
@@ -159,16 +164,22 @@ assert_field 'the surviving transcript path is recorded verbatim' "$m" '.transcr
 
 # --- m2 — the handoff mtime, which is what makes coverage answerable -------
 
+# Arrange
 reset_state
+# Act
 run "$(payload clear)" >/dev/null
+# Assert
 assert_field 'no handoff on the branch is recorded as absent' "$(marker_for "$repo" main)" '.handoff.present' 'false'
 assert_field 'an absent handoff has a null mtime, not a zero one' "$(marker_for "$repo" main)" '.handoff.mtime' 'null'
 
+# Arrange
 exact="$store/$(store_name "$main_git" main)"
 printf 'a handoff\n' > "$exact"
 expected_mtime=$(stat -c %Y "$exact")
 reset_state
+# Act
 run "$(payload clear)" >/dev/null
+# Assert
 m=$(marker_for "$repo" main)
 assert_field 'a present handoff is recorded as present' "$m" '.handoff.present' 'true'
 assert_field 'the handoff mtime at clear time is captured' "$m" '.handoff.mtime' "$expected_mtime"
@@ -188,6 +199,7 @@ assert_field 'the recorded path is the store path, not a repo-local one' \
 # A handoff for a SIBLING checkout, with none for this session's own branch. Nothing derived from
 # cwd can find it -- so a marker that still reports `present: false` here is the regression that
 # would make every cross-repo clear look like undocumented work.
+# Arrange
 other="$fixture/other-repo"
 mkdir -p "$other"
 git -C "$other" init -q -b feature/other
@@ -199,7 +211,9 @@ cross="$store/$(store_name "$other_main" feature-other)"
 rm -f "$exact"
 printf 'a sibling handoff\n' > "$cross"
 reset_state
+# Act
 run "$(payload clear)" >/dev/null
+# Assert
 m=$(marker_for "$repo" main)
 assert_field 'a handoff for a sibling checkout is still found' "$m" '.handoff.present' 'true'
 assert_field 'and it is the sibling one that gets recorded'     "$m" '.handoff.path' "$(as_recorded "$cross")"
@@ -208,36 +222,51 @@ printf 'a handoff\n' > "$exact"
 
 # --- m3 — did the trigger ever arm? ---------------------------------------
 
+# Arrange
 reset_state
+# Act
 run "$(payload clear "$repo" sess-noarm)" >/dev/null
+# Assert
 assert_field 'a clear that beat the trigger records urge_fired false' \
     "$(marker_for "$repo" main)" '.urge_fired' 'false'
 
+# Arrange
 mkdir -p "$home/.claude/state/handoff-trigger"
 : > "$home/.claude/state/handoff-trigger/sess-armed"
 reset_state
+# Act
 run "$(payload clear "$repo" sess-armed)" >/dev/null
+# Assert
 assert_field 'a clear after the trigger fired records urge_fired true' \
     "$(marker_for "$repo" main)" '.urge_fired' 'true'
 
 # --- Branch slugging and separation ---------------------------------------
 
+# Arrange
 git -C "$repo" checkout -q -b fix/foo
 reset_state
+# Act
 run "$(payload clear)" >/dev/null
+# Assert
 [ -r "$(marker_for "$repo" fix-foo)" ] && pass 'a branch containing a slash slugs its marker filename' \
                                        || fail 'a branch containing a slash slugs its marker filename' 'not found'
 
 # Two branches cleared in the same repo must not overwrite each other: they are separate threads
 # of work and the surface is branch-scoped.
+# Arrange
 git -C "$repo" checkout -q main
+# Act
 run "$(payload clear)" >/dev/null
+# Assert
 [ "$(marker_count)" = "2" ] && pass 'markers for different branches coexist' \
                             || fail 'markers for different branches coexist' "found $(marker_count)"
 
 # m5 — but a second clear on the SAME branch replaces the first.
+# Arrange
 before=$(jq -r '.session_id' "$(marker_for "$repo" main)" 2>/dev/null)
+# Act
 run "$(payload clear "$repo" sess-newer)" >/dev/null
+# Assert
 after=$(jq -r '.session_id' "$(marker_for "$repo" main)" 2>/dev/null)
 if [ "$before" != "$after" ] && [ "$after" = "sess-newer" ] && [ "$(marker_count)" = "2" ]; then
     pass 'a newer clear on the same branch replaces the older marker'
@@ -251,10 +280,13 @@ fi
 # would simply never be found, and the failure would be a silence — the exact thing this hook
 # exists to eliminate.
 
+# Arrange
 wt="$fixture/wt"
 git -C "$repo" worktree add -q -b feature/x "$wt" >/dev/null 2>&1
 reset_state
+# Act
 run "$(payload clear "$wt")" >/dev/null
+# Assert
 [ -r "$(marker_for "$wt" feature-x)" ] && pass 'a clear inside a linked worktree files under the main worktree' \
                                        || fail 'a clear inside a linked worktree files under the main worktree' 'not found'
 assert_field 'a worktree clear records its own branch, not the main one' \
@@ -262,32 +294,47 @@ assert_field 'a worktree clear records its own branch, not the main one' \
 
 # --- Degrading ------------------------------------------------------------
 
+# Arrange
 reset_state
+# Act
 run "$(payload clear "$fixture")" >/dev/null
+# Assert
 [ "$(marker_count)" = "0" ] && pass 'a clear outside a repo writes no marker' \
                             || fail 'a clear outside a repo writes no marker' "wrote $(marker_count)"
 
+# Arrange
 reset_state
+# Act
 run "$(payload clear "$fixture/no-such-dir")" >/dev/null
+# Assert
 [ "$(marker_count)" = "0" ] && pass 'a nonexistent cwd writes no marker' \
                             || fail 'a nonexistent cwd writes no marker' "wrote $(marker_count)"
 
+# Arrange
 reset_state
+# Act
 printf '%s' '{"hook_event_name":"SessionEnd"}' \
     | env HOME="$home" LAST_CLEAR_STATE_DIR="$state" bash "$subject" 2>/dev/null
+# Assert
 [ "$(marker_count)" = "0" ] && pass 'a payload with no reason writes no marker' \
                             || fail 'a payload with no reason writes no marker' "wrote $(marker_count)"
 
+# Arrange
 reset_state
+# Act
 printf '' | env HOME="$home" LAST_CLEAR_STATE_DIR="$state" bash "$subject" 2>/dev/null
+# Assert
 [ "$(marker_count)" = "0" ] && pass 'empty stdin writes no marker' \
                             || fail 'empty stdin writes no marker' "wrote $(marker_count)"
 
 # An unreadable transcript must not discard the marker: the clear still happened, and the branch
 # and handoff-coverage facts are still worth surfacing. Only the depth is unknown.
+# Arrange
 reset_state
+# Act
 printf '%s' "$(jq -nc --arg c "$repo" '{session_id:"s",hook_event_name:"SessionEnd",reason:"clear",cwd:$c,transcript_path:"/nope.jsonl"}')" \
     | env HOME="$home" LAST_CLEAR_STATE_DIR="$state" bash "$subject" 2>/dev/null
+# Assert
 [ "$(marker_count)" = "1" ] && pass 'an unreadable transcript still yields a marker' \
                             || fail 'an unreadable transcript still yields a marker' "wrote $(marker_count)"
 assert_field 'an unknown depth is null rather than zero' \

@@ -21,6 +21,7 @@
 
 set -uo pipefail
 
+# Arrange
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 subject="$script_dir/handoff-store.sh"
 
@@ -65,6 +66,7 @@ put() {
 
 # --- s1 — the filename contract --------------------------------------------
 
+# Act & Assert — the subject is called inline; each case's arrange is its arguments.
 name=$(handoff_store_name /c/checkouts/emmie EMMIE-0477)
 assert_eq 'the name carries the repo basename, the slug and a hash' \
     "emmie-EMMIE-0477-$(printf '%s' /c/checkouts/emmie | md5sum | cut -c1-8).md" "$name"
@@ -86,7 +88,9 @@ assert_eq 'the store root honours HANDOFF_STORE_DIR' "$fixture/store" "$(handoff
 
 # --- Envelope reading ------------------------------------------------------
 
+# Arrange
 f=$(put /c/checkouts/emmie EMMIE-0477 EMMIE-0477 /c/worktrees/emmie-477)
+# Act & Assert
 assert_eq 'branch: is read from the envelope' 'EMMIE-0477' "$(handoff_store_field "$f" branch)"
 assert_eq 'checkout: is read from the envelope' '/c/worktrees/emmie-477' \
     "$(handoff_store_field "$f" checkout)"
@@ -94,25 +98,35 @@ assert_eq 'checkout: is read from the envelope' '/c/worktrees/emmie-477' \
 # Bounded to the head of the document on purpose: a `checkout:` further down is body text -- a
 # quoted example, a field note about another run -- and treating it as this document's own header
 # would aim the gate at whatever tree that prose happened to mention.
+# Arrange
 { printf '\n\n'; for i in $(seq 30); do echo "- padding $i"; done; echo 'checkout: /c/decoy'; } >> "$f"
+# Act & Assert
 assert_eq 'a checkout: far down the body is not mistaken for the header' \
     '/c/worktrees/emmie-477' "$(handoff_store_field "$f" checkout)"
 
 # --- s2 — the pick ---------------------------------------------------------
 
+# Arrange
 rm -f "$HANDOFF_STORE_DIR"/*.md
+# Act
 handoff_store_resolve /c/checkouts/mc main
+# Assert
 assert_eq 'an empty store resolves to nothing' '' "$HANDOFF_FILE"
 
 # Exact match, and a NEWER stranger alongside it. Recency must lose here.
+# Arrange
 exact=$(put /c/checkouts/mc main main /c/checkouts/mc 600)
 newer=$(put /c/checkouts/emmie EMMIE-0477 EMMIE-0477 /c/worktrees/emmie-477 0)
+# Act
 handoff_store_resolve /c/checkouts/mc main
+# Assert
 assert_eq 'an exact match beats a more recent stranger' "$exact" "$HANDOFF_FILE"
 assert_eq 'and it is labelled exact' 'exact' "$HANDOFF_PICK"
 
 # No exact match: now recency decides, and the pick must say it was a guess.
+# Act
 handoff_store_resolve /c/checkouts/mc some-other-branch
+# Assert
 assert_eq 'with no exact match the most recent candidate wins' "$newer" "$HANDOFF_FILE"
 assert_eq 'and it is labelled a guess' 'recent' "$HANDOFF_PICK"
 assert_eq 'the pick carries the branch it belongs to' 'EMMIE-0477' "$HANDOFF_BRANCH"
@@ -120,6 +134,7 @@ assert_eq 'the pick carries the tree it describes' '/c/worktrees/emmie-477' "$HA
 
 # --- s3 — the rejected candidates ------------------------------------------
 
+# Assert — on the state the previous act left behind
 case "$HANDOFF_OTHERS" in
     *"$exact"*) pass 'a rejected candidate is reported' ;;
     *)          fail 'a rejected candidate is reported' "OTHERS was [$HANDOFF_OTHERS]" ;;
@@ -131,8 +146,11 @@ esac
 
 # An older third candidate is still a candidate. The listing is the reader's only cheap correction,
 # so it must be complete rather than a top-one runner-up.
+# Arrange
 third=$(put /c/checkouts/kendo KENDO-73 KENDO-73 /c/checkouts/kendo 9000)
+# Act
 handoff_store_resolve /c/checkouts/mc some-other-branch
+# Assert
 n=$(printf '%s' "$HANDOFF_OTHERS" | grep -c . )
 assert_eq 'every rejected candidate is listed, not just the runner-up' '2' "$n"
 
@@ -140,8 +158,11 @@ assert_eq 'every rejected candidate is listed, not just the runner-up' '2' "$n"
 
 # An empty file is not a handoff. Skipped rather than picked, or a truncated write would shadow a
 # perfectly good older document and inject a header with nothing under it.
+# Arrange
 : > "$third"
+# Act
 handoff_store_resolve /c/checkouts/mc some-other-branch
+# Assert
 assert_eq 'an empty candidate is skipped' "$newer" "$HANDOFF_FILE"
 case "$HANDOFF_OTHERS" in
     *"$third"*) fail 'an empty candidate is not listed either' "OTHERS contained it" ;;
@@ -149,7 +170,9 @@ case "$HANDOFF_OTHERS" in
 esac
 
 # A store that does not exist at all is the state of every machine before the first handoff.
+# Act
 HANDOFF_STORE_DIR="$fixture/no-such-store" handoff_store_resolve /c/checkouts/mc main
+# Assert
 assert_eq 'a nonexistent store resolves to nothing rather than erroring' '' "$HANDOFF_FILE"
 
 echo

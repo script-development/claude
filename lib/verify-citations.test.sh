@@ -36,6 +36,7 @@
 
 set -uo pipefail
 
+# Arrange — the subject, the throwaway fixture repo below, and the harness helpers
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 subject="$script_dir/verify-citations.sh"
 
@@ -207,6 +208,9 @@ assert_output() {
 }
 
 echo "Resolving real citations"
+# Act & Assert — assert_verdict runs the subject inside the fixture repo and compares the
+# first-column verdict. Each case's arrange is its citation string; the sections below all
+# share this shape unless they label their own.
 assert_verdict OK 'backend/routes/api.php'   'path from repo root'
 assert_verdict OK 'app/Helpers/Mention.php'  'path relative to a derived prefix'
 assert_verdict OK 'src/shared/'              'directory relative to a derived prefix'
@@ -236,8 +240,10 @@ echo "Deriving the layout instead of hardcoding it"
 assert_verdict OK 'derived_root_only_symbol' 'symbol in an unanticipated top-level source tree'
 assert_verdict OK 'core/src/thing.rs'        'path relative to an unanticipated top-level prefix'
 # The override has to actually override: restricted to backend/app, packages/ goes.
+# Act
 output=$(cd "$fixture" && printf '%s\n' 'derived_root_only_symbol' \
     | VERIFY_CITATIONS_SEARCH_ROOTS='backend/app' "$subject" 2>&1)
+# Assert
 if printf '%s' "$output" | awk 'NR==1 {print $1}' | grep -qx MISSING; then
     passed=$((passed + 1))
     printf '  ok    %s\n' 'VERIFY_CITATIONS_SEARCH_ROOTS narrows the symbol search'
@@ -328,6 +334,7 @@ echo "Portability"
 # does not have, so the check that runs everywhere is "the script never relies
 # on the extension". Comment lines are excluded: one of them names `\+` in
 # order to explain this.
+# Act & Assert — static, against the subject's text rather than the fixture
 if grep -vE '^[[:space:]]*#' "$subject" | grep -qE '\\\+|\\\|'; then
     failed=$((failed + 1))
     printf '  FAIL  %s\n        found GNU-only BRE; the strip rules need sed -E\n' \
@@ -340,6 +347,7 @@ fi
 # `mapfile`/`readarray` is bash 4+; macOS ships bash 3.2 and `env bash` finds it.
 # Same platform trap as the sed one above, by a different route, equally
 # invisible on CI.
+# Act & Assert
 if grep -vE '^[[:space:]]*#' "$subject" | grep -qE '\b(mapfile|readarray)\b'; then
     failed=$((failed + 1))
     printf '  FAIL  %s\n        found bash 4+ mapfile/readarray; macOS ships bash 3.2\n' \

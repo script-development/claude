@@ -27,6 +27,7 @@
 
 set -uo pipefail
 
+# Arrange
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 subject="$script_dir/context-thresholds.sh"
 
@@ -41,6 +42,8 @@ failed=0
 pass() { passed=$((passed + 1)); echo "ok   $1"; }
 fail() { failed=$((failed + 1)); echo "FAIL $1 — $2"; }
 
+# Act
+#
 # Sourced in a subshell so the suite's own environment cannot leak in. An exported
 # CTX_COMPACT_THRESHOLD_TOKENS in the developer's shell would otherwise make t1 pass for entirely
 # the wrong reason — the file could be broken and this would still be green.
@@ -54,6 +57,7 @@ values=$(env -u CTX_COMPACT_THRESHOLD_TOKENS bash -c '
         printf "%s=%s\n" "$v" "${!v-<UNSET>}"
     done' _ "$subject" 2>/dev/null)
 
+# Assert
 if [ -z "$values" ]; then
     echo "FAIL the file could not be sourced at all"
     exit 1

@@ -40,6 +40,7 @@
 
 set -uo pipefail
 
+# Arrange
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 subject="$script_dir/handoff-inject.sh"
 
@@ -201,22 +202,28 @@ assert_field() {  # assert_field <label> <jq-filter> <expected> <payload> [env..
 # Only `clear` injects. The others are not oversights and each has a distinct reason, so each
 # gets a case: silently widening this later would tax every session in the repo.
 
+# Arrange & Act & Assert — one source per iteration
 for s in startup resume compact fork; do
     assert_silent "source: $s does not inject" "$(payload "$s")" VERIFY_HANDOFF_GATE="$gate"
 done
 
+# Act & Assert — the assert_* helpers run the hook and inspect its injected context. Each
+# case's arrange is its payload and env assignments.
 assert_field 'source: clear injects, tagged as a SessionStart result' \
     '.hookSpecificOutput.hookEventName' 'SessionStart' "$(payload clear)" VERIFY_HANDOFF_GATE="$gate"
 
 # --- i2 — the output must be valid JSON ------------------------------------
 
+# Act
 out=$(run "$(payload clear)" VERIFY_HANDOFF_GATE="$gate")
+# Assert
 if printf '%s' "$out" | jq -e . >/dev/null 2>&1; then
     passed=$((passed + 1)); echo "ok   a hostile handoff still produces valid JSON"
 else
     failed=$((failed + 1)); echo "FAIL a hostile handoff produced invalid JSON"
 fi
 
+# Act & Assert
 assert_context_has 'the document itself is carried through' \
     'Chose `jq -Rs` over hand-rolled escaping' "$(payload clear)" VERIFY_HANDOFF_GATE="$gate"
 
@@ -243,7 +250,9 @@ assert_context_has 'the gate output travels with the document' \
 # same directory in different notations -- mktemp says /tmp/tmp.XXX, git says C:/Users/.../Temp/…
 # -- and hardcoding the shell's form makes this assertion fail on a hook that is behaving
 # perfectly. The subject passes through git's form, so the test must compare against git's form.
+# Arrange
 repo_top=$(git -C "$repo" rev-parse --show-toplevel)
+# Act & Assert
 assert_context_has 'the gate is handed the checkout explicitly' \
     "STUB GATE checkout: $repo_top" "$(payload clear)" VERIFY_HANDOFF_GATE="$gate" STUB_GATE_EXIT=0
 
@@ -253,6 +262,7 @@ assert_context_has 'exit 1 is reported as rot in the citations' \
 # Authoring-side WARN lines are dropped, because the reader can do nothing about them -- but the
 # count is announced, since a silently trimmed verdict block is indistinguishable from a complete
 # one and a reader who cannot tell has to distrust both.
+# Arrange
 warngate="$fixture/warn-gate.sh"
 cat > "$warngate" <<'EOF'
 #!/bin/bash
@@ -264,6 +274,7 @@ exit 0
 EOF
 chmod +x "$warngate"
 
+# Act & Assert
 assert_context_lacks 'authoring-side WARN lines are not injected' \
     'nothing in the prose refers to it' "$(payload clear)" VERIFY_HANDOFF_GATE="$warngate"
 
@@ -320,19 +331,27 @@ assert_context_has 'the reader is told to check compacted:' \
 
 # --- i5 — branch slugging --------------------------------------------------
 
+# Arrange
 git -C "$repo" checkout -q -b fix/foo
+# Act & Assert
 assert_silent 'a branch with no handoff is silent' "$(payload clear)" VERIFY_HANDOFF_GATE="$gate"
 
+# Arrange
 write_handoff fix-foo
+# Act & Assert
 assert_context_has 'a branch containing a slash resolves to its slugged filename' \
     'a hostile document' "$(payload clear)" VERIFY_HANDOFF_GATE="$gate"
 
+# Arrange
 sha=$(git -C "$repo" rev-parse --short HEAD)
 git -C "$repo" checkout -q --detach
+# Act & Assert
 assert_silent 'a detached HEAD with no handoff for its SHA is silent' \
     "$(payload clear)" VERIFY_HANDOFF_GATE="$gate"
 
+# Arrange
 write_handoff "$sha"
+# Act & Assert
 assert_context_has 'a detached HEAD falls back to the short SHA' \
     'a hostile document' "$(payload clear)" VERIFY_HANDOFF_GATE="$gate"
 
@@ -348,11 +367,13 @@ git -C "$repo" checkout -q main
 # So these cases assert the header is authoritative — including where it disagrees with cwd, which
 # is the whole cross-repo case, and the one the old cwd inference got silently wrong.
 
+# Arrange
 wt="$fixture/wt"
 git -C "$repo" worktree add -q -b feature/x "$wt" >/dev/null 2>&1
 wt_top=$(git -C "$wt" rev-parse --show-toplevel)
 write_handoff feature-x "$main_git" "$wt_top" 'feature/x' >/dev/null
 
+# Act & Assert
 assert_context_has 'a worktree session finds its handoff in the store' \
     'a hostile document' "$(payload clear "$wt")" VERIFY_HANDOFF_GATE="$gate"
 
@@ -362,7 +383,9 @@ assert_context_has 'a worktree session hands the gate the WORKTREE as checkout' 
 # The load-bearing one. Session standing in the MAIN tree, handoff declaring the WORKTREE: the
 # gate must be aimed where the document says, not where the session happens to be. A regression
 # to cwd inference passes every other case in this suite and fails only this one.
+# Arrange
 write_handoff main "$main_git" "$wt_top" >/dev/null
+# Act & Assert
 assert_context_has 'checkout: wins over the session cwd when they disagree' \
     "STUB GATE checkout: $wt_top" "$(payload clear)" VERIFY_HANDOFF_GATE="$gate"
 write_handoff main >/dev/null
@@ -372,6 +395,7 @@ assert_context_has 'a worktree session names its own branch' \
 
 # --- Degrading -------------------------------------------------------------
 
+# Act & Assert
 assert_silent 'a non-git cwd is silent' \
     "$(payload clear "$fixture")" VERIFY_HANDOFF_GATE="$gate"
 
@@ -380,11 +404,15 @@ assert_silent 'a nonexistent cwd is silent' \
 
 # Truncated IN THE STORE. Pointing this at the pre-store path would leave the real candidate
 # intact and assert silence against a hook that was correctly injecting it.
+# Arrange
 : > "$store/$(store_name "$main_git" main)"
+# Act & Assert
 assert_silent 'an empty handoff file is silent rather than injecting a header alone' \
     "$(payload clear)" VERIFY_HANDOFF_GATE="$gate"
+# Arrange — restore the handoff for the cases below
 write_handoff main >/dev/null
 
+# Act & Assert
 assert_silent 'a payload with no source is silent' \
     '{"session_id":"s","hook_event_name":"SessionStart"}' VERIFY_HANDOFF_GATE="$gate"
 
@@ -397,6 +425,7 @@ assert_silent 'empty stdin is silent' '' VERIFY_HANDOFF_GATE="$gate"
 # once: does the handoff on disk describe the session just thrown away, or an older one? A stale
 # handoff injected with no such note is worse than none — it reads as coverage.
 
+# Arrange
 state="$fixture/last-clear"
 # `printf '%s'` and not a bare pipe from awk: awk terminates its output with a newline, md5sum
 # hashes whatever it is given, and the subject hashes the path WITHOUT one. Piping straight from
@@ -417,7 +446,11 @@ write_marker() {  # write_marker <slug> <resident> <handoff_mtime> <ended_epoch>
 now_epoch=$(date +%s)
 
 # A handoff written moments before the clear almost certainly covers it.
+# Arrange
 write_marker main 250000 "$now_epoch" "$((now_epoch + 60))" false
+# Act & Assert — each case below re-writes the marker first, because a surfaced marker is
+# CONSUMED by the run: without the re-write, every case after this one would be asserting
+# against an empty state directory rather than against the marker it names.
 assert_context_has 'a handoff written just before the clear is reported as covering it' \
     'very likely does' "$(payload clear)" VERIFY_HANDOFF_GATE="$gate" LAST_CLEAR_STATE_DIR="$state"
 
@@ -459,6 +492,7 @@ assert_context_has 'a clear after the trigger fired says a handoff had been aske
 # This is the case the whole hook exists for: cleared mid-work, nothing written down. Before the
 # marker, this was indistinguishable from a clean start.
 
+# Arrange
 git -C "$repo" checkout -q -b orphan
 orphan_key=$(printf '%s' "$(git -C "$repo" worktree list | head -1 | awk '{print $1}')" | md5sum | cut -c1-32)
 mkdir -p "$state"
@@ -468,6 +502,7 @@ jq -n --argjson ee "$now_epoch" \
       handoff:{present:false,path:"x",mtime:null}, urge_fired:false}' \
     > "$state/$orphan_key-orphan.json"
 
+# Act & Assert
 assert_context_has 'a clear with no handoff at all still surfaces' \
     'that work is undocumented' "$(payload clear)" VERIFY_HANDOFF_GATE="$gate" LAST_CLEAR_STATE_DIR="$state"
 git -C "$repo" checkout -q main
@@ -477,8 +512,11 @@ git -C "$repo" checkout -q main
 # The marker is news about ONE reset. Reporting it again at the next clear would be noise, and
 # worse, would attribute an old loss to a new event.
 
+# Arrange
 write_marker main 250000 "$now_epoch" "$now_epoch" false
+# Act
 run "$(payload clear)" VERIFY_HANDOFF_GATE="$gate" LAST_CLEAR_STATE_DIR="$state" >/dev/null
+# Assert
 [ ! -e "$state/$marker_key-main.json" ] && pass_marker=1 || pass_marker=0
 if [ "$pass_marker" = 1 ]; then
     passed=$((passed + 1)); echo "ok   the marker is consumed after being surfaced"
@@ -486,32 +524,38 @@ else
     failed=$((failed + 1)); echo "FAIL the marker is consumed after being surfaced — it is still on disk"
 fi
 
+# Act & Assert
 assert_context_lacks 'a consumed marker does not resurface on the next clear' \
     'The session you just cleared' "$(payload clear)" VERIFY_HANDOFF_GATE="$gate" LAST_CLEAR_STATE_DIR="$state"
 
 # A corrupt marker must not take the handoff injection down with it: the handoff is still valuable
 # on its own, and a malformed side-file is not a reason to lose it.
+# Arrange
 mkdir -p "$state"
 printf 'not json at all\n' > "$state/$marker_key-main.json"
+# Act & Assert
 assert_context_has 'a malformed marker is ignored rather than fatal' \
     'a hostile document' "$(payload clear)" VERIFY_HANDOFF_GATE="$gate" LAST_CLEAR_STATE_DIR="$state"
 rm -f "$state/$marker_key-main.json"
 
 # And a marker for a DIFFERENT branch must not be reported against this one.
+# Arrange
 write_marker other-branch 250000 "$now_epoch" "$now_epoch" false
+# Act & Assert
 assert_context_lacks 'a marker for another branch is not surfaced here' \
     'The session you just cleared' "$(payload clear)" VERIFY_HANDOFF_GATE="$gate" LAST_CLEAR_STATE_DIR="$state"
 
 # --- The cross-repo pick ---------------------------------------------------
 #
 # The capability the store exists for, and the one no case above exercises: the work happened in a
-# DIFFERENT repository from the one the session is standing in. A mission_control session drives a
+# DIFFERENT repository from the one the session is standing in. An orchestrating session drives a
 # sibling checkout with `git -C` and never moves, so cwd names the wrong repo and the wrong branch,
 # and no path derived from it can find the document. Only enumeration can.
 #
 # It is also the riskiest path, because the pick is a guess. Both halves are asserted: that it is
 # found, and that it is not surfaced on recency alone.
 
+# Arrange
 other="$fixture/other-repo"
 mkdir -p "$other"
 git -C "$other" init -q -b feature/other
@@ -541,6 +585,7 @@ write_cross_marker() {  # write_cross_marker <handoff_mtime> <ended_epoch>
 h_mtime=$(stat -c %Y "$store/$(store_name "$other_main" other-work)")
 write_cross_marker "$h_mtime" "$((h_mtime + 60))"
 
+# Act & Assert — same consumption rule as above: write_cross_marker re-runs before each case.
 assert_context_has 'a handoff for a sibling checkout is found by enumeration' \
     'a hostile document' "$(payload clear)" VERIFY_HANDOFF_GATE="$gate" LAST_CLEAR_STATE_DIR="$state"
 
@@ -573,18 +618,24 @@ assert_context_has 'the candidates not picked are listed for correction' \
 # Without these two cases the hook would surface the newest handoff on the machine at every clear
 # anywhere — strictly worse than the derivation it replaced, which at least stayed silent.
 
+# Arrange
 rm -f "$state"/*.json
+# Act & Assert
 assert_silent 'a guessed pick with no marker is not surfaced at all' \
     "$(payload clear)" VERIFY_HANDOFF_GATE="$gate" LAST_CLEAR_STATE_DIR="$state"
 
 # Marker present, but the handoff predates the clear by well over the window: it describes earlier
 # work in another repository, which is the noise case, not the resume case.
+# Arrange
 write_cross_marker "$h_mtime" "$((h_mtime + 86400))"
+# Act & Assert
 assert_context_lacks 'a guessed pick older than the coverage window is not surfaced' \
     'a hostile document' "$(payload clear)" VERIFY_HANDOFF_GATE="$gate" LAST_CLEAR_STATE_DIR="$state"
 
 # The marker itself still is — the session was cleared, and that stands on its own.
+# Arrange
 write_cross_marker "$h_mtime" "$((h_mtime + 86400))"
+# Act & Assert
 assert_context_has 'the clear is still reported when its guessed handoff was rejected' \
     'The session you just cleared' "$(payload clear)" VERIFY_HANDOFF_GATE="$gate" LAST_CLEAR_STATE_DIR="$state"
 

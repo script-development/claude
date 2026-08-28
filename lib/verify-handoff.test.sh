@@ -42,6 +42,7 @@
 
 set -uo pipefail
 
+# Arrange
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 subject="$script_dir/verify-handoff.sh"
 
@@ -183,7 +184,10 @@ echo "verify-handoff.sh"
 
 # --- The happy path --------------------------------------------------------
 
+# Arrange
 good=$(write good </dev/null)
+# Act & Assert — assert_exit and assert_output run the subject against a document and check
+# its exit code or its output. Each case's arrange is the document built just above it.
 assert_exit 0 'a well-formed handoff with resolving citations passes' "$good"
 assert_output present 'contains the cited content' \
     'the fragment on a referenced line is actually checked' "$good"
@@ -199,6 +203,7 @@ assert_output absent 'nothing in the prose refers to it: #' \
 
 # --- Structure: every required section, and non-emptiness ------------------
 
+# Arrange & Act & Assert — each variant is built inline by `write` from a sed script
 assert_exit 2 'a missing title fails as a contract violation' \
     "$(write no_title <<<'s|^# Handoff.*|# Notes|')"
 assert_exit 2 'a missing branch: field fails' \
@@ -247,19 +252,23 @@ assert_exit 2 'an unclosed Pointers fence fails' \
 # A task can legitimately rest on nothing citable. That must not read the same as
 # a missing fence, which is why the fence state is tracked separately from its
 # contents.
+# Arrange
 empty_ptr="$fixture/empty_ptr.md"
 canonical | sed -e '/^app\/Mail\/Invoice.php:24 |/d' -e '/^app\/Mail\/$/d' \
     -e '/^# the boundary/d' \
     -e 's|`app/Mail/Invoice.php:24`|the builder|' \
     -e 's|`app/Mail/`|the directory|' > "$empty_ptr"
+# Act & Assert
 assert_exit 0 'an empty Pointers fence is legitimate' "$empty_ptr"
 assert_output present 'no citations to check' \
     'an empty Pointers fence says so explicitly' "$empty_ptr"
 
 # --- O7: path:symbol is refused, not resolved -----------------------------
 
+# Arrange
 sym="$fixture/sym.md"
 canonical | sed 's|^app/Mail/Invoice[.]php:24 .*|app/Mail/Invoice.php:build|' > "$sym"
+# Act & Assert
 assert_exit 2 'a path:symbol anchor is a contract violation, not a gate failure' "$sym"
 assert_output present 'known false MISSING' \
     'the path:symbol message names the inherited defect' "$sym"
@@ -271,101 +280,130 @@ assert_output absent '^MISSING' \
 
 # --- Coverage --------------------------------------------------------------
 
+# Arrange
 uncovered="$fixture/uncovered.md"
 canonical | sed '/^app\/Mail\/Invoice\.php:24 |/d' > "$uncovered"
+# Act & Assert
 assert_exit 1 'a pointer cited in prose but absent from Pointers is a gate failure' "$uncovered"
 assert_output present 'never checked' \
     'the coverage message says the claim was never checked' "$uncovered"
 
 # Exemptions, all deliberately narrower than the resolver's own is_path_shaped:
 # over-strict coverage refuses valid handoffs, and that is the expensive error.
+# Arrange
 exempt="$fixture/exempt.md"
 canonical | sed 's|^- None\.$|- Per `CLAUDE.md`, and the template `<project>/.claude/handoff/<branch>.md`, and `SKILL.md`.|' \
     > "$exempt"
+# Act & Assert
 assert_exit 0 'a bare filename, a template path and a bare doc name need no Pointers entry' "$exempt"
 
 # O6: cross-repo entries are declared unchecked on purpose, so they must not be
 # pulled into coverage. This is v2.
+# Arrange
 unv="$fixture/unv.md"
 { canonical; printf '\n## Unverifiable\n- `claude-dotfiles/dotfiles/statusline/statusline.sh` — sibling checkout.\n'; } > "$unv"
+# Act & Assert
 assert_exit 0 'an Unverifiable cross-repo entry is not pulled into coverage (v2)' "$unv"
 
 # Dead weight is a cost, not a risk: warn.
+# Arrange
 dead="$fixture/dead.md"
 canonical | sed 's|^app/Mail/$|app/Mail/\ndocs/notes.md|' > "$dead"
+# Act & Assert
 assert_exit 0 'a Pointers entry nothing refers to warns but does not fail' "$dead"
 assert_output present 'nothing in the prose refers to it' \
     'the unreferenced pointer is named' "$dead"
 
 # Warn, not fail: the coverage rule is already the strict half.
+# Arrange
 stray="$fixture/stray.md"
 # Deliberately NOT in `## Next`: that section is excluded from the prose zone (v3),
 # because a plan names files it is about to create rather than facts about the tree.
 canonical | sed 's|^- None\.$|- Watch app/Mail/Reminder.php:9, it looks the same but is not.|' > "$stray"
+# Act & Assert
 assert_exit 0 'an unbackticked citation warns rather than failing' "$stray"
 assert_output present 'is not backticked' \
     'the unbackticked citation is named' "$stray"
 
 # v3: none of these is a citation, and each one failed the first version.
+# Arrange
 notcites="$fixture/notcites.md"
 canonical | sed 's|^- None\.$|- Ran `/clear` then `/compact`; `~/.claude/lib/` holds it; cost is `(T + H)/2`; see `/`.|' \
     > "$notcites"
+# Act & Assert
 assert_exit 0 'slash commands, home-relative paths and arithmetic are not citations (v3)' "$notcites"
 assert_output absent 'never checked' \
     'none of them is reported as an unchecked claim (v3)' "$notcites"
 
 # v3: a plan names files it is about to create. Demanding they resolve reports
 # MISSING on work not yet done -- the false-refusal direction.
+# Arrange
 plan="$fixture/plan.md"
 canonical | sed 's|^1\. Do Reminder.*|1. Write `app/Mail/Reminder.php` and `docs/plan/new.md`, neither of which exists yet.|' \
     > "$plan"
+# Act & Assert
 assert_exit 0 'files a plan proposes to create need no Pointers entry (v3)' "$plan"
 
 # The middle tier: path-shaped, no line reference. Visible, never fatal.
+# Arrange
 mention="$fixture/mention.md"
 canonical | sed 's|^- None\.$|- Also relevant: `app/Mail/Reminder.php`.|' > "$mention"
+# Act & Assert
 assert_exit 0 'a bare-path mention warns rather than failing' "$mention"
 assert_output present 'mentioned in prose but not in Pointers' \
     'the bare-path mention is named' "$mention"
 
 # v4: a pointer referred to only from `## Next` is not dead weight, even though
 # `## Next` is excluded from the coverage zone.
+# Arrange
 next_ref="$fixture/next_ref.md"
 canonical | sed 's|^1\. Do Reminder.*|1. Do Reminder, following `app/Mail/Invoice.php:24`.|' > "$next_ref"
+# Act & Assert
 assert_output absent 'nothing in the prose refers to it' \
     'a pointer referred to only from Next is not reported as dead weight (v4)' "$next_ref"
 
 # v5: a shell expression is not a path, at any position in the token.
+# Arrange
 shellvar="$fixture/shellvar.md"
 canonical | sed 's|^- None\.$|- Installed at `$HOME/.claude/lib/x.sh`, or `${XDG_DATA_HOME}/y.sh`.|' \
     > "$shellvar"
+# Act & Assert
 assert_exit 0 'a shell-expression path is not a citation (v5)' "$shellvar"
 assert_output absent 'unchecked: \$' \
     'a shell-expression path raises no mention warning (v5)' "$shellvar"
 
 # The anchored exclusions stay anchored: `/` and `~` mid-token are ordinary.
+# Arrange
 midtoken="$fixture/midtoken.md"
 canonical | sed 's|^- None\.$|- Also `app/Mail/Reminder.php`.|' > "$midtoken"
+# Act & Assert
 assert_output present 'mentioned in prose but not in Pointers' \
     'a mid-token slash is still a path (v5)' "$midtoken"
 
 # --- The gate itself -------------------------------------------------------
 
+# Arrange
 changed="$fixture/changed.md"
 canonical | sed 's|public function build$|public function handle|' > "$changed"
+# Act & Assert
 assert_exit 1 'a CHANGED citation fails the gate' "$changed"
 
+# Arrange
 missing="$fixture/missing.md"
 canonical | sed -e 's|app/Mail/Invoice\.php|app/Mail/Phantom.php|g' > "$missing"
+# Act & Assert
 assert_exit 1 'a MISSING citation fails the gate' "$missing"
 
 # --- Checkout reporting ----------------------------------------------------
 
+# Act & Assert
 assert_output present 'checkout .*HEAD' \
     'the checkout and its HEAD are always reported' "$good"
 
+# Arrange
 mismatch="$fixture/mismatch.md"
 canonical | sed 's|^branch: .*|branch: some-other-branch|' > "$mismatch"
+# Act & Assert
 assert_exit 0 'a branch mismatch warns rather than failing' "$mismatch"
 assert_output present 'citations resolve against' \
     'the mismatch says which branch the verdicts belong to' "$mismatch"
@@ -381,6 +419,7 @@ assert_output present 'citations resolve against' \
 # silently falls back to $PWD resolves in a valid-but-wrong tree and reports
 # MISSING -- which is exactly the failure mode being guarded, and it would be
 # invisible if the fallback simply errored "not a git repository" instead.
+# Arrange
 outside="$fixture-outside"
 rm -rf "$outside"
 mkdir -p "$outside"
@@ -389,7 +428,9 @@ git -C "$outside" -c user.email=t@t -c user.name=t commit --quiet --allow-empty 
 
 from_outside() { (cd "$outside" && bash "$subject" "$@" 2>&1); }
 
+# Act
 out=$(from_outside "$good"); code=$?
+# Assert
 if [ "$code" = 0 ] && grep -q 'from checkout: header' <<< "$out"; then
     passed=$((passed + 1))
     printf '  ok    %s\n' 'with no argument, checkout: resolves the tree from a foreign cwd'
@@ -399,7 +440,9 @@ else
         'with no argument, checkout: resolves the tree from a foreign cwd' "$code" "$out"
 fi
 
+# Act
 out=$(from_outside "$good" "$fixture")
+# Assert
 if grep -q 'from argument' <<< "$out" && ! grep -q 'OVERRIDING' <<< "$out"; then
     passed=$((passed + 1))
     printf '  ok    %s\n' 'an argument matching the header is reported as the argument'
@@ -410,7 +453,9 @@ fi
 
 # The override is announced, because a deliberate cross-tree verification and the
 # accident this field prevents produce the same shape of verdict block.
+# Act
 out=$(from_outside "$good" "$outside")
+# Assert
 if grep -q 'OVERRIDING checkout:' <<< "$out"; then
     passed=$((passed + 1))
     printf '  ok    %s\n' 'an argument that overrides the header says so'
@@ -421,9 +466,11 @@ fi
 
 # --- Size is advisory, always ---------------------------------------------
 
+# Act & Assert
 assert_output present 'turns of work' \
     'size is reported in turns of work, not only tokens' "$good"
 
+# Arrange
 big="$fixture/big.md"
 {
     canonical
@@ -434,6 +481,7 @@ big="$fixture/big.md"
         n=$((n + 1))
     done
 } > "$big"
+# Act & Assert
 assert_exit 0 'a handoff over the ceiling still passes — size can never fail the gate' "$big"
 assert_output present 'over the ceiling' 'the ceiling breach is reported' "$big"
 assert_output present 'never a decision' \
@@ -441,8 +489,10 @@ assert_output present 'never a decision' \
 
 # Degrade capability, never execution: no thresholds file means no size line, and
 # never a guessed default.
+# Act
 nothresh=$( (cd "$fixture" && CTX_THRESHOLDS_FILE=/nonexistent/thresholds.sh \
     bash "$subject" "$good" "$fixture" 2>&1); echo "exit=$?" )
+# Assert
 if grep -q 'no thresholds file' <<< "$nothresh" && grep -q 'exit=0' <<< "$nothresh"; then
     passed=$((passed + 1))
     printf '  ok    %s\n' 'a missing thresholds file drops the size report and nothing else'
@@ -459,16 +509,21 @@ fi
 # where a CR makes every required section report absent. Windows is a supported
 # platform for this repo, so a handoff written by an editor there is the normal
 # case, not an edge one.
+# Arrange
 crlf="$fixture/crlf.md"
 canonical | sed 's/$/\r/' > "$crlf"
+# Act & Assert
 assert_exit 0 'a CRLF handoff passes' "$crlf"
 
 # --- Misuse ----------------------------------------------------------------
 
+# Act & Assert
 assert_exit 2 'an unreadable path fails as a contract violation' "$fixture/nope.md"
 
+# Arrange
 prose="$fixture/prose.md"
 cp "$script_dir/../README.md" "$prose" 2>/dev/null || echo "not a handoff" > "$prose"
+# Act & Assert
 assert_exit 2 'an arbitrary document is refused as malformed, not reported as rot' "$prose"
 
 echo
