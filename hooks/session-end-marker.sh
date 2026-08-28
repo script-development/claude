@@ -35,22 +35,52 @@
 # end the session rather than resetting it -- the next one is a `startup`, where nothing is
 # surfaced anyway, and where a report about a session the human deliberately walked away from
 # hours ago would be noise rather than news.
+#
+# ── DEGRADE WITHOUT jq, DON'T JUST DISAPPEAR ───────────────────────────────────────────────
+#
+# This hook used to bail out entirely (`command -v jq || exit 0`) the moment jq was absent, on
+# the theory that SessionEnd has no additionalContext channel anyway, so there is no one to tell.
+# That reasoning covers "cannot report to the user this turn"; it does not cover "cannot record
+# anything on disk either", and those are different claims. Silently writing NO marker made an
+# undocumented clear indistinguishable from a session where nothing was lost -- exactly the
+# failure this whole hook exists to close, just reintroduced by its own dependency check.
+#
+# So jq is now optional, not required: `have_jq` gates only the two things that genuinely need
+# it (reading nested usage figures out of the transcript, and building the JSON marker with a
+# guarantee of correct escaping). Everything else -- which field values are present, git's own
+# `worktree list`/`rev-parse`, the handoff lookup via handoff-store.sh -- never touched jq and
+# still runs. Field extraction and the marker write below both fork on `have_jq`; neither
+# degraded branch is a smaller rewrite of the other, they cover the same fields.
 
 set -uo pipefail
 
-command -v jq >/dev/null 2>&1 || exit 0
+if command -v jq >/dev/null 2>&1; then have_jq=true; else have_jq=false; fi
 
 input=$(cat)
 
-reason=$(printf '%s' "$input" | jq -r '.reason // empty' | tr -d '\r')
+# extract_field <name>: one flat string field from the SessionEnd payload. The grep/sed
+# fallback assumes a simple `"name":"value"` pair with no escaped quote inside the value --
+# true of every field this hook reads (reason, an id, two paths), and no worse an assumption
+# than the rest of this bundle's hand-rolled JSON already makes elsewhere.
+extract_field() {
+    if [ "$have_jq" = true ]; then
+        printf '%s' "$input" | jq -r --arg f "$1" '.[$f] // empty' | tr -d '\r'
+    else
+        printf '%s' "$input" \
+            | sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p" \
+            | tr -d '\r'
+    fi
+}
+
+reason=$(extract_field reason)
 case "$reason" in
     clear) ;;
     *) exit 0 ;;
 esac
 
-session_id=$(printf '%s' "$input" | jq -r '.session_id // empty' | tr -d '\r')
-transcript=$(printf '%s' "$input" | jq -r '.transcript_path // empty' | tr -d '\r')
-cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' | tr -d '\r')
+session_id=$(extract_field session_id)
+transcript=$(extract_field transcript_path)
+cwd=$(extract_field cwd)
 
 [ -n "$cwd" ] || cwd=$PWD
 
@@ -89,8 +119,14 @@ slug=$(printf '%s' "$ref" | tr '/' '-')
 # Readable here precisely because SessionEnd runs before the messages are emptied. This number is
 # what separates "cleared a shallow session, nothing lost" from "discarded 300k of work" -- and
 # the surface needs the distinction to decide whether to say anything urgent at all.
+#
+# jq-only: this is a query over an NDJSON transcript (pick the usage fields off the LAST message
+# that has them), not a flat single-object read like the fields above. Reimplementing that
+# without jq is a real parser, not a grep -- so this one figure is genuinely unavailable when jq
+# is missing, and stays `null` rather than attempting a fragile line-based approximation. `null`
+# already renders correctly downstream (handoff-inject.sh only prints the resident line when set).
 resident=null
-if [ -n "$transcript_fs" ] && [ -r "$transcript_fs" ]; then
+if [ "$have_jq" = true ] && [ -n "$transcript_fs" ] && [ -r "$transcript_fs" ]; then
     r=$(jq -r 'select(.message.usage != null)
                | .message.usage
                | (.input_tokens // 0)
@@ -150,39 +186,73 @@ key=$(printf '%s' "$main" | md5sum 2>/dev/null | cut -c1-32)
 marker="$state_dir/$key-$slug.json"
 
 now=$(date +%s)
+ended_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-jq -n \
-    --arg ended_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    --argjson ended_at_epoch "$now" \
-    --arg reason "$reason" \
-    --arg session_id "$session_id" \
-    --arg transcript_path "$transcript" \
-    --arg repo "$here" \
-    --arg main_worktree "$main" \
-    --arg branch "$ref" \
-    --argjson resident_tokens "$resident" \
-    --arg handoff_path "$handoff_path" \
-    --argjson handoff_present "$handoff_present" \
-    --argjson handoff_mtime "$handoff_mtime" \
-    --argjson urge_fired "$urge_fired" \
-    '{
-        ended_at: $ended_at,
-        ended_at_epoch: $ended_at_epoch,
-        reason: $reason,
-        session_id: (if $session_id == "" then null else $session_id end),
-        transcript_path: (if $transcript_path == "" then null else $transcript_path end),
-        repo: (if $repo == "" then null else $repo end),
-        main_worktree: $main_worktree,
-        branch: $branch,
-        resident_tokens: $resident_tokens,
-        handoff: {
-            present: $handoff_present,
-            path: $handoff_path,
-            mtime: $handoff_mtime
-        },
-        urge_fired: $urge_fired
-    }' > "$marker" 2>/dev/null
+if [ "$have_jq" = true ]; then
+    jq -n \
+        --arg ended_at "$ended_at" \
+        --argjson ended_at_epoch "$now" \
+        --arg reason "$reason" \
+        --arg session_id "$session_id" \
+        --arg transcript_path "$transcript" \
+        --arg repo "$here" \
+        --arg main_worktree "$main" \
+        --arg branch "$ref" \
+        --argjson resident_tokens "$resident" \
+        --arg handoff_path "$handoff_path" \
+        --argjson handoff_present "$handoff_present" \
+        --argjson handoff_mtime "$handoff_mtime" \
+        --argjson urge_fired "$urge_fired" \
+        '{
+            ended_at: $ended_at,
+            ended_at_epoch: $ended_at_epoch,
+            reason: $reason,
+            session_id: (if $session_id == "" then null else $session_id end),
+            transcript_path: (if $transcript_path == "" then null else $transcript_path end),
+            repo: (if $repo == "" then null else $repo end),
+            main_worktree: $main_worktree,
+            branch: $branch,
+            resident_tokens: $resident_tokens,
+            handoff: {
+                present: $handoff_present,
+                path: $handoff_path,
+                mtime: $handoff_mtime
+            },
+            urge_fired: $urge_fired
+        }' > "$marker" 2>/dev/null
+else
+    # No jq to build the object, so escape by hand: backslash first (a Windows path is the
+    # common case here), then the double quote that would otherwise close the string early.
+    # This is the same two-character class `handoff-inject.sh`'s own jq-missing branch avoids
+    # needing, because that branch never embeds arbitrary paths -- this one has to.
+    json_str() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
+    session_id_json='null'; [ -n "$session_id" ] && session_id_json="\"$(json_str "$session_id")\""
+    transcript_json='null'; [ -n "$transcript" ] && transcript_json="\"$(json_str "$transcript")\""
+    repo_json='null'; [ -n "$here" ] && repo_json="\"$(json_str "$here")\""
+    cat > "$marker" 2>/dev/null <<EOF
+{
+  "ended_at": "$ended_at",
+  "ended_at_epoch": $now,
+  "reason": "$(json_str "$reason")",
+  "session_id": $session_id_json,
+  "transcript_path": $transcript_json,
+  "repo": $repo_json,
+  "main_worktree": "$(json_str "$main")",
+  "branch": "$(json_str "$ref")",
+  "resident_tokens": $resident,
+  "handoff": {
+    "present": $handoff_present,
+    "path": "$(json_str "$handoff_path")",
+    "mtime": $handoff_mtime
+  },
+  "urge_fired": $urge_fired,
+  "degraded_no_jq": true
+}
+EOF
+fi
 
 # Nothing on stdout: SessionEnd cannot inject, the UI is being torn down, and hook failures here go
 # to stderr rather than the interface. Anything printed would be noise nobody is positioned to read.
+# The marker file is the only report this hook can ever make -- see the note above the `have_jq`
+# check for why that is still written, in whichever form is available, rather than skipped.
 exit 0

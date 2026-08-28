@@ -59,6 +59,24 @@ COVERAGE_WINDOW_SECONDS=600
 
 input=$(cat)
 
+# Every field extraction below is a jq call. Without jq, `.source // empty` fails, `2>/dev/null`
+# swallows the error, and source_kind comes back empty -- indistinguishable from "not a clear
+# event" to the case below, so this hook would exit 0 exactly as silently on a machine missing jq
+# as it does on an ordinary `startup`/`resume`. That is the "guard that skips without saying so"
+# failure this repo's CLAUDE.md calls out for install.sh, reproduced here. A plain-text grep for
+# the one field this early check needs is enough to tell those two cases apart and say so.
+if ! command -v jq >/dev/null 2>&1; then
+    case "$(printf '%s' "$input" | tr -d '\r')" in
+        *'"source"'*'"clear"'*)
+            # `\\n`, not `\n`: printf itself interprets escapes in its own argument regardless of
+            # shell quoting, so a bare `\n` here would emit a raw newline byte -- an unescaped
+            # control character inside a JSON string, which a strict parser rejects outright.
+            printf '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"# Context reset (SessionStart, source: clear)\\n\\nGATE/INJECT: NOT RUN -- `jq` is not installed, or not on PATH for this hook, so the handoff read leg could not look for a handoff or verify one. Install jq (winget install jqlang.jq / brew install jq), then start a fresh session to restore this.\\n"}}'
+            ;;
+    esac
+    exit 0
+fi
+
 source_kind=$(printf '%s' "$input" | jq -r '.source // empty' 2>/dev/null | tr -d '\r')
 case "$source_kind" in
     clear) ;;
