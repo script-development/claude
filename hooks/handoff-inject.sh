@@ -93,12 +93,13 @@ slug=$(printf '%s' "$ref" | tr '/' '-')
 #
 # THE FILE AND ITS CITATIONS LIVE IN DIFFERENT TREES, and conflating them is the failure that
 # makes every verdict come back MISSING. This hook has only `cwd`, so it cannot DERIVE the path
-# of a handoff whose work happened in a sibling checkout -- which is the normal case when a
-# mission_control session drives one with `git -C` and never moves. The store is centralised
+# of a handoff whose work happened in a sibling checkout -- which is the normal case when an
+# orchestrating session drives one with `git -C` and never moves. The store is centralised
 # precisely so this can list candidates instead of computing one; see lib/handoff-store.sh.
 #
-# Sourced relative to this hook, which works installed (~/.claude/hooks -> ~/.claude/lib) and
-# in-repo (dotfiles/hooks -> dotfiles/lib) without either path being written down here.
+# Sourced relative to this hook, which works installed (~/.claude/hooks -> ~/.claude/lib), in the
+# bundle (hooks/ -> lib/) and as a plugin (${CLAUDE_PLUGIN_ROOT}/hooks -> ../lib) without any of
+# those paths being written down here.
 #
 # If the lib is absent the hook falls back to the pre-store location. Degrade capability, never
 # execution: a half-finished install must not silence the read leg entirely.
@@ -129,7 +130,7 @@ fi
 # The tree the citations resolve against. The document's own `checkout:` header is the
 # authority; `here` is the fallback, and is right only when the session happens to be standing
 # in the work's own repository. Never the other way round: preferring `here` would aim the gate
-# at mission_control for every handoff about a sibling checkout and report a page of MISSING.
+# at the orchestrating checkout for every handoff about a sibling one and report a page of MISSING.
 gate_checkout=${handoff_checkout:-$here}
 
 # ── The /clear marker ──────────────────────────────────────────────────────────────────────
@@ -192,11 +193,12 @@ fi
 
 # ── The gate ───────────────────────────────────────────────────────────────────────────────
 #
-# Probed beside this hook first -- one path that holds in-repo, installed and as a plugin --
-# then the in-repo path for a session already inside mission_control. It used to lead with
-# $HOME/.claude/lib, which a plugin install never creates. Never through a sibling path like
-# `<project>/../mission_control/tools/`, which is layout config of exactly the kind this repo
-# refuses to make configurable.
+# Probed beside this hook first -- one path that holds in-repo, installed and as a plugin -- then
+# the in-repo path for a session already standing in the bundle's host monorepo. That second probe
+# is the ONLY line in this file tied to a host layout, and it is the line that goes when the bundle
+# is extracted to its own repository. It used to lead with $HOME/.claude/lib, which a plugin install
+# never creates. Never through a sibling path like `<project>/../<other-repo>/tools/`, which is
+# layout config of exactly the kind this bundle refuses to make configurable.
 verdicts=""
 status_line=""
 if [ "$handoff_present" = true ]; then

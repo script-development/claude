@@ -100,10 +100,11 @@ context_gauge() {
       printf '%s' "$plain"
     elif [ "$tokens" -ge "$CTX_URGE_TOKENS" ]; then
       # `handoff?` names a command that actually exists: /handoff is reachable from any
-      # session through the ~/.claude/skills/handoff symlink (see mission_control's README
-      # link table). It stayed `reset?` until that was true, and must go back to a blunter
-      # word if that link ever goes: a statusline advertising a command the reader cannot
-      # run is worse than one naming a coarser action they can.
+      # session because this bundle ships the skill -- as a plugin, through its own skills/
+      # directory; under a symlink install, through ~/.claude/skills/handoff. It stayed
+      # `reset?` until that was true, and must go back to a blunter word if BOTH of those
+      # ever go: a statusline advertising a command the reader cannot run is worse than one
+      # naming a coarser action they can.
       printf '%s' "${bold}${red}ctx:$((tokens / 1000))k/$((CTX_URGE_TOKENS / 1000))k handoff?${reset}"
     elif [ -n "${CTX_NOTICE_TOKENS:-}" ] && [ "$tokens" -ge "$CTX_NOTICE_TOKENS" ]; then
       # The denominator is CTX_URGE_TOKENS, printed rather than hardcoded, so a yellow

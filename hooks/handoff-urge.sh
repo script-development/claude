@@ -12,9 +12,9 @@
 # session has room to write the handoff before auto-compaction takes it. The decline is the
 # important half; see "WHY THE HEADROOM CHECK IS HERE" below.
 #
-# Thresholds are SOURCED from mission_control's context-thresholds.sh, never restated. If that
-# file is missing this hook does nothing at all -- degrade capability, never execution, the same
-# rule statusline.sh follows.
+# Thresholds are SOURCED from this bundle's lib/context-economy/context-thresholds.sh, never
+# restated. If that file is missing this hook does nothing at all -- degrade capability, never
+# execution, the same rule the gauge follows when its thresholds are absent.
 #
 # ── WHY THE HEADROOM CHECK IS HERE, AND WHY IT DECLINES RATHER THAN WARNS ──────────────────
 #

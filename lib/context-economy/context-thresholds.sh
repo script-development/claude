@@ -116,11 +116,12 @@ CTX_URGE_TOKENS=200000
 #                         outside the synced project.
 #   model_hook         -- NOT cleared. An agent or prompt hook cannot run for a cloud call at all.
 #
-# THE HAZARD FOR THIS REPO IS `in_reach`, BECAUSE WE INSTALL BY SYMLINK. ~/.claude/hooks/* point into
-# mission_control and ~/.claude/lib/* do too, so a hook whose realpath lands
-# inside whichever repo the cloud session has synced is held regardless of settings scope. If item 4's
-# hook must survive cloud-served calls, it needs a real file outside any synced checkout -- not a
-# symlink into one.
+# THE HAZARD IS `in_reach`, AND WHICH WAY IT FALLS DEPENDS ON HOW THIS BUNDLE WAS INSTALLED. Under a
+# symlink install -- ~/.claude/hooks/* and ~/.claude/lib/* pointing into a checkout -- a hook whose
+# realpath lands inside whichever repo the cloud session has synced is held regardless of settings
+# scope. A plugin install sidesteps it: the cache copy under ~/.claude/plugins/cache/ is a copy, and
+# sits outside every synced checkout. If item 4's hook must survive cloud-served calls, it needs a
+# real file outside any synced checkout -- not a symlink into one.
 #
 # NOT VERIFIED: what populates the "synced project" reach set, and whether a file the hook SOURCES
 # (this file, for instance) is examined alongside the script itself. Plausible, untraced.

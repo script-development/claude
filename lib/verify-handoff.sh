@@ -24,9 +24,9 @@
 #
 # $PWD is last for the reason the header field exists at all. Once the document
 # stopped living inside the tree it describes, a cwd-derived checkout stopped
-# being a reasonable guess and became a confident wrong answer: a caller in
-# mission_control verifying a handoff about a sibling checkout would resolve
-# every citation against mission_control and report a page of MISSING verdicts
+# being a reasonable guess and became a confident wrong answer: a caller in an
+# orchestrating checkout, verifying a handoff about a sibling one, would resolve
+# every citation against the orchestrator and report a page of MISSING verdicts
 # indistinguishable from real rot. The document has to say which tree it means.
 #
 #   0  structure holds, every cited pointer is listed, every citation resolves
@@ -198,9 +198,9 @@ has_heading() { grep -qE "$1" <<< "$content"; }
 
 # --- Structure -------------------------------------------------------------
 #
-# Required, and required to be non-empty. The empty check is the point: per
-# mission_control's CLAUDE.md, an absent section cannot be distinguished from a
-# run that never looked, and the three subsections under "Do not re-derive" are
+# Required, and required to be non-empty. The empty check is the point: an
+# absent section cannot be distinguished from a run that never looked, and the
+# three subsections under "Do not re-derive" are
 # exactly the content D6 says a summariser drops. "None." is a real answer and
 # passes; silence is not an answer and does not.
 

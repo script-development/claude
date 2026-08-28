@@ -222,8 +222,8 @@ the model where its own skill file lives, which it cannot reliably know.
 If `gate=NONE`, **write the handoff anyway** and mark it unverified in `status:`. Degrade capability,
 never execution — an unverified handoff is worth far more than no handoff.
 
-If `handoff=STORE-LIB-MISSING`, the dotfiles install is incomplete (`install.sh` symlinks
-`lib/handoff-store.sh`). Write to `~/.claude/context-economy/handoffs/<repo>-<slug>-<hash>.md` with
+If `handoff=STORE-LIB-MISSING`, the install is incomplete — `lib/handoff-store.sh` never reached
+the place the hooks look for it. Write to `~/.claude/context-economy/handoffs/<repo>-<slug>-<hash>.md` with
 `hash` = the first 8 characters of `printf '%s' "$main" | md5sum`, say in `status:` that the name was
 built by hand, and flag the install — a name built by hand is exactly the failure the paragraph
 above describes.
