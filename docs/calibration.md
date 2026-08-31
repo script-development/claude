@@ -244,3 +244,44 @@ two denominators differ — that is a composition, not a restatement of either f
 occasionally writes a tool call into its visible text instead of emitting a tool_use block. The turn succeeds, the call never runs, no error is raised, and in an agentic loop that text pollutes every later turn. Claude Code is nothing but an agentic loop. The second
 is <thinking> tags leaking into responses. The supported lever is effort, not disabling. Lower effort cuts thinking tokens while keeping the mechanism intact — and it compounds in your favour, because lower effort also means fewer and more-consolidated tool calls and less preamble, which is less tool
 traffic, which is less replayed context. Two of your report's levers move together.
+
+---
+
+## Measurement ceiling, 2026-08-31: breakpoint placement is not in the transcript
+
+Recorded here because this document is where the holes in the accounting live, and because the hole
+is permanent rather than a defect to fix. Prompted by the cache-side measurement in
+`docs/measured.md` (addendum, 2026-08-31), which answered what it could and stopped here.
+
+**The limit.** A transcript's `usage` object records what was *read* and what was *written* —
+`cache_read_input_tokens`, `cache_creation_input_tokens` — and never where the cache breakpoints
+were placed. So two mechanisms that this corpus cannot tell apart:
+
+- an outer, longer cache entry being read, and that nested read refreshing the TTL of the shorter
+  entry contained within it;
+- the shorter entry simply being re-declared explicitly on every request.
+
+Both produce **byte-identical** `usage` records. No amount of care with the existing fields
+separates them, because the discriminating variable was never written down.
+
+**What follows.** Any claim about *breakpoint strategy* — how many to place, where, whether a nested
+read keeps an inner entry warm — is unfalsifiable from this corpus. That is not a reason to hold no
+view; it is a reason to label the view as sourced from documentation rather than from measurement,
+and to stop before designing further transcript analyses against it. The TTL semantics this repo
+relies on (a read refreshes the timer; lifetime is measured from request *start*, so generation time
+counts against it; writes bill 1.25× at 5 minutes and 2× at the hour; 4 breakpoints maximum; a
+20-block lookback window) come from the bundled `claude-api` skill's `shared/prompt-caching.md`, not
+from anything measured here.
+
+**What is still measurable, and worth the run.** Questions phrased as *"does the prefix read
+collapse?"* rather than *"which entry was refreshed?"* stay inside what `usage` can answer, because
+they only need the size of the read, not its structure. The worked example is the `ToolSearch`
+hypothesis: a mid-session deferred-tool load should invalidate from position 0, which would show up
+as `cache_read_input_tokens` collapsing on the following request. Being a prefix-*size* question it
+was answerable, and it has since been answered — **refuted**, in `docs/measured.md` finding #9. The
+breakpoint question above stays out of reach, and the contrast is the useful part: the two questions
+look equally empirical and only one of them is.
+
+**Follow-up 6, for the list above:** do not add a breakpoint-strategy analysis to
+`tools/context-calibrate.js`. It would produce numbers that look like evidence for whichever
+mechanism the author already believed.

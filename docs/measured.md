@@ -334,3 +334,173 @@ billed and still sitting in context. Every character-derived figure here therefo
 assistant side by roughly half of its output. `CHARS_PER_TOKEN = 4` was deliberately left in place
 so these figures stay comparable with the original run; `tools/context-calibrate.js` is the tool
 that measures both properly.
+
+---
+
+## Addendum, 2026-08-31 — what a compaction costs, in two numbers
+
+Appended rather than merged: finding #6 already reports the three boundaries' `pre`/`post`/`dropped`
+and its conclusion is unchanged. What is new here is the **cache side** of the same three events,
+which #6 did not look at, and one property that follows from it.
+
+**Report the cost of a compaction as two numbers, never one.** They answer different questions and a
+blended figure answers neither — one is a recurring saving and the other a one-off charge, so their
+sum has no referent:
+
+1. **Context dropped** — ~980k tokens of resident material, per #6. This is a *recurring saving*:
+   every subsequent request stops replaying it.
+2. **Cache-write price paid once** — 36–45k tokens written fresh by the first post-compaction
+   request, billed at the write multiplier (1.25× at the 5-minute TTL, 2× at the hour).
+
+### The three boundaries, cache side
+
+Same three events as #6's table, same order; `pre`/`post` repeated only as the join key. `read` is
+`cache_read_input_tokens`, `create` is `cache_creation_input_tokens`, for the last request before
+the boundary and the first one after it.
+
+```
+kendo-2/7359db87   preTokens=1,000,355  postTokens=22,978  durationMs=172,956
+     BEFORE  read=997,853  create=1,067   input=2
+     AFTER   read= 31,059  create=45,458  input=2
+kendo-2/7efc5ac2   preTokens=  999,757  postTokens=17,920  durationMs= 96,221
+     BEFORE  read=998,251  create=  411   input=1
+     AFTER   read= 29,600  create=36,473  input=2
+mission-control/29e903e9  preTokens=1,001,516  postTokens=20,056  durationMs= 87,028
+     BEFORE  read=999,050  create=   46   input=2
+     AFTER   read= 30,092  create=39,488  input=2
+```
+
+Two things to read off this directly. **`read` ≈ `preTokens` before every boundary** (997.9k against
+1,000.4k) — the pre-compaction steady state is a near-total cache hit, which is finding #1 seen from
+the cache's side rather than the ledger's. And **`create` before a boundary is 46–1,067 tokens**: in
+normal operation a turn writes almost nothing, so the 36–45k written after a compaction is not
+routine growth. It is the boundary's own bill.
+
+### An early-prefix entry survives the compaction
+
+The post-compaction `read` is **~30k in all three cases**, against a `postTokens` of 18–23k. The
+conversation tail was destroyed, yet ~30k was still served from cache at 0.1×.
+
+`cache_read_input_tokens = N` means literally *the first N tokens of the rendered prompt* — reads
+are necessarily prefix-shaped. That is what licenses identifying this ~30k as the tools-plus-system
+preamble rather than "30k of material from somewhere", and it is the assumption to check first if a
+later analysis makes this number mean something else.
+
+Priced with this report's rates (write 1.25×, read 0.1×), surviving is worth ~35k effective tokens
+per boundary at the 5-minute TTL and ~57k at the hour — the difference between reading that prefix
+and re-writing it.
+
+**Consequence: compaction repays its write inside the first request.** Pre-compaction steady state
+is 997.9k read at 0.1× ≈ 99.8k effective tokens per request. The first post-compaction request costs
+45,458 at 1.25× plus 31,059 at 0.1× ≈ 59.9k effective — already cheaper, and still cheaper (≈94k) if
+the write is billed at 2×. This is a derivation from the numbers above, not a fourth measurement.
+
+### Caveat: this demonstrates validity, not warmth
+
+`durationMs` on the three boundaries is 87–173 s, so the gap between the last pre-compaction request
+and the first post-compaction one never stressed any TTL. Every competing hypothesis about cache
+lifetime predicts a hit at that gap. What is shown is that the surviving prefix stayed **valid**
+across a mid-conversation invalidation — not that it would stay **warm** across an idle. Nothing
+here measures TTL behaviour, and the ceiling on what this corpus can say about breakpoints is
+recorded in `docs/calibration.md`.
+
+### Two notes, one inferred and one confirming
+
+- **`preCompactDiscoveredTools` looks load-bearing for this, and that is inferred, not measured.**
+  Tools render *before* system in the prefix, so a changed tool set invalidates from position 0,
+  system prompt included. The metadata field exists so the deferred-tool set is re-declared
+  identically across the boundary — which would be the reason the read is ~30k and not 0. The
+  corollary this suggested has since been tested and **refuted** — see finding #9 below, which also
+  says what that does and does not do to this inference.
+- **All three fired at ~1.0M `preTokens`**, confirming these sessions run the `[1m]` beta and that
+  the ceiling is not ~150k or ~200k. This confirms the `[1m]`-suffix detection path at
+  `hooks/handoff-urge.sh:144`; it is not a new constraint.
+
+### Reproduction
+
+Not covered by `tools/context-audit.js`. Filter the transcript store for records with
+`subtype == "compact_boundary"`, then take the nearest `message.usage` before and after by index —
+and parse the JSON structure rather than grepping for field names, per the trap already recorded at
+`hooks/handoff-urge.sh:105`.
+
+---
+
+## Finding #9, 2026-08-31 — loading a deferred tool mid-session does *not* rewrite the cache prefix
+
+Numbered as a finding rather than appended to the addendum above because it settles a question the
+addendum could only pose, and the answer is the opposite of what was predicted.
+
+**The hypothesis, from the addendum's own trap.** Claude Code defers most tool schemas: they are
+named but undefined until `ToolSearch` loads one. Tools render *before* the system prompt, so a tool
+set that changes mid-session should invalidate the cache from position 0 — system prompt included —
+making every mid-session tool load cost a full prefix rewrite.
+
+**It is answerable because it is a question about the read's *size*, not its structure.** Reads are
+prefix-shaped, so a prefix invalidation shows up as `cache_read_input_tokens` collapsing. This is
+exactly the distinction drawn in `docs/calibration.md`'s measurement-ceiling section: the breakpoint
+question needs structure the transcript never records, this one does not.
+
+**The corpus contains its own control group.** A `ToolSearch` whose `select:` names a tool that does
+not exist returns `"No matching deferred tools found"` and zero `tool_reference` entries — the call
+happens, the tool set does not change. So there are matched pairs at the same context depth,
+differing only in whether the tool set grew. Classes: **NEW** (≥1 returned tool not loaded earlier
+in that context), **REPEAT** (all already loaded), **MISS** (nothing returned), and **CONTROL**
+(adjacent request pairs with no `ToolSearch` at all).
+
+Survival below is the next request's `cache_read` over the prompt total of the request that made the
+call. Pairs are excluded if they span a `compact_boundary`, if the first request read nothing
+(cold start), or if the gap exceeds 240 s — that last one so TTL expiry cannot pose as invalidation.
+
+| class | pairs | median survival | read = 0 | median write on the next request |
+|---|---|---|---|---|
+| NEW | 132 | 100.0% | 2 (1.5%) | 2,128 |
+| REPEAT | 3 | 100.0% | 0 | 967 |
+| MISS | 11 | 100.0% | 0 | 229 |
+| CONTROL | 6,597 | 100.0% | 6 (0.1%) | 1,040 |
+
+**Verdict: refuted.** The prefix survives a new deferred-tool load. Outside one workflow discussed
+below, 101 of 104 NEW pairs survived at *exactly* 100%.
+
+**The two collapses are not caused by the tool load, and the corpus proves it.** Both are subagent
+contexts inside a single ~100-way parallel workflow (`wf_baccf070-3e3`). Within that workflow, 29
+sibling agents made the *identical* load — `WebFetch` — at near-identical prompt sizes (~23.2k) and
+gaps (~4 s). **27 kept their prefix and 2 read zero.** A deterministic invalidation would have hit
+all 29. Cache eviction under heavy parallel load is the obvious candidate and the transcript cannot
+confirm it, so the honest statement is that the mechanism for those two is undetermined — not that
+the tool load did it.
+
+**Read the 74.4% cluster as breakpoint granularity, not partial invalidation.** Those same 27 agents
+all report `cache_read` of exactly 17,281 against a ~23.2k prompt. A constant read across 27
+independent contexts is a breakpoint, not decay: the prefix up to the last breakpoint was reused and
+the ~6k of tail below it was rewritten, which is what an ordinary turn does. This is why survival
+alone is a poor test and `read = 0` is the column that carries the verdict — a partial read is
+routine, a zero read is different in kind.
+
+**The actionable number is the marginal write: ~1.1k tokens.** The request following a new-tool load
+writes a median 2,128 tokens against a control turn's 1,040. So the cost of pulling in a deferred
+tool mid-session is on the order of a thousand tokens of cache write — not the ~30k prefix rewrite
+the hypothesis predicted, and small enough that avoiding `ToolSearch` for economy is not a lever.
+Consistent with the result, and **inferred rather than measured**: the schema arrives as ordinary
+conversation content (the result record is a `{type: "tool_reference", tool_name}` entry in the
+message stream) rather than being re-rendered into the tools block ahead of the system prompt.
+
+**What this does to the `preCompactDiscoveredTools` inference above: weakens its premise, does not
+refute the inference.** The premise was "a changed tool set invalidates from position 0". What is
+now measured is narrower — *`ToolSearch` does not change the rendered tools block at all*, so it
+never tests what a genuinely changed tools block would do. Whether that field is what keeps the
+~30k prefix valid across a compaction is still untested, and still inferred.
+
+### Reproduction
+
+`tools/toolsearch-cache-probe.js` is **not shipped in this bundle** — it answers this one question
+and a consumer of the plugin has no use for it. It lives in mission_control at
+`tools/toolsearch-cache-probe.js`:
+
+```
+node tools/toolsearch-cache-probe.js            # summary table and verdict
+node tools/toolsearch-cache-probe.js --verbose  # every pair, so an outlier can be chased
+```
+
+Figures above are from a 286-transcript corpus as of 2026-08-31, of which 100 carried the string
+`ToolSearch` and were parsed structurally — the string match is a speed pre-filter only, per the
+trap at `hooks/handoff-urge.sh:105`.
