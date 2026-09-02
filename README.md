@@ -26,6 +26,7 @@ Work in any project, no configuration needed.
 | [review-mcp-descriptions](skills/review-mcp-descriptions/) | Improve MCP tool/resource descriptions for discoverability |
 | [task-writer](skills/task-writer/) | Break down features into structured TASKS.md with verification |
 | [wireframe](skills/wireframe/) | Generate structured WIREFRAMES.md with ASCII layouts, design tokens, and interaction specs |
+| [worktree](skills/worktree/) | Cut a fresh git worktree: branch, deps, env files, per-repo house rules, then hand back the path |
 
 ### Stack-Specific Skills
 
