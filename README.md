@@ -27,6 +27,7 @@ Work in any project, no configuration needed.
 | [sync-worktrees](skills/sync-worktrees/) | Copy gitignored .env* files and refresh dependencies from the primary worktree into every secondary worktree; optional safe fast-forward |
 | [task-writer](skills/task-writer/) | Break down features into structured TASKS.md with verification |
 | [wireframe](skills/wireframe/) | Generate structured WIREFRAMES.md with ASCII layouts, design tokens, and interaction specs |
+| [worktree](skills/worktree/) | Cut a fresh git worktree: branch, deps, env files, per-repo house rules, then hand back the path |
 
 ### Stack-Specific Skills
 
