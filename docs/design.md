@@ -21,10 +21,198 @@ itself the subject of the design — see [D6](#d6).
 
 Cost per turn _is_ the resident context size, so total cost is quadratic in session length. Measured
 across 8,888 API requests of real prior work: 98.1% of all tokens are cache reads, corpus
-amplification is 51.6× (worst context 111×), and 90% of spend occurs at context depths above 100k.
+amplification is 58.6× (worst context 111×, now a floor — 51.6× and 111× as first reported, whose
+denominator double-counted output; `docs/measured.md`, correction 2026-09-02), and 90% of spend
+occurs at context depths above 100k.
 A session does not end when the terminal closes — resuming appends to the same context, and the
 largest session here spans four calendar days. Simulated against each context's own measured growth
 rate, resetting at 200k instead of the 1M ceiling would have saved 66%.
+
+---
+
+## Why the quadratic is a replay artifact
+
+_Added 2026-09-02._ The paragraph above is the load-bearing claim of this document, so it is worth
+being exact about where the quadratic comes from. The obvious mechanism is the wrong one, and it
+licenses a wrong inference.
+
+_Provenance, since the header promises this document re-derives nothing:_ the structural argument
+below is reasoning, not measurement. The output-billing figures under
+[the rates](#the-rates-this-rests-on) are the exception — measured over the same transcript store
+`docs/measured.md` used, by `tools/context-billing.js`, and not figures from that report. That tool
+is this section's instrument, and also what found the denominator defect corrected in
+`docs/measured.md` on the same date.
+
+Attention is quadratic in sequence length, but that quadratic is **compute per request** — O(N²)
+FLOPs to prefill N tokens, asymptotic (at moderate depth the per-token projection work dominates),
+and it never reaches an invoice. The quadratic in the bill is a **protocol** artifact: requests are
+stateless, so the entire transcript is re-sent every turn. With cache reads at 0.1× base input, a
+session of `T` requests reaching depth `N` bills
+
+`total ≈ 0.1 · Σ(depth at request t) ≈ 0.05 · N · T`
+
+The test that separates the two: a model with perfectly linear attention would leave that figure
+**completely unchanged**. Nothing about the mechanism is available as a lever — requests × depth is
+the whole of it. Finding #1 already says this from the measurement side ("context replay is the
+entire cost structure", 58.6× amplification); this is the same claim from the mechanism side, and it
+is why every decision here acts on depth ([D1](#d1), [D10](#d10)) or on what enters context at all
+(implications #3 and #4), and never on making an individual turn easier to process.
+
+### The inference this closes
+
+Since `c = N / T`, the same expression is `total ≈ 0.05 · N² / c`, where `c` is the average tokens
+added per request. Cost falls as `c` **rises**. Adding context in small increments is therefore not
+cheaper — it is dearer, because each additional request re-reads the whole prefix at 0.1×, pays
+another cache write, and emits its own output.
+
+Compute agrees, which is the part that surprises. Causal attention computes each ordered pair
+(i, j), i < j, exactly once, and the set of pairs is a property of the **final sequence**, not of
+the schedule by which it arrived. K tokens fed as one chunk cost `K·N + K²/2`; fed as chunks of `k`
+they cost `K·N + K²/2 + K·k/2`. Splitting saves no work and adds per-request overhead. And there is
+no quadratic-in-K on the invoice at all — K uncached tokens bill as K tokens, once.
+
+**Fewer, larger additions.** Small chunks do have an argument in their favour — retrieval accuracy
+over a diluted context — but that is a quality claim, and filing it under token economics is
+precisely what inverts the rule.
+
+### The rates this rests on
+
+List prices, not measurements:
+
+| | multiple of base input |
+| ---------------------- | ---------------------- |
+| cache read             | 0.1×                   |
+| cache write, 5-min TTL | 1.25×                  |
+| cache write, 1-hour TTL | 2×                    |
+| output                 | 5×                     |
+
+An output token is billed in **three** phases, and the cache write is _not_ folded into the output
+rate:
+
+1. **generation** — 5×, as output;
+2. **the very next request** — 1.25×, as a cache write. The assistant turn is now part of the input
+   prefix, and it is written like any other new input material. A separate charge;
+3. **every request thereafter** — 0.1×, as a cache read.
+
+Measured, not reasoned — `node tools/context-billing.js`. Token conservation makes the test exact
+and needs no character estimate: the tokens sent on a request are `cr + cc + inp`, so between
+consecutive requests `Δ(cr + cc + inp) = out(t) + newInput(t+1)`. If `cc(t+1)` equals that whole
+delta the prior turn's output was re-billed as a write; if it equals `delta − out(t)` the output rode
+in free. Across **1,716** warm consecutive pairs with `out(t) ≥ 300` (store as of 2026-09-02),
+`cc(t+1)` matches the **whole** delta in **97.0%** of cases — 2.3% match `delta − out(t)`, 0.6%
+neither — and for pairs under a minute apart `cc/Δprefix = 1.01`.
+
+The 2.3% is real, and it is the free-read hypothesis actually winning — _this document asserted
+otherwise on first writing and was wrong._ The tempting explanation is that the increment landed in
+uncached input because the breakpoint had not advanced; the decomposition refutes it. In those pairs
+`inp` averages 2 tokens while `cr` grows by more than the entire previous prefix, by very nearly
+exactly `out(t)`: **51,896 of 53,693** shortfall tokens are served as reads, across 43 of 45 pairs.
+So the server does sometimes retain the KV it computed while generating and extend the entry for
+free — rarely, unpredictably, and for reasons not established here. It does not disturb the 97%
+account, and `tools/context-billing.js` now prints that decomposition so the next reader measures it
+instead of reasoning about it.
+
+Lifetime cost of an output token surviving `R` further requests is therefore `5 + 1.25 + 0.1·R`
+multiples of base input. At the corpus's measured amplification that is ≈11×, of which generation is
+~44% and replay ~56% — the two halves are the same order, which is worth knowing before optimising
+only one of them. This is also the mechanism under finding #1's otherwise odd pair of numbers
+(output is 0.2% of tokens but 8.7% of cost), and under `docs/calibration.md`'s strengthening of
+implication #4: bounded output and scoped reads are worth more than a flat per-token ratio makes
+them look.
+
+**Phase 2 can also repeat.** A cache write is not a one-time toll — when an entry expires the prefix
+is re-written at 1.25×. Same store, all warm growing pairs bucketed by the gap between consecutive
+requests.
+
+Both halves of the ratio are per pair of consecutive requests, over the same interval:
+
+- **`Δprefix`, the denominator** — how much bigger the thing you send got. Tokens sent on a request
+  are `cr + cc + inp`, so this is that figure on request t+1 minus the same figure on request t. It
+  is the genuinely new material: the previous assistant turn, plus tool results, plus your message.
+- **`cc`, the numerator** — `cache_creation_input_tokens` on request t+1. The tokens charged the
+  1.25× write rate on that request.
+
+So the ratio reads **tokens paid to write ÷ tokens that were actually new.**
+
+| gap | pairs | `cc / Δprefix` |
+| ------------- | ----- | -------------- |
+| under 1 min   | 2,261 | 1.01           |
+| 1–5 min       | 224   | 0.71           |
+| 5–60 min      | 68    | 1.85           |
+| over 1 hour   | 1     | 152.9          |
+
+**= 1.0** is the ordinary case and needs no story: a turn during active work — agent calls a tool,
+result comes back, next request goes out. The previous assistant turn and the tool result are each
+written once. Across the 2,471 such pairs the match is near-exact: 4,900,771 tokens written against
+4,900,656 new, 115 apart in total. The _first_ request of a session is **not** an instance of it —
+there is no predecessor to difference against, and `cr = 0` excludes it as a cold start.
+
+**> 1.0** means paying writes for more tokens than were new, i.e. re-writing material already sent.
+Idle time past the TTL is the cause: come back from a long lunch and the prefix is re-established at
+1.25× for content the model had already read. The single over-hour pair here is 545 tokens of new
+material against 83,347 written. One correction to the obvious telling of it — if the entry expires
+*entirely*, `cr` drops to 0 and the pair is filtered out as a cache miss rather than showing up here
+as a high ratio. Every row above is therefore *partial* expiry: an earlier breakpoint still alive,
+later ones dead, so part of the prefix is read and the tail re-written.
+
+TTL is the only cause **in this table**, not the only cause there is. Compaction and rewinding a
+conversation are the same phenomenon — a shared head served as reads, everything from the first
+divergence written again — and both are absent here because both make the prefix *shrink*, which
+the `Δ > 0` filter drops. The exclusion is structural rather than cautious: the ratio only means
+"writes per new token" while the new prefix is the old one plus a suffix, and a rewritten history
+breaks that identity, so the denominator stops denoting anything rather than going out of range.
+Compaction's version of it is measured — `docs/measured.md`'s
+[2026-08-31 addendum](measured.md#addendum-2026-08-31--what-a-compaction-costs-in-two-numbers) has
+the first post-compaction request reading 31,059 tokens of harness preamble and writing 45,458
+fresh, which is the same shape as an expiry row and is why that addendum insists on quoting a
+compaction as two numbers. Rewind's version is not measured and cannot be from this corpus: it
+re-writes from the nearest live breakpoint at or below the rewind point, and breakpoint positions
+are not in the transcript (`docs/calibration.md`'s measurement ceiling), nor does a rewind leave the
+detectable prefix-collapse signature that makes compaction findable at all.
+
+**< 1.0** has no user-facing cause, which is why no example suggests itself. It is the free-read
+minority above: the server occasionally serves the previous turn's output as a read and charges no
+write for it. A windfall, not a lever — unprovokable, ~2% of turns, and oddly concentrated in the
+1–5 minute band (16% of pairs there against 0.8% under a minute), which is the whole reason that
+band reads 0.71 while every other sits at or above 1.0.
+
+Idle time is billable in this cost model, then, and a session left open across a break pays to
+re-establish precisely what it already had. Nothing in this design pulls that lever and the
+[D1](#d1) simulation does not price it.
+
+### `R` is a property of position, not of the token
+
+`R` above is not a constant — it is the count of requests that follow the one a token arrives on. A
+token entering at request 1 of a 100-request context is replayed ~99 times; one entering at request
+99 is replayed once. Same bytes, same rate card, two orders of magnitude apart in what they cost.
+Lifetime multiples of base input:
+
+| | lifetime cost      |
+| --------------- | ------------------ |
+| an input token  | `1.25 + 0.1·R`     |
+| an output token | `5 + 1.25 + 0.1·R` |
+
+So **position overtakes provenance as depth grows.** At corrected corpus-wide amplification
+(`R` = 58.6) an output token costs 1.7× an input token of the same size; at the worst measured
+context's 111× (finding #1) it is 1.4×; for a token sitting at position zero of that 486-request
+session (finding #6), 1.1×. Deep enough in, it stops mattering much whether a token was expensive to produce — the
+replay term swamps its origin.
+
+This is the arithmetic under the implication ranking, and it is worth stating explicitly because the
+two levers act on different terms: input hygiene (#4) reduces the **coefficient**, session-lifecycle
+discipline (#1) reduces **`R`**. Only one of them acts on the term that grows — which is why #1
+outranks #4 even though #4 is the one that feels like thrift, and it agrees with the reason
+`docs/measured.md` already gives (#1 caps the damage from every call #4 misses).
+
+It also gives the sharpest available statement of the `CLAUDE.md`-versus-skill rule. `CLAUDE.md` sits
+at position zero of every request of every session, so it runs at the maximum `R` on offer,
+permanently. A skill body pays `R` only from its trigger onward, and pays nothing at all in the
+sessions that never trigger it. The two can hold identical text and differ by two orders of
+magnitude in what that text costs.
+
+**What this changes in the design: nothing.** No decision below moves and the ranking of
+implications is untouched. What changes is the reasoning offered for them, and one inference —
+"add context in small chunks" — that the attention framing was quietly licensing.
 
 ---
 

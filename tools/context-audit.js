@@ -36,6 +36,16 @@
 //      vanished as a category. Measured and cross-checked in
 //      docs/calibration.md, correction 1.
 //
+//   5. OUTPUT IS NOT A SEPARATE SOURCE OF NEW MATERIAL. It is tempting to write
+//      newMaterial = inp + cc + out, because output does enter context and is not
+//      cache creation. That double-counts: an assistant turn is re-sent as INPUT on
+//      the very next request, where it is billed inside `cache_creation_input_tokens`.
+//      Measured with tools/context-billing.js -- across 1,698 warm consecutive request
+//      pairs, cache creation on request t+1 equals the FULL prefix increment, output
+//      included, in 97.1% of cases. So output already sits in `cc`, and adding it again
+//      inflates the denominator and UNDERSTATES amplification. The 2026-08-21 report
+//      shipped with that defect; see docs/measured.md, correction 2026-09-02.
+//
 // Token counts from `usage` are exact. Character-derived sizes (composition, tool
 // volume) are approximations at CHARS_PER_TOKEN and are labelled as such.
 //
@@ -199,7 +209,7 @@ if (!reqs.length) { console.error('No usage records found under ' + ROOT); proce
 const T = { inp: 0, cc: 0, cr: 0, out: 0 };
 for (const r of reqs) { T.inp += r.inp; T.cc += r.cc; T.cr += r.cr; T.out += r.out; }
 const total = T.inp + T.cc + T.cr + T.out;
-const newMaterial = T.inp + T.cc + T.out;
+const newMaterial = T.inp + T.cc;          // NOT + T.out -- see burn #5
 const amplification = T.cr / Math.max(1, newMaterial);
 const cost = (T.inp * RATE_IN + T.cc * RATE_IN * CACHE_WRITE_MULT
   + T.cr * RATE_IN * CACHE_READ_MULT + T.out * RATE_OUT) / 1e6;
@@ -217,7 +227,7 @@ for (const r of reqs) {
 }
 for (const s of Object.values(sessions)) {
   s.total = s.cr + s.cc + s.out + s.inp;
-  s.newTok = s.cc + s.out + s.inp;
+  s.newTok = s.cc + s.inp;                  // NOT + s.out -- see burn #5
   s.amp = s.cr / Math.max(1, s.newTok);
   s.peak = Math.max.apply(null, s.depths);
 }
@@ -309,6 +319,7 @@ const rowsT = [['uncached input', T.inp], ['cache creation (new material)', T.cc
 for (const row of rowsT) console.log('    ' + row[0].padEnd(32) + M(row[1]).padStart(9) + '  ' + pc(row[1], total).padStart(7));
 console.log('    ' + 'TOTAL'.padEnd(32) + M(total).padStart(9));
 console.log('\n    amplification  ' + amplification.toFixed(1) + 'x   - every token of new material is re-sent ~' + amplification.toFixed(0) + ' times');
+console.log('                   (new material = uncached input + cache creation; output is NOT added - burn #5)');
 console.log('    est. spend     $' + cost.toFixed(2) + '   (@ $' + RATE_IN + '/$' + RATE_OUT + ' per Mtok)');
 const costs = {
   'uncached input': T.inp * RATE_IN, 'cache creation': T.cc * RATE_IN * CACHE_WRITE_MULT,

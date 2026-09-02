@@ -54,3 +54,50 @@ names.
 still one document per repo+branch, so a spent handoff is still replaced by the next one in the chain,
 which was the entire point. Flagged as an append rather than an edit, per `CLAUDE.md` — a superseded
 pointer in someone's reasoning is reviewable; a rewritten one is not.
+
+### 2026-09-02 — the gate probe never learned it was a plugin
+
+Measured while installing this bundle as a real plugin (`context-economy@mission-control`, user
+scope, `gitCommitSha 434c7ae`) on a machine that had never had it. The install, the hooks and the
+49/49 gate all pass. `SKILL.md`'s own dependency resolution does not.
+
+`skills/handoff/SKILL.md:187` probes two candidates for the citation gate, and
+`:192` two for the store:
+
+```
+for g in "$HOME/.claude/lib/verify-handoff.sh" \
+         "$PWD/plugins/context-economy/lib/verify-handoff.sh"; do
+```
+
+**Neither is `${CLAUDE_PLUGIN_ROOT}/lib`.** The second is the *retired* vendored path — mission_control
+deleted `plugins/context-economy/` in `7edc6e7`, so it cannot resolve anywhere any more. The first is
+a symlink someone else has to have created; on this machine it was dangling, because it pointed into
+`mission_control/tools/`, which the extraction emptied. So a clean plugin install yields
+`GATE: NOT RUN` and every pointer in every handoff reads UNVERIFIED — the exact silent downgrade
+`install.sh`'s own comment (lines 258–260) warns about, now reachable by doing nothing wrong.
+
+**The hooks got this right and the skill did not**, which is what makes it a drift rather than an
+oversight: `hooks/handoff-inject.sh:124` computes `hook_dir` from `${BASH_SOURCE[0]}` and resolves
+`$hook_dir/../lib/...`, and its comment at `:119` states the intent outright — "works as a bundle
+(hooks/ -> lib/) and as a plugin (`${CLAUDE_PLUGIN_ROOT}/hooks` -> `../lib`) without any of". The same
+reasoning was never applied to `SKILL.md`, whose probe list still describes the pre-extraction layout.
+
+**Suggested fix:** put `${CLAUDE_PLUGIN_ROOT}/lib/...` first in both loops, keep
+`$HOME/.claude/lib/...` as the second candidate for the bundle install, and drop the
+`$PWD/plugins/context-economy/...` candidate — it names a directory that no longer exists in any
+repository. `SKILL.md:217`'s prose ("found by probing `~/.claude/lib/` first, then the in-repo path
+for a session already") needs the same correction; as written it documents the broken order as
+intentional.
+
+**Worked around, not fixed, on this machine:** the four `~/.claude/lib/` links were repointed at the
+installed cache copy, which makes candidate one hit. Verified — `handoff-inject.sh` fed a
+`jq -n`-built `{source:"clear"}` payload emits 12260 bytes of valid JSON and reports
+`GATE: FAILED (exit 1)` on a 6-day-old handoff, i.e. the gate *ran* and found drifted citations.
+That workaround is version-pinned to `…/cache/mission-control/context-economy/0.1.0/`, so
+`claude plugin update` re-dangles all four silently. The probe order is the real fix.
+
+**Also found, same run:** `~/.claude/lib/handoff-store.sh` had been pointing at
+`claude-dotfiles/dotfiles/lib/handoff-store.sh` (163 lines) while the plugin ships its own (178
+lines) — fully diverged. Since `SKILL.md:192` probes `$HOME/.claude/lib/` *first*, the stale copy
+would have won for the skill while the hook used the current one. Two copies of the store, disagreeing,
+in one session. Reordering the probe fixes this half too.

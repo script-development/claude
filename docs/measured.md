@@ -86,6 +86,9 @@ At list rates that is ~$5,215, of which cache read is 75.3% and output 8.7%.
 before its session ends. The worst single context reached **111×** — 4.1 MB of unique material,
 459M tokens spent.
 
+> **Both figures are too low.** The denominator double-counted output; corrected, corpus-wide
+> amplification is **58.6×**. See [correction 2026-09-02](#correction-2026-09-02--the-amplification-denominator-double-counted-output).
+
 ### 2. 90% of spend happens at context depths above 100k. 61% above 400k.
 
 | context depth | spend | cumulative |
@@ -504,3 +507,92 @@ node tools/toolsearch-cache-probe.js --verbose  # every pair, so an outlier can 
 Figures above are from a 286-transcript corpus as of 2026-08-31, of which 100 carried the string
 `ToolSearch` and were parsed structurally — the string match is a speed pre-filter only, per the
 trap at `hooks/handoff-urge.sh:105`.
+
+---
+
+## Correction, 2026-09-02 — the amplification denominator double-counted output
+
+Appended on the same terms as the 2026-08-24 correction: the original figures stand as what the
+tool reported on 2026-08-21, and this section says exactly how they move. Unlike that one, this
+correction moves a **headline number**, and it moves it in the direction that strengthens the
+report.
+
+**The defect.** `tools/context-audit.js` computed `newMaterial = inp + cc + out`, corpus-wide and
+per context. The reasoning was that output enters context and is not cache creation, so it must be
+a third source of new material. It is not — it is the *same* material counted twice. An assistant
+turn is re-sent as ordinary **input** on the very next request, where it is billed inside
+`cache_creation_input_tokens`. So output already sits in `cc`, and adding it again inflates the
+denominator and understates how many times material is actually replayed.
+
+**Why this is a measurement and not an argument.** The alternative was genuinely plausible: the
+server computed the KV for those tokens while generating them, so it *could* retain them and serve
+the next prefix as a pure read. Token conservation decides it exactly, with no `CHARS_PER_TOKEN`
+anywhere. The tokens sent on a request are `cr + cc + inp`, so between consecutive requests in one
+context `Δ(cr + cc + inp) = out(t) + newInput(t+1)`. Then `cc(t+1) ≈ Δ` means the whole increment
+was written, output included; `cc(t+1) ≈ Δ − out(t)` means the output rode in free. Measured by
+`tools/context-billing.js` (landed 2026-09-02, this correction's instrument): across **1,716** warm
+consecutive pairs with `out(t) ≥ 300`, `cc(t+1)` matches the whole `Δ` in **97.0%** of cases — 2.3%
+match `Δ − out(t)`, 0.6% neither. For pairs under a minute apart, `cc/Δ = 1.01`.
+
+**The 2.3% minority is real, and getting it wrong is instructive.** Both this correction's first
+write-up and `docs/design.md` explained those pairs as increment that landed in uncached input
+because the cache breakpoint had not advanced. The decomposition refutes it: `inp` averages 2
+tokens in those pairs while `cr` grows by more than the whole previous prefix, by very nearly
+exactly `out(t)` — 51,896 of 53,693 shortfall tokens served as reads, across 43 of 45 pairs. The
+server does sometimes retain the KV it computed while generating and extend the entry at no write
+charge; rarely, and for reasons this corpus cannot reach.
+
+The instructive part is that the wrong explanation was already ruled out in writing. It is exactly
+the class of claim `docs/calibration.md`'s measurement-ceiling section forbids — breakpoint
+placement is not in the transcript, so *no* transcript-derived finding can attribute anything to
+it. A rule stated in one document did not stop the same repository asserting its negation in
+another, five days later, in a section whose whole subject was being exact. The tool now prints the
+`inp`-versus-`cr` decomposition on every run, which is the form of the fix that survives being
+forgotten: the reader is handed the discriminating numbers instead of a sentence to trust.
+
+**What changes: finding #1's amplification, 51.6× → 58.6×.** "Re-sent about 52 times" becomes
+about **59**. This needs no re-run — it is arithmetic on finding #1's own published totals:
+
+```
+old:  2617.12 / (0.61 + 44.06 + 6.06)  =  51.6x
+new:  2617.12 / (0.61 + 44.06)         =  58.6x
+```
+
+**What does not change.** Every token figure in every table. The four rows of finding #1's totals,
+the depth chart (#2), concentration (#3), the spend attribution and shares of #4, the compaction
+figures (#6), the counterfactual (#7) and the hygiene counts (#8) all read from `usage` or from
+`cr + cc` depths, none of which the denominator touches — `simulate()` never sees `newMaterial`.
+The estimated spend is also unaffected: cost is computed per token class directly.
+
+**What cannot be recovered.** The per-context figure — the worst context's **111×** — understates
+for the same reason, but by how much is no longer measurable: the 2026-08-21 corpus is largely gone
+from disk. Re-running the published window today yields 1,630 requests where the report had 8,888,
+so per-context denominators cannot be recomputed. Read 111× as a floor. This is itself the
+argument for [D6](design.md#d6): the measurement was reproducible right up until the transcripts
+rotated, and then it was not.
+
+**The fix.** `newMaterial = inp + cc` and `s.newTok = s.cc + s.inp`, documented as burn #5 in the
+tool's header so it is not helpfully re-added. The tool now also prints its own denominator under
+the amplification line. One knock-on inside the tool, not quoted in this report: finding #4's
+"all tool traffic = N% of new material" line shares the denominator, so that percentage rises
+(~14% → ~15.9% on the published totals).
+
+```
+node tools/context-billing.js              # the phase test, the TTL table, the lifetime table
+node tools/context-billing.js --json       # machine-readable
+```
+
+Two further things the instrument found, which are properties of the cost model rather than
+corrections to this report:
+
+- **A cache write is once per *entry*, not once per token.** Bucketed by the gap between
+  consecutive requests, `cc/Δ` is 1.01 under a minute, **1.87 at 5–60 minutes**, and 152.9 for the
+  single pair over an hour: above the 5-minute TTL the prefix is written again at 1.25×. Idle time
+  is billable, and nothing in this report or its counterfactual prices it.
+- **`R` is a property of position, not of the token.** Amplification is the token-weighted mean of
+  `R`, but `R` for any individual token is the number of requests that follow the one it arrived
+  on. Lifetime cost is `1.25 + 0.1R` for an input token and `5 + 1.25 + 0.1R` for an output token,
+  so the output premium falls from 1.7× at `R` = 58.6 to 1.1× at `R` = 485. Deep in a context,
+  position dominates provenance. Finding #4 already reasons this way ("its true cost is its size
+  times its remaining lifetime in that context"); this is that sentence with the arithmetic
+  attached, and it is written up in `docs/design.md`.
