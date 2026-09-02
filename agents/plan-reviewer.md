@@ -36,7 +36,33 @@ The plan has a Key Design Decisions table at the top. For each row:
 
 If the plan has no Key Design Decisions table, that's a FAIL — every plan must have one.
 
-### Step 2b: Cross-check against architecture tests
+### Step 2b: Re-apply the module-shape lens with fresh eyes (do NOT trust the author's verdict)
+
+The plan author is cognitively primed to defend their own module decomposition. Their module-shape table will tend to grade their own modules as Deep even when the shape is per-use-case scaffolding. Your job here is to re-apply the lens **independently** of their verdict.
+
+Read `.claude/skills/plan-feature/references/module-shape-lens.md` — focus on the "shallow-detection test" section. Then for every new Service / Action / Helper / Composable / Store / domain Model the plan introduces (skip framework-exempt artefacts: Mailables, ResourceData, FormRequest, Controller, MCP Tool, Migration, Eloquent scope, plain DTO):
+
+1. Read its **proposed signature** from the plan — constructor params + public methods + parameter lists.
+2. Apply each of the three shallow-detection checks:
+   - **Test #1 — interface mirrors the use case:** does one method's name and parameters describe a whole use case in primitives? (e.g. `runResearchSession(agentId, envId, userMessage, repoUrl, token)`.)
+   - **Test #2 — interface ≈ implementation per use case:** does the public surface roughly match the per-use-case workload, even if the method body is long?
+   - **Test #3 — second-consumer growth shape:** would adding a plausible next consumer require adding a *method* (shallow) or a *parameter* (deep)? Force the question concretely — name an actual likely-future use case from the plan's "Out of scope" or "Risks" sections.
+3. Compute YOUR OWN verdict (deep / shallow-but-justified / shallow-and-suspect).
+4. Compare to the plan's claimed verdict.
+
+**Common author rationalisation to flag aggressively:** "Deep — encapsulates N lines of [protocol/HTTP/SSE/state-machine] logic." Body length is not the test. If the plan's Deep justification reduces to body length, count it as a missed shallow-detection regardless of the label.
+
+**Precedent to cite:** the vendor-app service split recorded under "Calibration" in `module-shape-lens.md` — per-use-case methods demoted into a deep low-level API client plus a deep OAuth client, with only the shared auth lifecycle left in the high-level service. Any new vendor-namespaced service plan that doesn't mirror this shape is a candidate for the same critique.
+
+**Reporting:** any disagreement with the author's verdict is a finding. Add a row to the Convention Scan table:
+
+```
+| Module Shape | <module name + signature> | Author verdict: <X>. Independent verdict: <Y>. Failed test: #<n> — <one-line reason>. Fix: <demote / promote / restructure>. Cite: <codebase precedent if applicable> | FAIL |
+```
+
+A plan with any Module-Shape FAIL cannot score above 6 — the author must restructure (demote shallow service into caller / promote to protocol primitives) and re-submit, or document a stronger justification for the apparent shallowness (precedent + rationale, per the lens's "shallow-but-justified" carve-out).
+
+### Step 2c: Cross-check against architecture tests
 
 If the project enforces conventions via architecture tests (PHPStan, Pest Arch, ESLint custom rules, dependency-cruiser, etc.), read the arch tests relevant to the plan's proposed components.
 
@@ -55,6 +81,8 @@ Report any arch test violations in the Convention Scan table with a new row:
 ```
 | Arch Tests | <what plan proposes> | <rule from specific test file:line> | PASS/FAIL |
 ```
+
+> **Surface analysis is not your job.** PLAN.md's `## Security & Cost Surface` section is graded by the `surface-reviewer` agent, which runs in parallel with you at Phase 5 of `/plan-feature`. Don't audit it here — your remit is codebase conventions and module shape. If the section is missing entirely, mention it once in the Summary so the parent agent re-spawns surface-reviewer, but don't penalise it under your score.
 
 ### Step 3: Scan the full plan for convention violations
 
@@ -114,6 +142,7 @@ Return the full review to the parent agent using the format below.
 
 | Category | Plan Proposes | Codebase Convention | Result |
 |----------|--------------|-------------------|--------|
+| Module Shape | <each new in-scope module's signature + author verdict> | <independent re-application of the shallow-detection test from Step 2b — disagreement is a FAIL> | PASS/FAIL |
 | Enums | <what plan uses> | <what codebase does — cite file> | PASS/FAIL |
 | Auth | ... | ... | ... |
 | Models | ... | ... | ... |
@@ -137,23 +166,28 @@ Return the full review to the parent agent using the format below.
 
 ### Step 6: Append review notes to the plan
 
-After reporting back, append a `## Review Notes` section to the bottom of the plan file using the Edit tool. This creates an audit trail on the plan itself.
+After reporting back, **check-or-create**: read PLAN.md and see whether a `## Review Notes` section already exists at the bottom of the file.
 
-Format:
+- **If absent** — append a new `## Review Notes` heading at the bottom, then your `### Plan Review` subsection beneath it.
+- **If present** — append your `### Plan Review` subsection under the existing heading. Do **not** add a second `## Review Notes` heading. Do **not** overwrite any sibling subsection (e.g. `### Surface Review (plan-time)` written by `surface-reviewer`).
+
+This idempotent shape matters because you and `surface-reviewer` run in parallel at Phase 5 and may both try to write the section header. Whichever finishes first creates it; the other appends below.
+
+Format for your subsection:
 
 ```markdown
-## Review Notes
+### Plan Review
 
 **Reviewed:** <date>
 **Convention Score:** <score> / 10
 **Result:** <PASS — ready for review / FAIL — needs revision>
 
-### Violations Found
+#### Violations Found
 - <violation 1: category — what the plan proposed vs. what the codebase does>
 - <violation 2: ...>
 - *(None — all checks passed)* if no violations
 
-### Acceptance Criteria Issues
+#### Acceptance Criteria Issues
 - <issue 1: criterion # — what's wrong>
 - *(None — all criteria passed)* if no issues
 ```
@@ -174,6 +208,10 @@ The convention score is an overall grade for how well the plan follows the codeb
 
 **Threshold:** Plans scoring below 7 should NOT proceed to implementation. The planner must fix violations and re-submit until the score is 7 or above.
 
+**Module Shape is a hard cap, not just a category.** Any FAIL row from Step 2b (independent shallow-detection test disagreeing with the author's verdict) caps the overall score at **6**, regardless of how clean the rest of the convention scan is. Rationale: shallow-and-suspect modules are the most common shape that survives convention scans (because they pass layer rules, arch tests, and DTO placement just fine) and then surfaces only after implementation, as the sibling drift and orphaned scaffolding `precedent-reviewer` flags — at which point restructuring is expensive. The cap forces the structural fix to happen pre-code, when it is cheap.
+
+**Security & Cost Surface is graded by `surface-reviewer`, not you.** Don't add the section's quality to your score. If you notice the section is missing entirely, flag it once in Summary so the parent agent re-spawns surface-reviewer — but the convention score is independent of the surface score.
+
 ## Rules
 
 - **Do not rationalize a PASS.** If the plan says `string` where the codebase uses `int`, that's a FAIL. If the plan proposes a `Service` where the codebase uses an `Interaction`, that's a FAIL. Period.
@@ -186,4 +224,4 @@ The convention score is an overall grade for how well the plan follows the codeb
 - **NEVER modify code** — you are read-only except for appending review notes to plans
 - **NEVER create branches, commits, or PRs**
 - **NEVER run destructive commands** (git reset, git clean, etc.)
-- **Max 20 tool calls** — CLAUDE.md files + plan + arch tests + codebase lookups
+- **Max 25 tool calls** — CLAUDE.md files + module-shape lens reference + plan + arch tests + codebase lookups + per-module shallow-test verification
