@@ -285,6 +285,14 @@ hold five boundaries inside one slot. The collapse is a Claude API counting rule
 consequence of flattening, which the source states; how the two units interact it does not, and that
 part is a reading of the two rules together.
 
+**Three units meet at a boundary, and none is interchangeable.** A boundary can only be *placed* at
+a block end, is *matched* on bytes, and is *observed* only as a token count. Placement is why the
+legal boundaries form a discrete set rather than a continuum, and the residue of snapping a
+continuously growing prefix onto that grid is what `docs/design.md`'s cause 2 measures. Matching is
+why a change that leaves the token count identical still misses. Observation is why this corpus can
+say a boundary fell 1,839 tokens short of the previous request's write and cannot say which block it
+fell on — recovering that needs the rendered payload, which these transcripts do not carry.
+
 **What is still measurable, and worth the run.** Questions phrased as *"does the prefix read
 collapse?"* rather than *"which entry was refreshed?"* stay inside what `usage` can answer, because
 they only need the size of the read, not its structure. The worked example is the `ToolSearch`
