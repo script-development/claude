@@ -553,10 +553,11 @@ stopping where it does — TTL expiry, breakpoint granularity, free extension �
 [`docs/design.md`](design.md#why-the-quadratic-is-a-replay-artifact).
 
 **Do not read the near-cancellation as a mechanism.** Split by sign over every warm growing pair:
-**+599,096** tokens written a second time against **−552,709** never written at all, a net of
+**+599,096** tokens paid for twice against **−552,709** never written at all, a net of
 **+46,502** across 2,671 pairs, aggregate `cc/Δ` = **1.008**. Those are different tokens produced by
-unrelated mechanisms, and nothing defers or settles up — the tokens written twice really are paid
-for twice. An earlier draft of `docs/design.md` called the two directions "one bookkeeping lag seen
+unrelated mechanisms, and nothing defers or settles up — the +599,096 really are paid for twice,
+cause 1's written again after expiry and cause 2's billed as input on one request and as a write on
+the next. An earlier draft of `docs/design.md` called the two directions "one bookkeeping lag seen
 from both ends", which implies the same tokens paid once and late. They are not. The magnitudes
 landing within 8% of each other is a property of this corpus, not a law, and nothing should be built
 on it. `tools/context-billing.js` prints the split on every run.

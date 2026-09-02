@@ -188,9 +188,46 @@ time is a real lever and this design does not pull it — the [D1](#d1) simulati
 context, not the clock.
 
 **Cause 2 — breakpoint granularity**, and numerically the common one: 7 of the 13, ratios 1.1–2.4,
-nothing expired at all. The read stops at the last usable breakpoint, which sits short of where the
-previous request's write ended, so a tail of 657–1,839 tokens is written a second time alongside
-the new material. Those tokens really are paid for twice; the amount is just small.
+nothing expired at all. The read did not stop short of the previous request's write — it reached
+exactly where that write ended. What it stopped short of is `prevPrefix`, which counts everything
+request t *sent*, and a request always sends more than it writes: a write extends only to the
+deepest `cache_control` breakpoint, and whatever follows that position bills as ordinary input and
+is stored nowhere. Call that uncached remainder `tail`, and the identity above becomes
+
+```
+cc − Δprefix  ≡  tail(t) − tail(t+1)
+```
+
+So the excess is not a fixed tail written twice; it is the amount by which the uncached remainder
+*shrank* between the two requests — the breakpoint advancing over material that request t had
+already sent bare. Here that is 657–1,839 tokens, about one turn's worth. Those tokens are paid for
+twice, at 1.0× as input on t and 1.25× as a write on t+1 — ~2.25×, not the 2.5× that "written
+twice" implies. When the remainder holds steady turn over turn the two terms cancel exactly, which
+is what the 2,566 pairs sitting at 1.0 are.
+
+Why the boundary lags the end of the request is not decidable from this corpus —
+`docs/calibration.md`'s measurement ceiling — but the documented mechanisms make the lag
+unremarkable rather than mysterious. Three of them, each leaving a remainder for the next request to
+write:
+
+- **The final block cannot carry a marker, so automatic placement walks backward.** Automatic
+  caching puts its one breakpoint on the last *cacheable* block and silently steps back to the
+  nearest eligible one when the last block is not. A `clear_at: "next_user_message"` system message
+  — the per-turn-reminder pattern — is explicitly not cache-eligible; `cache_control` on it is a
+  400, and the marker goes on the preceding user turn instead. A harness that injects one every
+  turn pushes the write boundary back by a full turn, every turn.
+- **The marker is deliberately placed before a volatile tail.** When a request ends in per-request
+  content — retrieved rows, a one-off question — the documented pattern is an explicit breakpoint at
+  the end of the *shared* portion, precisely so the unique tail is never written. There the
+  remainder is the design working, not failing: the alternative pays the 1.25× premium on bytes
+  nothing will ever read back.
+- **The prefix is under the model's minimum.** Below 512 tokens on Opus 5 a marker writes nothing
+  and says nothing — no error, just `cc = 0` — so the boundary stays wherever the last
+  above-minimum breakpoint was. This one can only bite at the very start of a session; a
+  conversation of any size has long since cleared the floor.
+
+Which of the three applies to the 7 pairs here is not answerable from `usage`, and the three are not
+mutually exclusive.
 
 **Cause 3 — the read runs past what was sent**, which is the `< 1.0` case and the interesting one.
 The server occasionally serves the previous turn's output as a *read*, charging no write for it: of
@@ -204,15 +241,16 @@ pairs there against 0.8% under a minute) — which is the whole reason that band
 every other sits at or above 1.0.
 
 Causes 1 and 2 push the ratio above 1.0 and cause 3 pulls it below, and across this corpus they
-very nearly cancel — **+599,096** tokens written a second time against **−551,424** never written at
+very nearly cancel — **+599,096** tokens paid for twice against **−551,424** never written at
 all, a net of **+47,787** over 2,651 warm pairs, with the aggregate at **1.008**.
 
 _Resist reading that as a mechanism._ An earlier draft of this section called causes 2 and 3 "one
 bookkeeping lag seen from both ends", which implies the same tokens paid once and late. They are not
-the same tokens: cause 2's are written twice and cause 3's are never written, by unrelated
-mechanisms, and nothing defers or settles up. The near-cancellation is a coincidence of this corpus
-and is not load-bearing for anything. What *is* safe to say is that the deviation is small in both
-directions relative to the 2,566 pairs that sit exactly at 1.0.
+the same tokens: cause 2's are billed as input on one request and as a write on the next, cause 3's
+are never written at all, the mechanisms are unrelated, and nothing defers or settles up. The
+near-cancellation is a coincidence of this corpus and is not load-bearing for anything. What *is*
+safe to say is that the deviation is small in both directions relative to the 2,566 pairs that sit
+exactly at 1.0.
 
 Nothing here is misattributed, either — a natural suspicion, since a deviation between "written" and
 "new" looks like a charge landing on the wrong request. `cc(t+1)` is a real charge incurred by
