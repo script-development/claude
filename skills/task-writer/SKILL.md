@@ -15,8 +15,7 @@ description: |
 Translate an approved PLAN.md into a TDD task breakdown (`TASKS.md`) that
 `/next` can execute one task at a time. Lighter than `/plan-feature` — no
 interrogation, no design — but heavier than `/implement-plan` because it
-owns the per-task contract that downstream agents (`acceptance-reviewer`,
-`simplicity-reviewer`) verify against.
+owns the per-task contract that `/next` reads.
 
 If the plan is small enough to skip TASKS.md entirely, **Phase 0 hands off
 to `/implement-plan`** — same plan context, no per-task overhead. The
@@ -116,9 +115,8 @@ on either side are not.
 
 Write the tasks using the literal format in
 [`references/tasks-template.md`](references/tasks-template.md). The
-template is the contract — `/next`, `acceptance-reviewer`, and
-`task-alignment-reviewer` parse the section names, so don't rename or omit
-them.
+template is the contract — `/next` parses the section names, so don't rename
+or omit them.
 
 For sizing decisions (when to split, when to bundle), load
 [`references/task-sizing.md`](references/task-sizing.md). For
@@ -148,41 +146,55 @@ structure, context completeness, verification quality, AC coverage, plan
 coverage — lives in
 [`references/verification.md`](references/verification.md).
 
-## Phase 4: Self-gate via task-alignment-reviewer (mandatory, fail-closed)
+## Phase 4: Coverage self-gate (mandatory, fail-closed)
 
-**Before showing TASKS.md to the developer**, spawn the
-`task-alignment-reviewer` agent. It scores 1-10 against PLAN.md coverage;
-below 7, fix the gaps and re-run until it passes. This exists because
-you'll rationalise your own coverage decisions — a context-free agent
-won't.
+**Before showing TASKS.md to the developer**, walk the coverage checklist in
+[`references/verification.md`](references/verification.md) § *Self-check before
+finalising TASKS.md*. Every row must pass. A missed acceptance criterion is the
+one failure that propagates all the way to the PR, so this gate is fail-closed:
+fix gaps and re-walk rather than noting them and moving on.
 
+Then record the result at the bottom of TASKS.md so a later reader — or a
+future you after `/clear` — can see the coverage without re-deriving it:
+
+```markdown
+## Review Notes
+
+**Reviewed:** <YYYY-MM-DD>
+
+### Coverage
+- **Acceptance criteria:** N/N covered
+- **Wireframe screens:** N/N covered  (omit if no WIREFRAMES.md)
+- **Planned files:** N/N appear in some task's `**Touches:**`
+
+### Gaps
+- <each AC or planned file with no task, and what you did about it>
+- *(None)* if the checklist passed clean
+
+### Scope Drift
+- <each task doing work the plan doesn't describe>
+- *(None)*
 ```
-Agent({
-  subagent_type: "task-alignment-reviewer",
-  prompt: `Verify that TASKS.md fully covers PLAN.md.
 
-Plan directory: docs/plans/<slug>/
+**On scope drift, two valid responses:** update PLAN.md to include the missed
+work (with the developer's confirmation), or remove the task. Don't paper over
+the gap by silently editing the plan.
 
-Check that every acceptance criterion, wireframe screen, scope item, and planned file
-maps to at least one task. Report coverage gaps and scope creep.`
-})
-```
-
-The reviewer appends a `## Review Notes` section to TASKS.md so future
-readers can see the verdict without re-running the audit. If the reviewer
-flags scope creep, two valid responses: update PLAN.md to include the
-missed work (with the developer's confirmation), or remove the task. Don't
-paper over the gap by silently editing the plan.
-
-Threshold rationale and what the reviewer checks live in
-[`references/quality-gates.md`](references/quality-gates.md).
+> **Why no reviewer agent here.** A dedicated alignment-reviewer agent ran
+> this gate until 2026-07-27. Across 26 recorded runs it never once scored
+> below 8 — it filed real coverage gaps 38% of the time, but always alongside
+> a passing score, so it never actually gated anything. The checklist it was
+> confirming already lives in `verification.md` § *Self-check before
+> finalising TASKS.md*, which had already described the reviewer's role as
+> confirming a self-check rather than discovering gaps. Doing the self-check
+> honestly is the gate.
 
 ## Phase 5: Hand off
 
-Tasks are written and the alignment reviewer passed. Stop here —
+Tasks are written and the Phase 4 coverage gate passed. Stop here —
 implementation is owned by a separate skill:
 
-- **`/next`** — execute one task at a time, TDD loop, automatic per-task `acceptance-reviewer` + `simplicity-reviewer` runs
+- **`/next`** — execute one task at a time, TDD loop, verification (tests + types + lint) as the per-task gate
 - **`/implement-plan`** — execute the full plan in one pass without TASKS.md (Phase 0 should have routed here for small plans)
 
 Do not invoke `/next`, `/implement-plan`, or their reviewers from inside

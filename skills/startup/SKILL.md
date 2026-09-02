@@ -1,20 +1,26 @@
 ---
 name: startup
-description: "Full project setup for Laravel + Vue + MinIO projects: runs backend, frontend, and MCP in parallel. Supports multiple worktrees with automatic port assignment."
+description: "Full project setup for Laravel + Vue + MinIO projects: starts the Docker services (Redis, MinIO, optional MySQL), creates .env files, then runs backend, frontend, and MCP setup in parallel. Supports multiple worktrees with automatic port assignment."
+argument-hint: "[worktree-number: optional, skips worktree selection question]"
+arguments: [worktree]
+allowed-tools: Bash(git *) Bash(docker *) Bash(docker-compose *) Bash(php *) Bash(composer *) Bash(npm *) Bash(node *) Bash(cp *) Bash(scoop *) Bash(gh *) Bash(claude *) Bash(winget *) Bash(powershell *) Bash(sed *) Bash(openssl *) Bash(grep *) Bash(ls *) Bash(which *) Bash(nc *) Agent AskUserQuestion Read Grep Glob Edit Write
 ---
 
 Setup orchestrator for Laravel + Vue + MinIO projects. Scan the environment, collect user choices, then execute the appropriate setup flow.
 
-Optional argument: `N` (worktree number). When provided, skip the worktree selection question
-and use N directly (`1` = primary, `2`+ = non-primary worktree). Still ask the database migration
-question unless the worktree doesn't exist yet (new worktree → default to "Skip").
+> **Confirmation gate:** Setup has irreversible side effects (database resets, worktree creation, port-patching, dependency installs). Before running any step below, confirm with the user via `AskUserQuestion` that they want to proceed. If `/startup` was invoked directly by the user (typed `/startup` themselves), treat that as the confirmation. If invoked indirectly (delegated from another skill), ask explicitly before starting — even if the calling skill already collected related choices.
 
-The detailed instructions for each setup domain live in `references/` files within this skill directory. Background agents read the relevant reference file and follow those instructions.
+Optional argument: `$worktree` (worktree number, may be empty). When non-empty, skip the worktree
+selection question and use it directly (`1` = primary, `2`+ = non-primary worktree). Still ask the
+database migration question unless the worktree doesn't exist yet (new worktree → default to "Skip").
+
+The detailed instructions for each setup domain live in `references/` files within this skill directory. The orchestrator runs trivial, no-judgement steps inline and delegates the rest to background agents, which read the relevant reference file and follow it.
 
 ## Project conventions
 
 This skill is generic across Laravel + Vue + MinIO projects. A few project-specific behaviours are conditional and should be detected from the project itself:
 
+- **Docker services**: the project ships a `docker-compose.yml` at the repo root that defines `redis` and `minio` services with health checks, a one-shot `minio-init` service that creates the app bucket, and a `mysql` service behind the `mysql` Compose profile (opt-in, so developers with a system MySQL are unaffected). If the project has no compose file, tell the user and stop — the rest of the flow assumes these services.
 - **Multi-tenancy** (e.g. `stancl/tenancy`): check `backend/composer.json` for `stancl/tenancy`. If present, the project has a central database plus per-tenant databases and the alt-ports flow needs to register tenants. **Skip the tenant flow entirely** if the package isn't in use.
 - **Laravel Passport**: check `backend/composer.json` for `laravel/passport`. If present, run `passport:keys` after `composer install`. Otherwise skip.
 - **Custom dev-reset artisan command**: some projects ship a `dev:reset` (or similar) artisan command that wraps drop/migrate/seed for both central and tenant databases. Check `php ./backend/artisan list` or the project's `CLAUDE.md` for it. Otherwise fall back to the generic Laravel commands (`migrate:fresh --seed`, `migrate`).
@@ -22,26 +28,29 @@ This skill is generic across Laravel + Vue + MinIO projects. A few project-speci
 
 The placeholder `<app>` below stands for the value of `APP_NAME` in `backend/.env` (e.g. if `APP_NAME=Acme`, then `<app>` is `acme`, lowercased and slugified). Hostnames, tenant database names, and bucket names all derive from this.
 
-## Step 1 — Scan existing worktrees
+## Pre-resolved context
 
-Run:
+- **Worktrees:** !`git worktree list`
+- **Current branch:** !`git branch --show-current`
+- **Docker:** !`docker compose ps 2>&1 | head -5 || echo "docker not available"`
+- **Skill dir:** `${CLAUDE_SKILL_DIR}`
 
-```bash
-git worktree list
-```
+These values are available immediately — do not re-run these commands during the steps below.
 
-Parse the output to determine how many worktrees exist and their paths. Use this to build the list of options for the user.
+## Step 1 — Use the pre-resolved worktree list
+
+Parse the **Worktrees** value above to determine how many worktrees exist and their paths. Use this to build the list of options for the user.
 
 ## Step 2 — Collect choices
 
-**If N was provided as an argument**, skip the worktree selection question — use N directly:
-- `N=1` → Mode A (primary)
-- `N>=2` → check if worktree N exists in scan results. If yes, use it. If no, create it (Mode B).
+**If `$worktree` is non-empty**, skip the worktree selection question — use it directly:
+- `$worktree = 1` → Mode A (primary)
+- `$worktree >= 2` → check if that worktree exists in the pre-resolved list. If yes, use it. If no, create it (Mode B).
 
 Then ask only the database migration question (Question 2 below) via `AskUserQuestion`, with
 the recommendation based on N.
 
-**If N was omitted**, use a **single** `AskUserQuestion` call with multiple questions to collect all choices at once:
+**If `$worktree` is empty**, use a **single** `AskUserQuestion` call with multiple questions to collect all choices at once:
 
 ### Question 1: Worktree selection
 
@@ -79,9 +88,46 @@ Primary (N=1) uses default ports unchanged.
 
 ## Mode A: Primary setup (N=1)
 
-### A0 — Create .env files (before background agents)
+### A0 — Start Docker services and create .env files (before background agents)
 
-Follow the instructions in `references/env.md` **directly in the main conversation** (not in a background agent). This creates `backend/.env` from `.env.example` with local defaults applied. It requires file write permissions, which background agents cannot obtain.
+Check the **Docker** value in Pre-resolved context first. If it reads `docker not available`,
+ask the user to start Docker Desktop (or the Docker daemon) and stop — there's no point continuing.
+
+If Docker is available but `redis` / `minio` aren't already listed as `Up (healthy)`, start them:
+
+```bash
+docker compose up -d
+docker compose ps
+```
+
+Expect `redis` and `minio` with status `Up (healthy)`. The `minio-init` one-shot service creates
+the `<app>` bucket and exits — that is normal. If the project's compose file has no `minio-init`
+service, create the bucket once, using the `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` values from
+`docker-compose.yml`:
+
+```bash
+docker compose exec minio mc alias set local http://localhost:9000 <user> <password>
+docker compose exec minio mc mb --ignore-existing local/<app>
+```
+
+**MySQL — opt-in Docker profile.** MySQL uses the `mysql` Compose profile so devs with a system
+MySQL are unaffected. Check if port 3306 is reachable:
+
+```bash
+nc -z 127.0.0.1 3306 2>/dev/null && echo "reachable" || echo "unreachable"
+```
+
+- If **reachable** — MySQL is already running (system service or existing container). Skip. Note: the check only confirms that port 3306 responds — it does not verify credentials. If your system MySQL uses different credentials than the ones `docker-compose.yml` sets (`MYSQL_ROOT_PASSWORD`), update `DB_USERNAME`/`DB_PASSWORD` in `backend/.env` accordingly instead of starting the Docker container.
+- If **unreachable** — start the Docker MySQL container:
+  ```bash
+  docker compose --profile mysql up -d mysql
+  ```
+  Then wait for it to be healthy before continuing (substitute the root password from `docker-compose.yml`):
+  ```bash
+  until docker compose exec mysql mysqladmin ping -h 127.0.0.1 -uroot -p<root-password> --silent 2>/dev/null; do sleep 3; done
+  ```
+
+Then follow the instructions in `references/env.md` **directly in the main conversation** (not in a background agent). This creates `backend/.env` from `.env.example` with local defaults applied. It requires file write permissions, which background agents cannot obtain.
 
 Also copy the frontend `.env` if it doesn't exist:
 
@@ -89,21 +135,30 @@ Also copy the frontend `.env` if it doesn't exist:
 cp ./frontend/.env.example ./frontend/.env
 ```
 
-Wait for both to complete before proceeding.
+Wait for all to complete before proceeding.
 
-### A1 — Launch parallel setup agents
+### A1 — Run frontend inline, launch backend + MCP agents in parallel
 
-Launch all three as **background agents in parallel** using the Agent tool. Each agent prompt must include the path to the relevant reference file so it can read the instructions:
+> **Delegate only work with branching judgement.** A subagent spawn's fixed overhead (its own system prompt, the full `CLAUDE.md`, the tool catalog, a report) isn't worth a one-line install — run trivial steps inline, and keep agents for judgement (fresh-PC bootstrap, migration decisions) on the cheapest model that covers it.
 
-1. **Backend agent** — "Read `<skill-path>/references/backend.md` and follow those instructions. Migration strategy already chosen: {answer}. Skip asking and use this. The .env file has already been created by the orchestrator — skip Step 3."
-2. **Frontend agent** — "Read `<skill-path>/references/frontend.md` and follow those instructions. Do NOT touch backend/.env or run any backend setup. The frontend .env file has already been created by the orchestrator — skip Step 4."
-3. **MCP agent** — "Read `<skill-path>/references/mcp.md` and follow those instructions. Do NOT touch backend/.env or run any backend/frontend setup."
+**Frontend — run inline (no agent).** Frontend setup is a single deterministic command. Do it directly in the main conversation:
 
-Replace `<skill-path>` with the absolute path to this skill's directory.
+```bash
+npm install --prefix ./frontend
+```
+
+If `npm` isn't found, Node.js isn't installed — follow `references/frontend.md` for the fresh-PC Node install, then retry. The frontend `.env` and the vite port are already handled by A0 / B3.
+
+**Backend + MCP — launch as background agents in parallel**, each on a downgraded model (mechanical work — the top model is wasted here). Use the Agent tool's `model` parameter:
+
+1. **Backend agent** (`model: sonnet` — touches the DB, keep some judgement for migration decisions) — "Read `${CLAUDE_SKILL_DIR}/references/backend.md` and follow those instructions. Migration strategy already chosen: {answer}. Skip asking and use this. The .env file has already been created by the orchestrator — skip Step 3."
+2. **MCP agent** (`model: haiku` — pure CLI/tool installs, no judgement) — "Read `${CLAUDE_SKILL_DIR}/references/mcp.md` and follow those instructions. Do NOT touch backend/.env or run any backend/frontend setup."
+
+The `${CLAUDE_SKILL_DIR}` placeholder is resolved by Claude Code before the agent prompt is sent, so the agent receives an absolute path.
 
 **Important:** Each agent prompt must be explicit about scope. Background agents cannot obtain file write permissions, so they must not attempt to create or modify `.env` files.
 
-Wait for all three to complete. If any fails, report which one failed and why.
+Wait for the inline install and both agents to complete. If any fails, report which one failed and why.
 
 > **Fresh PC note:** On a brand-new Windows PC where Scoop, PHP, and Node.js are not yet installed, run the MCP setup first (it installs Scoop, which the other agents may need). Once Scoop is available, run this orchestrator for the rest.
 
@@ -111,17 +166,18 @@ Wait for all three to complete. If any fails, report which one failed and why.
 
 ```
 Full setup complete! (primary, N=1)
+  [x] Docker — Redis, MinIO (bucket "<app>"), and MySQL (Docker profile / system) running
   [x] Backend — PHP, Composer, .env, dependencies, migrations
   [x] Frontend — Node.js, dependencies, .env
   [x] MCP — gh CLI, claude CLI, project MCP servers (if any)
   Ports: 3000 / 8000 / 6001
 ```
 
-Proceed to **MinIO setup** (below).
-
 ## Mode B: Non-primary worktree setup (N>=2)
 
 This mode is run **from the primary worktree**.
+
+> **Docker is shared across worktrees.** Redis, MinIO, and MySQL bind fixed host ports (6379 / 9000 / 3306), so a non-primary worktree must reuse the primary's containers — do **not** run `docker compose up` in the worktree, it will fail to bind those ports. Confirm the primary's stack is healthy (`docker ps` shows `*-redis-1` and `*-minio-1` as `Up (healthy)`) and only start it from the primary if it isn't running. MySQL follows the same A0 opt-in logic (check port 3306, start `--profile mysql` if unreachable).
 
 ### B1 — Create the git worktree (new worktree only)
 
@@ -153,18 +209,27 @@ Also copy the frontend `.env` if it doesn't exist:
 cp ./frontend/.env.example ./frontend/.env
 ```
 
-### B3 — Patch ports, run backend and frontend setup in parallel
+### B3 — Patch ports, run frontend inline and backend as an agent
 
 Port patching (editing `backend/.env` and `frontend/vite.config.mts`) can run immediately — these files already exist from B2. Do this **directly in the main conversation** before launching agents, so the agents work with the correct ports from the start.
 
 Follow `references/alt-ports.md` **Steps 1–3 only** (verify .env, patch backend .env, patch vite config). Skip Steps 4–5 (tenant DB setup and report) — those happen in B4.
 
-Then launch both setup agents as **background agents in parallel**:
+> **Delegate only work with branching judgement** (see A1): inline the trivial frontend install, run the backend agent on a cheaper model.
 
-1. **Backend agent** — "Read `<skill-path>/references/backend.md` and follow those instructions. Migration strategy already chosen: {answer}. Skip asking and use this. The .env file has already been created by the orchestrator — skip Step 3."
-2. **Frontend agent** — "Read `<skill-path>/references/frontend.md` and follow those instructions. Do NOT touch backend/.env or run any backend setup. The frontend .env file has already been created by the orchestrator — skip Step 4."
+**Frontend — run inline (no agent):**
 
-Wait for both to complete before proceeding to B4.
+```bash
+npm install --prefix ./frontend
+```
+
+(`.env` and vite port already patched above. If `npm` is missing, see `references/frontend.md` for the fresh-PC Node install.)
+
+**Backend — launch as a background agent on `model: sonnet`** (touches the DB; keep judgement for migration decisions, but the top model is wasted on mechanical setup):
+
+- "Read `${CLAUDE_SKILL_DIR}/references/backend.md` and follow those instructions. Migration strategy already chosen: {answer}. Skip asking and use this. The .env file has already been created by the orchestrator — skip Step 3."
+
+Wait for the inline install and the backend agent to complete before proceeding to B4.
 
 ### B4 — Set up tenant database
 
@@ -180,99 +245,11 @@ Follow `references/alt-ports.md` **Steps 4–5** (register tenant in central DB,
 Worktree setup complete! (N={N})
   Worktree: ../<name>
   Branch:   <name> (from <base-branch>)
+  [x] Docker — reusing the primary worktree's Redis / MinIO / MySQL
   [x] Backend — PHP, Composer, .env, dependencies, migrations
   [x] Frontend — Node.js, dependencies, .env
   [x] Ports patched for worktree N={N} ({3000+N} / {8000+N} / {6001+N-1})
   [x] Tenant database registered (if multi-tenancy)
-```
-
-Proceed to **MinIO setup** (below).
-
-## MinIO setup (best-effort)
-
-After all setup completes (both Mode A and Mode B), attempt to set up MinIO for local S3-compatible file storage. This is best-effort — if any step fails, print a manual reminder and continue.
-
-Read `APP_NAME` from `backend/.env` to use as the bucket name. Lowercase and slugify it if needed (S3 bucket names must be lowercase, no spaces).
-
-### 1 — Install MinIO server and client
-
-Check if `minio` and `mc` are on PATH:
-
-```bash
-which minio
-which mc
-```
-
-If either is missing, install them via Scoop (Windows):
-
-#### Check for Scoop
-
-```bash
-which scoop 2>/dev/null || powershell -Command "Get-Command scoop" 2>/dev/null
-```
-
-#### Scoop not found — install it first
-
-Scoop requires no admin rights, making it reliable from non-elevated shells (like Claude Code):
-
-```bash
-powershell -Command "Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser; Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression"
-```
-
-Verify with `scoop --version` before continuing. If Scoop installation fails, print a manual reminder and skip the remaining MinIO steps.
-
-#### Install MinIO packages via Scoop
-
-```bash
-scoop install minio minio-client
-```
-
-### 2 — Start MinIO server (if not already running)
-
-Check if MinIO is already running on port 9000:
-
-```bash
-curl -s -o /dev/null -w "%{http_code}" http://localhost:9000/minio/health/live
-```
-
-If the health check returns `200`, MinIO is already running — skip to step 3.
-
-If not running, start it in the background:
-
-```bash
-minio server ~/minio-data --console-address :9001 &
-```
-
-Wait a few seconds, then re-check the health endpoint. If it still doesn't respond, print a manual reminder and skip step 3.
-
-### 3 — Create the bucket
-
-Configure the MinIO Client alias and create the bucket:
-
-```bash
-mc alias set local http://localhost:9000 minioadmin minioadmin
-mc mb local/{APP_NAME} --ignore-existing
-```
-
-Replace `{APP_NAME}` with the value from `backend/.env` (lowercased / slugified).
-
-If this succeeds, report:
-
-```
-  [x] MinIO — server running on :9000, bucket "{APP_NAME}" ready
-```
-
-### Fallback
-
-If any MinIO step fails, print:
-
-```
-  MinIO: Could not fully automate MinIO setup. Please complete manually:
-    1. Install Scoop (if needed): powershell -Command "irm get.scoop.sh | iex"
-    2. Install MinIO: scoop install minio minio-client
-    3. Start the server: minio server ~/minio-data --console-address :9001
-    4. Create the bucket: mc alias set local http://localhost:9000 minioadmin minioadmin
-                          mc mb local/{APP_NAME} --ignore-existing
 ```
 
 ## Final step — Start development servers (optional)

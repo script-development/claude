@@ -59,11 +59,11 @@ This stores cache in-memory per request (not persisted). It avoids "cache table 
 
 ## Step 5 — Apply local AWS/MinIO block
 
-Replace the entire AWS configuration block (all lines starting with `AWS_`) with the local MinIO defaults:
+Replace the entire AWS configuration block (all lines starting with `AWS_`) with the local MinIO defaults. The access key and secret must match the `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` values the `minio` service sets in the project's `docker-compose.yml` — read them from there, do not assume:
 
 ```
-AWS_ACCESS_KEY_ID=minioadmin
-AWS_SECRET_ACCESS_KEY=minioadmin
+AWS_ACCESS_KEY_ID=<MINIO_ROOT_USER from docker-compose.yml>
+AWS_SECRET_ACCESS_KEY=<MINIO_ROOT_PASSWORD from docker-compose.yml>
 AWS_DEFAULT_REGION=eu-central-1
 AWS_BUCKET=${APP_NAME}
 AWS_ENDPOINT=http://localhost:9000

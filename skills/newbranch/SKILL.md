@@ -38,27 +38,31 @@ Ask the user which issue to branch from. Options:
 After creating or resolving the issue, capture its **key** (for branch naming and the bundle call
 in step 3).
 
-### 3. Bundle the issue context
+### 3. Bundle the issue and project context (parallel)
 
-Single read that replaces the old four-resource fan-out (`kendo://issues/{key}` +
-`kendo://projects/{{PROJECT_ID}}/lanes` + `kendo://projects/{{PROJECT_ID}}/sprints` +
-`git config user.email` heuristic):
+Two MCP calls fired in one tool-call block replace the old four-resource fan-out across the
+issue, lanes, sprints, and members resources, plus the legacy `git config user.email` heuristic:
 
 ```
-mcp__kendo__prepare-issue-context-tool
-  issue_key: "{{ISSUE_KEY_PREFIX}}-0141"
+parallel:
+  mcp__kendo__prepare-project-context-tool
+    project_id: {{PROJECT_ID}}
+  mcp__kendo__prepare-issue-context-tool
+    issue_key: "{{ISSUE_KEY_PREFIX}}-0141"
 ```
 
-The response carries everything the rest of the workflow needs:
+Together the responses carry everything the rest of the workflow needs:
 
+From `prepare-issue-context`:
 - `issue.id` / `issue.title` — branch slug source
+
+From `prepare-project-context`:
 - `lanes[]` — find the entry whose `title === "In Progress"` and capture its `id` for step 5
 - `active_sprint` — `id` for step 5, or `null` if the project has no Active sprint (skip sprint then)
 - `current_user` — authoritative MCP-auth'd developer; use `current_user.id` as the default
   `assignee_id`. No `git config user.email` heuristic needed — the token is bound to the user.
   Confirm with the user: "Assigning to **{current_user.name}** — correct?" If they want to assign
-  to someone else, fall back to `kendo://projects/{{PROJECT_ID}}/members` (not in the bundle by design)
-  and let them pick.
+  to someone else, use `members[]` from the same project-context bundle and let them pick.
 
 ### 4. Create the branch
 

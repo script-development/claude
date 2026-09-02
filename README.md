@@ -11,10 +11,13 @@ Work in any project, no configuration needed.
 | Skill | Description |
 |-------|-------------|
 | [babysit](skills/babysit/) | Superseded by [shepard](skills/shepard/). Watch a PR's CI, auto-fix failures, push until green |
+| [build-it](skills/build-it/) | Implement the last grill-me alignment: cut a worktree, write plan docs if chosen, build, run gates, open the PR |
 | [catchup](skills/catchup/) | Load branch context, show progress, sync with base branch |
 | [commit](skills/commit/) | Small, focused commits with conventional messages + push |
 | [fix-bug](skills/fix-bug/) | End-to-end bug-fix workflow: reproduce, diagnose, fix, verify via bug-fix-verifier |
+| [grill-me](skills/grill-me/) | Interview the developer through AskUserQuestion before any code is written; ends with docs-or-not and build-or-stop |
 | [implement-plan](skills/implement-plan/) | Execute a feature plan end-to-end without TASKS.md, gated by acceptance-reviewer |
+| [memory-hygiene](skills/memory-hygiene/) | Audit the project memory store for stale, codified, duplicate entries; dry-run proposal, then sync worktree memory stores |
 | [newbranch](skills/newbranch/) | Create a new branch from the default branch |
 | [next](skills/next/) | Continue through TASKS.md — find next task, execute, mark done |
 | [plan-feature](skills/plan-feature/) | Interrogate the developer, then produce PLAN.md + DECISIONS.md |
@@ -24,8 +27,10 @@ Work in any project, no configuration needed.
 | [review-branch](skills/review-branch/) | Code review all changes on current branch vs base |
 | [review-mcp-descriptions](skills/review-mcp-descriptions/) | Improve MCP tool/resource descriptions for discoverability |
 | [shepard](skills/shepard/) | Drive one PR to green and answered: fix red CI, dispose every review finding, push once per cycle, arm a live watch |
+| [sync-worktrees](skills/sync-worktrees/) | Copy gitignored .env* files and refresh dependencies from the primary worktree into every secondary worktree; optional safe fast-forward |
 | [task-writer](skills/task-writer/) | Break down features into structured TASKS.md with verification |
 | [wireframe](skills/wireframe/) | Generate structured WIREFRAMES.md with ASCII layouts, design tokens, and interaction specs |
+| [worktree](skills/worktree/) | Cut a fresh git worktree: branch, deps, env files, per-repo house rules, then hand back the path |
 
 ### Stack-Specific Skills
 
@@ -46,6 +51,7 @@ For any project using [Kendo](https://kendo.dev) for issue tracking. Requires th
 | [board-sync](skills/board-sync/) | Sync kendo board with GitHub branch/PR status |
 | [kendo-cli](skills/kendo-cli/) | Kendo CLI for issues, sprints, epics, time tracking |
 | [kendo-mcp](skills/kendo-mcp/) | Kendo MCP server integration for issue management |
+| [lint-issues](skills/lint-issues/) | Audit every To Do / In Progress issue against the issue-writing standard via parallel issue-linter agents; post a summary on an audit issue |
 | [prepare-issue](skills/prepare-issue/) | Prepare a kendo issue: assign, branch, link, move to In Progress |
 | [triage-reports](skills/triage-reports/) | Walk pending Kendo reports one-by-one; promote to issue, dismiss, or combine |
 
@@ -75,6 +81,7 @@ For any project using [Kendo](https://kendo.dev) for issue tracking. Requires th
 
 | Agent | Stack | Description |
 |-------|-------|-------------|
+| [issue-linter](agents/issue-linter.md) | Kendo MCP | Grade one issue against `kendo-mcp`'s issue-templates.md; post suggested rewrites on the audit issue, never edit the target |
 | [plan-reviewer](agents/plan-reviewer.md) | Laravel + Vue | Review feature plans for codebase convention violations against arch tests and CLAUDE.md |
 
 ## Maintaining This Repo
