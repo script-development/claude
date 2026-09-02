@@ -5,7 +5,7 @@ description: |
   Use this for smaller plans where the plan's Approach section is already a good enough
   roadmap and a separate task file would be overkill. Loads the full plan context
   (goal, decisions, scope, approach, acceptance criteria, wireframes), executes the work
-  end-to-end with TDD discipline, runs verification and the acceptance-reviewer agent,
+  end-to-end with TDD discipline, runs verification and `/review-branch`,
   then captures learnings in IMPLEMENTATION.md so future sessions can resume.
   Trigger on: "implement the plan", "implement plan", "build this plan", "execute the plan",
   "/implement-plan", "ship this plan", "just do the plan", or whenever the user wants to
@@ -112,44 +112,36 @@ variants, layout structure all live there.
 
 Once the implementation is in place, run the verification gauntlet in order of cost:
 
-1. `/ci --quick` — lint + types (cheap, fast, catches the obvious stuff)
-2. Domain-narrow tests for the area you touched (use the project's single-run / pipeline
+1. Domain-narrow tests for the area you touched (use the project's single-run / pipeline
    variant, not watch mode)
-3. Anything the plan calls out under a "Verify" or "Acceptance Criteria" section that you can
+2. Anything the plan calls out under a "Verify" or "Acceptance Criteria" section that you can
    run yourself
 
 Don't run the full CI suite locally — CI runs that on the PR. Local runs are for the
 narrow domain you changed.
 
-For frontend changes, also drive the feature in a real browser via `/playwright-browser` before
-declaring done. Code that compiles and tests-green can still be visually broken.
+Lint and type checks belong to the repo's gates — git hooks on commit and push, or CI. Run the
+repo's gates rather than a hand-picked lint command. If a hook fails, fix the underlying issue
+and re-commit/re-push.
 
-## Step 7: Acceptance review
+For frontend changes, also drive the feature in a real browser — a browser-driving skill or the
+Playwright MCP — before declaring done. Code that compiles and tests-green can still be visually
+broken.
 
-Spawn the **acceptance-reviewer** agent in PR mode against the full plan. Because there's no
-per-task scoping, you check everything in one pass:
+## Step 7: Branch review
 
-```
-Agent({
-  subagent_type: "acceptance-reviewer",
-  prompt: `Review the implemented work against the full plan.
-
-Mode: pr
-Plan directory: docs/plans/<slug>/
-Branch diff: this branch vs <base-branch>
-
-Check every acceptance criterion in PLAN.md against the diff. Report PASS/PARTIAL/FAIL/SKIP
-per criterion. If WIREFRAMES.md exists, verify the UI matches.`
-})
-```
+Run `/review-branch`. It spawns the two canonical pre-PR reviewers in parallel against the full
+branch diff and writes `REVIEW_CLAUDE.md` into the plan directory for `/pr` to consume. Don't
+spawn reviewer agents directly here — `/review-branch` owns that orchestration, so the two flows
+can't drift apart.
 
 **What to do with the result:**
 
-- **Score 7+ / all PASS or SKIP** — Proceed to Step 8.
-- **Score below 7 / any FAIL** — Fix the issues the reviewer identified, re-run verification
-  (Step 6), then re-spawn the reviewer. Do not write IMPLEMENTATION.md or suggest a commit
-  until the score is 7 or above. The threshold exists because shipping below it has historically
-  meant follow-up work nobody scheduled.
+- **Both reviewers 7+** — Proceed to Step 8.
+- **Either below 7** — Fix what the reviewer identified, re-run verification (Step 6), then
+  re-run `/review-branch`. Do not write IMPLEMENTATION.md or suggest a commit until both score 7
+  or above. The threshold exists because shipping below it has historically meant follow-up work
+  nobody scheduled.
 
 ## Step 8: Capture learnings to IMPLEMENTATION.md
 
@@ -163,7 +155,7 @@ Use this structure:
 
 ## YYYY-MM-DD — <one-line summary of this session's work>
 
-**Acceptance Score:** N/10 (from acceptance-reviewer)
+**Review Scores:** Runtime Integrity N/10, Precedent N/10 (from `/review-branch`)
 
 **Key Changes:**
 - Created `path/to/new/file.ts`
@@ -195,7 +187,7 @@ Summarise what shipped and offer to commit:
 
 ```
 Implemented <KEY> — <one-sentence summary>
-Acceptance score: 9/10. IMPLEMENTATION.md updated.
+Review scores: Runtime Integrity 9/10, Precedent 8/10. IMPLEMENTATION.md updated.
 
 Suggest committing now. Want me to /commit?
 ```
