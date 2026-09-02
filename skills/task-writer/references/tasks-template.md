@@ -1,8 +1,7 @@
 # TASKS.md template
 
 Save the breakdown to `docs/plans/{{ISSUE_KEY_PREFIX}}-XXXX-slug/TASKS.md`. Use
-this exact structure — `/next`, `acceptance-reviewer`, and
-`task-alignment-reviewer` all parse it. Renaming or omitting sections breaks
+this exact structure — `/next` parses it. Renaming or omitting sections breaks
 downstream agents silently.
 
 ## Task format
