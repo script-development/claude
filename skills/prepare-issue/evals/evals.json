@@ -1,0 +1,20 @@
+{
+  "skill_name": "prepare-issue",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "/prepare-issue {{ISSUE_KEY_PREFIX}}-0210",
+      "expected_output": "Assigns issue to current user, creates branch via /newbranch, checks out in primary worktree, prints summary checklist"
+    },
+    {
+      "id": 2,
+      "prompt": "prepare issue {{ISSUE_KEY_PREFIX}}-0195, I want to work on it in myapp-3",
+      "expected_output": "Assigns issue, creates branch via /newbranch, switches primary back, checks out branch in myapp-3 worktree, prints summary"
+    },
+    {
+      "id": 3,
+      "prompt": "start working on issue {{ISSUE_KEY_PREFIX}}-0203 in a new worktree",
+      "expected_output": "Assigns issue, creates branch via /newbranch, switches primary back, creates new worktree, invokes /startup for setup, prints summary"
+    }
+  ]
+}
