@@ -1,18 +1,20 @@
-# Quality gates — input (Phase 1.5) and output (Phase 4d)
+# Quality gates — input (Phase 1.5), security (Phase 1.6), and output (Phase 4d)
 
-`/plan-feature` runs two fail-closed gates that bracket the drafting work. The tables themselves live in SKILL.md so they fire reliably. This document carries the rationale, sycophancy guards, and operating notes — load it when you reach a gate.
+`/plan-feature` runs three fail-closed gates that bracket the drafting work. The tables themselves live in SKILL.md so they fire reliably. This document carries the rationale, sycophancy guards, and operating notes — load it when you reach a gate.
 
-## Why two gates
+## Why three gates
 
-The path of least resistance — "this looks crisp, let me draft and we can iterate" — is the most expensive failure mode in planning. A draft built on partial information costs a full restart later (see `anti-patterns.md`). The input gate makes "is the input complete?" a binary question instead of a feel. The output gate catches the symmetric failure: drafted with thin filler text in the gaps.
+The path of least resistance — "this looks crisp, let me draft and we can iterate" — is the most expensive failure mode in planning. A draft built on partial information costs a full restart later (see `anti-patterns.md`). The input gate makes "is the input complete?" a binary question instead of a feel. The security gate catches the surfaces the convention checks don't see (untrusted-bytes flow, billing dollars, audit fidelity, lifecycle correctness). The output gate catches the symmetric failure: drafted with thin filler text in the gaps.
 
 ## Phase 1.5 — input gate
 
-**The rule:** every ✓ requires a quoted source. Every ? or ✗ is a topic for Phase 2 interrogation. **You may not proceed past Phase 1.5 with any ? or ✗ row.** Fail-closed.
+**The rule:** every ✓ requires a quoted source. **No ? or ✗ row may survive into drafting** — Phase 2 exists to close them, so an open row routes you into interrogation rather than blocking you where you stand. Phase 3 is the step that's unreachable while any row is still ? or ✗. Fail-closed.
 
-Output the eight-row table verbatim to the developer with marks and citations filled in. Then either:
+Output the eight-row table verbatim to the developer with marks and citations filled in, then carry it into PLAN.md's `## Planning Evidence` section.
 
-- **All ✓** — say "All eight checks pass with cited evidence. Proceeding to Phase 3 confirmation." Skip Phase 2 interrogation; the input is genuinely complete.
+**Phase 1.6 runs next in both branches — an all-✓ gap table does not exempt a feature from the security surface.** After it:
+
+- **All ✓** — say "All eight checks pass with cited evidence. Surface section written. Proceeding to Phase 3 confirmation." Skip Phase 2 interrogation; the input is genuinely complete.
 - **Any ? or ✗** — list the missing rows and proceed to Phase 2 to fill them. Phase 2 questions target only ? and ✗ rows. Don't sweep.
 
 ### Sycophancy guards
@@ -22,7 +24,26 @@ Output the eight-row table verbatim to the developer with marks and citations fi
 - A long developer prompt is not evidence of completeness. Length doesn't make a row ✓; only specifics do.
 - "Edge cases will be handled during implementation" is ✗, not ✓.
 
-This gate also gives `plan-reviewer` something concrete to verify post-hoc — every ✓ in the checklist must have produced a corresponding section of PLAN.md grounded in that evidence.
+Persisting the table is what makes the gate checkable. `plan-reviewer` reads PLAN.md, not the planning conversation — a checklist that stays in chat proves nothing to anyone downstream. With it in `## Planning Evidence`, every ✓ can be held against the section of PLAN.md it was supposed to produce.
+
+## Phase 1.6 — security & cost surface gate
+
+**The rule:** six rows. For each row, the planner writes a **prose answer to the row's questions**, or marks `N/A — <one-line reason>`. Empty cells are not allowed; paraphrasing the questions back is not an answer. Fail-closed.
+
+Question-shaped, not field-shaped — by design. The rows exist in their current shape because two agentic features scored ≥9/10 across every existing reviewer, shipped to human review, and immediately collected blockers + majors in exactly the surfaces below. Early drafts of this gate were field-shaped ("list every SDK, list every paid route...") and risked training the planner to fill in a form for the past, not think for the next feature. Questions transfer.
+
+### Sycophancy guards specific to the security gate
+
+These flag prose that *looks* like an answer but doesn't actually answer the row's questions:
+
+- **"Defense in depth handles this"** without naming the specific defense for *this* surface is THIN. Name the file, the function, the const.
+- **"Sanitizer will catch it"** is THIN unless the prose demonstrates the sanitizer's tag list includes every tag wrapping the field at every callsite. The pattern to look for is a single framework-tag constant on the repo's prompt-injection guard, escaped on every call — a per-call tag argument is the failure mode.
+- **"Config has a timeout value"** is THIN; only "construction threads the timeout into the SDK *and* the arch test pins it" is OK. A timeout declared in config but not passed to `new Client(...)` is a fail.
+- **"Audit log already records everything"** is THIN unless the answer enumerates *when written / what snapshotted / which outcomes recorded*. A logger that hard-codes `status: 'success'` fails the third question regardless of how many callers it has.
+- **Walking only the happy path of partial failure.** Row 2 asks for *all three* shapes (local-then-external throws, external-then-local rolls back, concurrent collision wins-loses). An answer that only handles "external succeeds, local commits" is THIN — the failures are the whole point of the row.
+- **"We always do that" / "It's a convention" / "Best practice handles this"** under Row 6 is THIN. The row's question is *which Escalation-Ladder level enforces it*. Tribal-knowledge defenses are L4 by default — name that explicitly with a trade-off, or escalate to L1/L2.
+- **Operator-only signals on silent degradation.** Under Row 5, "the operator log will record it" is not a client-facing signal. The user cannot grep the operator log. If the answer doesn't name a client-facing surface (toast, sentinel, refresh-required flag) for a degradation path, the answer is THIN.
+- **False N/A on LLM-touching features.** An LLM-touching feature cannot mark Row 1 N/A. Search the Approach for prompt-building calls, LLM SDK namespaces, managed-agent clients, vision endpoints, or MCP-tool argument handlers before accepting that N/A.
 
 ## Phase 4d — output gate
 

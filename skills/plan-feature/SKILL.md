@@ -28,6 +28,9 @@ The developer may pass a Kendo issue URL or key as an argument (e.g.,
 **IMPORTANT: Issue key ≠ issue ID.** A key like `{{ISSUE_KEY_PREFIX}}-0343` does NOT mean the database
 ID is 343. These are different values. Never extract the number from a key and use it as an ID.
 
+If the repo has a `CONTEXT.md` glossary at its root, read it before grilling — it defines the
+canonical domain terms and the aliases to avoid.
+
 If an argument is provided:
 1. Extract the issue key — for URLs, pull the `{{ISSUE_KEY_PREFIX}}-XXXX` segment from the path
 2. Read `kendo://issues/{key}` to get the actual issue (including its real database ID)
@@ -36,7 +39,12 @@ If an argument is provided:
 
 ## Phase 1: Research before asking
 
-Before asking a single question, do these things:
+If the repo has a root `CONTEXT.md` glossary, it is the vocabulary contract for this whole
+session. If the developer uses a term that conflicts with the glossary, call it out and resolve
+it; if the feature surfaces a new term that isn't defined, add it to `CONTEXT.md` the moment it's
+resolved.
+
+Then do the following:
 
 ### 1a. Check the Kendo board
 
@@ -96,16 +104,27 @@ Make a concrete list of what you found. This list goes into Phase 2 questioning 
 to the developer and confirm: "I found these existing pieces we can reuse. Anything I'm
 missing, or should any of these be replaced instead of reused?"
 
-### 1d. Sketch module shape (deep vs shallow)
+### 1d. Sketch module shape (deep vs shallow) — apply the test, don't grade yourself
 
-Before validating layers, decide what new modules this feature introduces and whether each is deep or shallow. Load [`references/module-shape-lens.md`](references/module-shape-lens.md) for the full lens — in-scope artefacts, framework-exempt list, and resolution rules.
+Before validating layers, decide what new modules this feature introduces and whether each is deep or shallow. Load [`references/module-shape-lens.md`](references/module-shape-lens.md) — read the **shallow-detection test** section in particular. The lens is three specific tests about interface complexity vs implementation per use case, not a vibe check. Implementation line count is not one of them: a Service with 200 lines of HTTP+SSE inside, one method, and 5 primitive params is shallow regardless of body length.
 
-For each in-scope module, output one row to PLAN.md's "Key Design Decisions" table with: inputs/outputs, hidden behaviour, test seam, verdict (deep / shallow-but-justified / shallow-and-suspect). Fold or expand any shallow-and-suspect module before continuing — this is the most common failure mode caught later by `simplicity-reviewer`.
+For each in-scope module, output one row to PLAN.md's "Key Design Decisions" table (or a dedicated Module-Shape sub-table) with these columns:
+
+- **Inputs/outputs**
+- **Hidden behaviour**
+- **Test seam**
+- **Shallow-test reckoning** — explicitly answer: "if a plausible second use case lands, do I add a *method* or a *parameter*?" Method ⇒ shallow-and-suspect. Parameter ⇒ likely deep.
+- **Verdict** — deep / shallow-but-justified / shallow-and-suspect
+
+The Shallow-test reckoning column is not optional. A row that says "Deep" without showing the reckoning is treated as missing for Phase 1.5 gap-analysis purposes.
+
+Fold or expand any shallow-and-suspect module before continuing. The two fixes (demote into the caller, or promote to protocol primitives) are documented in the lens reference. Plan-time is the last cheap moment to fix this: no pre-PR reviewer grades module depth on its own, and a shallow module only surfaces later as the sibling drift and dead scaffolding `precedent-reviewer` flags — by which point the shape is already built.
 
 ### 1e. Validate against architecture rules
 
 **Before proposing where classes live, check the architecture rules that enforce layer boundaries.**
-Placing a class in the wrong layer will cause CI failures that force restructuring later.
+Placing a class in the wrong layer will cause CI failures that force restructuring later. Read the
+rule files as the source of truth — don't rely on summaries, they age.
 
 Look for the project's architecture-rule definitions:
 - Layer-dependency rules (e.g., Deptrac config, ArchUnit, custom rule files)
@@ -126,9 +145,32 @@ Common patterns to verify against arch tests (adapt to the project's stack):
 Include findings in the plan: "Proposed class X in layer Y — verified architecture rules allow
 Y to depend on [list of needed layers]."
 
+## Phase 1.4: Pre-flight verification (mandatory, fail-closed)
+
+Every path and symbol the plan cites gets resolved mechanically before it lands. Projecting what *should* exist instead of grepping once cost a plan three reviewer rounds — [`references/anti-patterns.md`](references/anti-patterns.md) § Calibration records the four categories it produced.
+
+Collect every path and symbol you're about to cite, one per line, and run them through the resolver:
+
+```bash
+printf '%s\n' 'app/Helpers/Slug.php' 'CreateWidgetAction' \
+  | .claude/skills/plan-feature/scripts/verify-citations.sh
+```
+
+It resolves paths against the repo root plus `backend/` and `frontend/`, greps bare symbols and namespaces across the source trees, and tolerates a trailing line reference (`api.php:233-234`). It reports on every citation before exiting — one pass gives you the whole list, not the first failure. Repos with a different layout set `CITATION_PATH_PREFIXES` / `CITATION_SEARCH_ROOTS` (documented in the script header). **A `MISSING` line is a fabricated citation — fix it or drop the claim. You may not proceed past Phase 1.4 with a non-zero exit.**
+
+Three claim shapes the script can't resolve, which you still owe by hand:
+
+| Check | What | How |
+|---|---|---|
+| **Framework / library behaviour** | Every claim of the form "the framework does X" / "the ORM does Y" / "the SDK does W" | Cite `vendor/<package>/<file>:<line>` (or the `node_modules/` equivalent) that proves it (then run that path through the script), or weaken the claim to "verify at implementation time." No vibes on framework behaviour. |
+| **Symbol-removal blast radius** | Every symbol you plan to delete or rename (Action, Event, route, FE function, type) | `grep -rn <symbol>` across every source tree and **inspect every hit**, not just the ones from the obvious feature path. The third callsite always lives somewhere unexpected (the calibration plan missed a bulk-assign caller of the endpoint it was deleting until round 2). |
+| **Added-rule sweep inventory** | Every cross-cutting rule the plan **adds** — a header every response must stamp, a broadcast every status transition must fire, an audit hook every variant must call, a pattern every sibling component must adopt | `grep -rn` the sibling population (the route group, the write paths, the component family) and carry **every hit** into PLAN.md's `## Sweep Inventory`, each marked Applied or `Skipped — <reason>`. The blast-radius row covers what you remove; this row covers what you add. Review keeps finding site N+1 of an N-site sweep: one plan wired every write path but one, another broadcast every done-transition but one. |
+
+Reviewers catch unverified confident claims; they will NOT reliably catch hedged ones. So anything you couldn't verify gets written as "verify at implementation time", not asserted.
+
 ## Phase 1.5: Gap analysis (mandatory, fail-closed)
 
-Before any drafting, produce this literal checklist and mark each row **✓ Covered**, **? Partial**, or **✗ Missing**. Every ✓ requires a quoted source. Every ? or ✗ is a topic for Phase 2 interrogation. **You may not proceed past Phase 1.5 with any ? or ✗ row.**
+Before any drafting, produce this literal checklist and mark each row **✓ Covered**, **? Partial**, or **✗ Missing**. Every ✓ requires a quoted source. **No ? or ✗ row may survive into drafting** — Phase 2 exists to close them, so an open row sends you there rather than blocking you. Phase 3 is what's unreachable while any row is still ? or ✗.
 
 Load [`references/quality-gates.md`](references/quality-gates.md) for the rationale, sycophancy guards, and proceed/return rules.
 
@@ -140,25 +182,48 @@ Load [`references/quality-gates.md`](references/quality-gates.md) for the ration
 | **Out-of-scope** — at least one explicit non-goal | ✓ / ? / ✗ | usually missing — interrogate |
 | **Edge cases** — empty states, auth, errors, race conditions, scale | ✓ / ? / ✗ | usually missing — interrogate with concrete cases drawn from Phase 1b |
 | **Architecture fit** — which existing feature does this resemble; what gets reused | ✓ / ? / ✗ | Phase 1b/1c findings — cite file paths |
-| **Module shape** — deep modules identified; shallow-and-suspect modules resolved | ✓ / ? / ✗ | Phase 1d output |
+| **Module shape** — every new in-scope module has the **shallow-test reckoning** filled in (not just a "Deep" label); any shallow-and-suspect module has been demoted or promoted | ✓ / ? / ✗ | Phase 1d output — a row that says "Deep" without showing the "method or parameter for the next use case?" reckoning counts as ✗, not ✓ |
 | **Risk / uncertainty** — what could go wrong, what's unknown | ✓ / ? / ✗ | usually missing — interrogate |
 
-Output the table verbatim to the developer with marks and citations filled in. If all ✓, skip Phase 2 and proceed to Phase 3. Any ? or ✗ — list the missing rows and proceed to Phase 2 (target only those rows; don't sweep).
+Output the table verbatim to the developer with marks and citations filled in, and carry it into PLAN.md's `## Planning Evidence` section at Phase 4c. A table that exists only in chat is invisible to every downstream reviewer, which defeats the point of citing sources.
+
+**Phase 1.6 comes next either way — it is never skipped.** After it:
+
+- **All ✓** — skip the Phase 2 interrogation and go to Phase 3. The input is genuinely complete.
+- **Any ? or ✗** — go to Phase 2, targeting only those rows. Don't sweep.
+
+## Phase 1.6: Security & Cost Surface (mandatory, fail-closed)
+
+Produce a `## Security & Cost Surface` section in PLAN.md with **six prose paragraphs**, each answering the questions for one row — or `N/A — <one-line reason>` when no question on the row applies. **You may not proceed past Phase 1.6 with any unanswered question on a populated row.**
+
+The canonical questions and worked examples live at [`references/surface-questions.md`](references/surface-questions.md) — load it now. It is the single source of truth shared with the `surface-reviewer` agent at Phase 5. The rows are deliberately question-shaped, not field-shaped, so they generalise to feature shapes not seen yet.
+
+Architecture tests do not cover this. They cover *code shape* — not the flow of untrusted bytes, billing dollars, audit fidelity, partial-failure state space, silent UX degradation, or enforcement of conventions the feature introduces. [`references/quality-gates.md`](references/quality-gates.md) carries the rationale and the sycophancy guards (paraphrasing the questions back is THIN, not OK; an LLM-touching feature cannot mark Row 1 N/A).
+
+Output the six paragraphs to the developer for confirmation, then carry them into PLAN.md at Phase 4c. The `surface-reviewer` agent grades them at Phase 5.
 
 ## Phase 2: Interrogate
 
-Now ask questions, **targeting only the ? and ✗ rows from Phase 1.5**. No generic sweep. Your questions should demonstrate that you've read the codebase — reference specific files, patterns, and existing behavior.
+Now ask questions, **targeting only the ? and ✗ rows from Phase 1.5**. No generic sweep.
 
-### Use AskUserQuestion, not text walls
+The mode is **interview with hypotheses**: for every question, propose your recommended answer with one-line rationale, and let the developer confirm or correct. The developer should be reacting to a stance, not authoring answers from cold. A multiple-choice quiz with no opinion attached makes the dev think from zero — that's a worse interview, not a politer one.
 
-**CRITICAL:** All questions MUST go through the `AskUserQuestion` tool — not as plain text in
-your response. The developer should not have to read paragraphs and mentally parse questions.
-Each question becomes a selectable option they can answer quickly.
+### Order of attack
 
-- Group 3-4 related questions into one `AskUserQuestion` call
-- Provide concrete options (not open-ended) — the developer picks from choices informed by the codebase
-- Use previews for UX choices (e.g., modal vs page, inline vs form)
-- Short text summaries are fine between question rounds, but keep them under 5 lines
+Resolve in dependency order, not gap-table order. A late-discovered data-model change invalidates UI decisions made earlier — that's the most expensive form of mid-interview rework.
+
+1. **Data model & boundaries** — what entities exist, what owns what, where data lives
+2. **Behaviour & permissions** — what happens when, who can do what, what's transactional
+3. **UI shape** — page vs panel vs modal, layout pattern to mirror
+4. **Edge cases & error paths** — empty states, race conditions, scale, failure modes
+
+Don't ask a UI question before the data model is settled. If a row in the gap table is downstream of an unanswered upstream row, defer it.
+
+### Self-serve before asking
+
+Before sending an `AskUserQuestion`: can the codebase answer this? If yes, **answer it from the code and ask for confirmation**, not for the answer. "I see the board uses WebSockets via `useRealtimeChannel.ts:42` — confirming we wire this feature the same way?" is one click. "Should this be real-time?" wastes the dev's attention on something we already know.
+
+If the dev makes a claim about how the code behaves and you suspect it's wrong, **check the code before continuing**. Surfacing a contradiction ("you said X, but `app/Actions/Widgets/CloseWidgetAction.php:88` does Y — which is right?") is more valuable than tactfully agreeing.
 
 ### First round: present what you found
 
@@ -174,36 +239,25 @@ about scope or behavior, show the developer:
 
 This grounds the conversation in the actual codebase and catches "we already have that" early.
 
-### What to ask about
-
-- **Scope boundaries** — "You said X. Does that include Y? Where does this feature stop?"
-- **User behavior** — "What happens when a user does Z? What if they do it twice? What if they do it while someone else is doing W?"
-- **Edge cases** — "What about empty states? What about 500 items? What about permissions — who can and can't do this?"
-- **Existing patterns** — "I see `[specific file]` handles something similar by doing A. Should we follow that pattern or is there a reason to diverge?"
-- **Priority trade-offs** — "This could be done as a quick version without B, or a full version with B. Which matters more right now?"
-- **What's NOT being built** — "Just to be clear: this does NOT include C, correct?"
-- **Data model** — "Where does this data live? New table? New column on existing table? Derived from existing data?"
-- **UI expectations** — "Is this a new page, a panel, a modal, or part of an existing view?"
-
 ### Rules for questioning
 
-- **Use `AskUserQuestion` for every round.** Never dump questions as plain text. The developer answers by clicking options, not by reading paragraphs.
-- **3-4 questions per `AskUserQuestion` call.** The tool supports 1-4 questions — use that constraint.
-- **Provide concrete options.** Each question should have 2-4 selectable choices informed by the codebase. The developer picks, not types.
-- **Push back on vague answers.** If the developer says "it should be flexible" or "whatever makes sense", don't accept it. Follow up: "Flexible how? Give me a concrete example of what a user would do."
-- **Minimum 2 rounds of questions.** Even if the first round covers a lot, there are always follow-ups. Complex features need 3+ rounds.
-- **Reference the codebase** in your questions. "I see the board view uses WebSockets for real-time updates. Should this feature also update in real-time, or is polling fine?" is much better than "Should this be real-time?"
-- **Short text between rounds is fine** — but keep it under 5 lines. Summaries and context, not essays.
+- **Every round goes through `AskUserQuestion`** — up to 4 questions per call, each with 2–4 concrete options drawn from the codebase. The developer clicks; they don't parse paragraphs or type prose. Use previews for UX choices (modal vs page, inline vs form).
+- **Lead with a stance.** Each question's description carries "I'd pick X because Y" — the dev reacts to a recommendation, not a blank quiz.
+- **Push back on vague answers.** "It should be flexible" or "whatever makes sense" is not an answer — ask for the concrete case behind it.
+- **Probe relationships with a specific story**, not an abstract category: "User A has record X open with two unsaved child rows; User B archives X while A is still editing — what happens to A's save?" surfaces boundary disagreements that "what about race conditions?" doesn't.
+- **Live glossary check.** If the repo has a root `CONTEXT.md`, an answer using a term that conflicts with it stops the round: surface the conflict, propose the canonical term, update `CONTEXT.md` inline. Don't let domain language drift mid-conversation.
+- **Restate after every round** in 2-3 lines — "Agreed so far: A → X, B → Y. Open: Z." In-flight alignment means Phase 3 is a final sanity check rather than the only moment the developer can object.
+- **Keep text between rounds under 5 lines.** Summaries and context, not essays.
 
 ### When to stop asking
 
-Stop when ALL of the following are true:
+Stop when ALL of the following are true — however many rounds that takes:
 - You know exactly what the user will see and interact with
 - You know what data is involved and where it lives
 - You know the scope boundaries (in AND out)
 - You know how edge cases are handled
 - You've identified which existing patterns to follow
-- You can write at least 5 verifiable acceptance criteria that the developer agrees with
+- You can write at least 3 verifiable acceptance criteria that the developer agrees with
 
 ## Phase 3: Confirm understanding
 
@@ -245,8 +299,8 @@ Once the developer confirms, do the following:
 ### 4a. Ensure a Kendo issue exists
 
 If no issue was found in Phase 1a:
-1. Read the [issue-templates.md](../kendo-mcp/references/issue-templates.md) for the feature + bug templates
-2. Create an issue via `mcp__kendo__create-issue-tool` with `project_id: {{PROJECT_ID}}` and a clear title and description
+1. Read the [issue-templates.md](../kendo-mcp/references/issue-templates.md) — the single source of truth for the Feature and Bug formats
+2. Create an issue via `mcp__kendo__create-issue-tool` with `project_id: {{PROJECT_ID}}`, writing the description **against** the matching template (Feature: User Story / Context / Acceptance Criteria / Scope / Testing — Bug: Problem / Cause-or-repro / Acceptance Criteria / Scope / Testing). Don't improvise a structure.
 3. Note the returned issue key (e.g., `{{ISSUE_KEY_PREFIX}}-0244`)
 
 If an issue already exists, use its key.
@@ -259,11 +313,11 @@ Use the format and rules in [`references/decisions-template.md`](references/deci
 
 ### 4c. Write PLAN.md
 
-Save the plan to `docs/plans/{{ISSUE_KEY_PREFIX}}-XXXX-slug/PLAN.md` using the structure in [`references/plan-template.md`](references/plan-template.md). The template is the contract — downstream agents (`plan-reviewer`, `/wireframe`, `/task-writer`, `acceptance-reviewer`) parse the section names, so don't rename or omit them.
+Save the plan to `docs/plans/{{ISSUE_KEY_PREFIX}}-XXXX-slug/PLAN.md` using the structure in [`references/plan-template.md`](references/plan-template.md). The template is the contract — downstream agents (`plan-reviewer`, `surface-reviewer`, `/wireframe`, `/task-writer`, `precedent-reviewer`) parse the section names, so don't rename or omit them.
 
 ### 4d. Template completeness check (mandatory, fail-closed)
 
-Before spawning `plan-reviewer`, verify every section of the saved PLAN.md is substantive. Mark each row **OK** if the bullet rule is met **or** if the section explicitly declares `N/A — <one-line reason>`. Otherwise **THIN** — re-work before continuing.
+Before spawning the reviewers, verify every section of the saved PLAN.md is substantive. Mark each row **OK** if the bullet rule is met **or** if the section explicitly declares `N/A — <one-line reason>`. Otherwise **THIN** — re-work before continuing.
 
 Load [`references/quality-gates.md`](references/quality-gates.md) for the rationale, the N/A carve-out, and sycophancy guards.
 
@@ -271,81 +325,44 @@ Load [`references/quality-gates.md`](references/quality-gates.md) for the ration
 |---|---|
 | Goal | one sentence; describes user-visible outcome, not implementation |
 | Key Design Decisions | ≥ 1 row per non-trivial new module; every choice cites a concrete codebase reference |
+| Planning Evidence | the Phase 1.5 gap table, all eight rows ✓ with their quoted sources |
 | Scope — In | explicit list, not "the feature" |
 | Scope — Out | ≥ 1 explicit non-goal |
+| Sweep Inventory | every cross-cutting rule the plan adds has its sibling-site table (from the Phase 1.4 grep), zero unmarked rows; **or** explicit `N/A — no cross-cutting rule added` |
+| Security & Cost Surface | six rows, each a prose answer to the row's questions or `N/A — <reason>`; carried forward from Phase 1.6 |
 | Approach | enumerates files/components in implementation order |
 | Acceptance Criteria | ≥ 3 verifiable rows with a Verification column filled in |
 | Shared Reuse | ≥ 1 entry **or** an explicit "no reuse — building from scratch because X" line |
 | Patterns to Follow | ≥ 1 file path; not "follow project conventions" |
-| Testing Strategy | per-PR test table with named test files and behavioural descriptions, not "add tests" |
+| Testing Strategy | per-PR test table with named test files, behavioural descriptions, and a **red case** per test ("fails when ___" — unstatable red case means the test is decoration); every new gate/ban/allowlist names its committed negative fixture; every new test file names the CI job that runs it |
 | Edge Cases | ≥ 3 cases drawn from the Phase 1.5 ✓ Edge Cases evidence |
 | Risks | ≥ 1 specific risk; not "the implementation may have bugs" |
-| Wireframes / Migration / Site Docs Sync | substance OR explicit `N/A — <reason>` |
+| Wireframes / Migration / Site Docs Sync | substance OR explicit `N/A — <reason>`; Site Docs Sync marks each doc surface **and its mirror** (e.g. an LLM-facing text export of the docs, if the repo ships one) Update / N/A per row |
+| Hedge parentheticals | Zero `(or whatever)` / `(TBD)` / `(or X)` hedges on load-bearing claims. A hedge papers over a decision you owe — decide it and cite it (Phase 1.4), or escalate via `AskUserQuestion`. |
 
 When every row is OK, proceed to Phase 5.
 
-## Phase 5: Plan convention review
+## Phase 5: Self-gate and hand off
 
-**Before showing the plan to the developer**, spawn the **plan-reviewer** agent to check the
-plan against codebase conventions. This is a separate agent with no shared context from the
-planning conversation — it has no investment in your design decisions.
+**Before showing the plan to the developer**, spawn **two reviewers in parallel** against the saved PLAN.md:
 
-Spawn the plan-reviewer with the plan file path. It reads the project's conventions and checks
-every design decision against the actual codebase.
+- `plan-reviewer` — scores 1-10 against codebase conventions (enums, auth, module shape, arch tests). Owns the convention bar.
+- `surface-reviewer` — scores 1-10 against the six question-shaped rows of the Security & Cost Surface section, with `mode: "plan"`. Owns the security / cost / audit / lifecycle / enforcement bar.
 
-The plan-reviewer scores the plan from 1-10 on convention compliance. Plans scoring below 7
-do NOT go to the developer.
+**Spawn both in a single message with two `Agent()` calls** so they run concurrently. Do not issue them sequentially — if parallel spawning is unavailable in this environment, stop and say so instead. The reviewers are designed to run on a static snapshot of PLAN.md at the same moment; sequencing them lets the second see partial edits from the first and undermines the independent-context property that makes the dual-spawn valuable.
 
-If the score is below 7:
-1. Fix the plan to match conventions
-2. Re-run the plan-reviewer until the score is 7 or above
-3. Only then proceed to developer review
+Both must score ≥ 7 to proceed. Below 7 on either, fix the relevant section of the plan and re-run that reviewer until it passes. The two reviewers exist because you'll rationalise your own design choices — context-free agents won't. They probe different surfaces (codebase conventions vs cross-cutting non-functional gaps), so a clean score on one doesn't substitute for the other.
 
-This step exists because the planner (you) is cognitively primed to defend its own design
-choices. A separate agent with no context of why you chose strings over ints will simply check
-whether the plan matches the codebase. It has no reason to rationalize.
+Then present the plan + both reviewer reports to the developer and ask: "Does this look good?". When approved, update PLAN.md `Status: Approved`.
 
-### 5a. Present and confirm
+### Handoff
 
-Present the plan to the developer along with the plan-reviewer's report, and ask: "Does this
-look good? Ready to generate wireframes and tasks?"
+Plan is approved. Stop here — the next step is a separate skill, owned by the developer (or by Claude in continuation):
 
-When approved, update the plan status to `Approved`.
+- **Frontend in scope** — invoke `/wireframe`. It owns generating `WIREFRAMES.md` and self-gates with `wireframe-reviewer`. Then `/task-writer` (or `/implement-plan` for small plans).
+- **Backend-only** — go straight to `/task-writer` or `/implement-plan`.
 
-### 5b. Generate wireframe specifications
-
-If the feature includes **any frontend work** (new pages, components, modals, or modifications
-to existing UI), invoke `/wireframe` to generate `WIREFRAMES.md` in the plan directory.
-
-This step happens while you still have full context from the planning conversation — the feature
-scope, the codebase research, the reference pages you found, and the design decisions. The
-wireframe skill uses this context plus the project's design system tokens to produce structured
-screen specifications.
-
-Skip this step only if the feature is purely backend (no UI changes at all).
-
-### 5c. Wireframe review
-
-After wireframes are generated, spawn the **wireframe-reviewer** agent to check WIREFRAMES.md
-for completeness, token validity, component references, and consistency. This is a separate
-agent with no shared context — it verifies the spec independently.
-
-Spawn the wireframe-reviewer with the plan directory path. It checks:
-- All screens from PLAN.md's frontend scope are covered
-- Design tokens are valid (exist in the codebase)
-- Referenced shared components exist or are well-defined
-- Internal consistency across the spec sections
-- UI-related acceptance criteria are traceable to wireframe specs
-
-The wireframe-reviewer scores the wireframes from 1-10. Wireframes scoring below 7 do NOT
-proceed to task breakdown.
-
-If the score is below 7:
-1. Fix the wireframes to address the reviewer's findings
-2. Re-run the wireframe-reviewer until the score is 7 or above
-3. Only then proceed to the developer
-
-After wireframes pass review, ask: "Wireframes ready. Want to proceed to `/task-writer`?"
+Do not invoke `/wireframe`, `/task-writer`, or their reviewers from inside this skill. Each downstream skill owns its own quality gate; chaining them here would recreate the mega-skill we just trimmed away.
 
 ## Anti-patterns to avoid
 
