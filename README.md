@@ -23,6 +23,7 @@ Work in any project, no configuration needed.
 | [retro](skills/retro/) | Write retrospectives capturing what went wrong, why, and what changed |
 | [review-branch](skills/review-branch/) | Code review all changes on current branch vs base |
 | [review-mcp-descriptions](skills/review-mcp-descriptions/) | Improve MCP tool/resource descriptions for discoverability |
+| [sync-worktrees](skills/sync-worktrees/) | Copy gitignored .env* files and refresh dependencies from the primary worktree into every secondary worktree; optional safe fast-forward |
 | [task-writer](skills/task-writer/) | Break down features into structured TASKS.md with verification |
 | [wireframe](skills/wireframe/) | Generate structured WIREFRAMES.md with ASCII layouts, design tokens, and interaction specs |
 
