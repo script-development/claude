@@ -45,6 +45,7 @@ For any project using [Kendo](https://kendo.dev) for issue tracking. Requires th
 | [board-sync](skills/board-sync/) | Sync kendo board with GitHub branch/PR status |
 | [kendo-cli](skills/kendo-cli/) | Kendo CLI for issues, sprints, epics, time tracking |
 | [kendo-mcp](skills/kendo-mcp/) | Kendo MCP server integration for issue management |
+| [lint-issues](skills/lint-issues/) | Audit every To Do / In Progress issue against the issue-writing standard via parallel issue-linter agents; post a summary on an audit issue |
 | [prepare-issue](skills/prepare-issue/) | Prepare a kendo issue: assign, branch, link, move to In Progress |
 | [triage-reports](skills/triage-reports/) | Walk pending Kendo reports one-by-one; promote to issue, dismiss, or combine |
 
@@ -74,6 +75,7 @@ For any project using [Kendo](https://kendo.dev) for issue tracking. Requires th
 
 | Agent | Stack | Description |
 |-------|-------|-------------|
+| [issue-linter](agents/issue-linter.md) | Kendo MCP | Grade one issue against `kendo-mcp`'s issue-templates.md; post suggested rewrites on the audit issue, never edit the target |
 | [plan-reviewer](agents/plan-reviewer.md) | Laravel + Vue | Review feature plans for codebase convention violations against arch tests and CLAUDE.md |
 
 ## Maintaining This Repo
