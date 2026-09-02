@@ -181,6 +181,12 @@ five minutes. The intuitive telling — back from a long lunch, pay for the pref
 about the cost but names the case the table *excludes*: expire the head too and `read` drops to 0,
 which the warm filter discards as a cache miss. A short lunch is what stays in and shows a ratio.
 
+This cause, and only this one, makes **idle time billable**: a session left open across a break pays
+to re-establish precisely what it already had, and the charge scales with the prefix rather than with
+anything the break accomplished. Causes 2 and 3 below are indifferent to elapsed time. Reducing idle
+time is a real lever and this design does not pull it — the [D1](#d1) simulation prices resident
+context, not the clock.
+
 **Cause 2 — breakpoint granularity**, and numerically the common one: 7 of the 13, ratios 1.1–2.4,
 nothing expired at all. The read stops at the last usable breakpoint, which sits short of where the
 previous request's write ended, so a tail of 657–1,839 tokens is written a second time alongside
@@ -234,10 +240,6 @@ compaction as two numbers. Rewind's version is not measured and cannot be from t
 re-writes from the nearest live breakpoint at or below the rewind point, and breakpoint positions
 are not in the transcript (`docs/calibration.md`'s measurement ceiling), nor does a rewind leave the
 detectable prefix-collapse signature that makes compaction findable at all.
-
-Idle time is billable in this cost model, then, and a session left open across a break pays to
-re-establish precisely what it already had. Nothing in this design pulls that lever and the
-[D1](#d1) simulation does not price it.
 
 ### `R` is a property of position, not of the token
 
