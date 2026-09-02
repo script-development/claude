@@ -60,10 +60,13 @@ For any project using [Kendo](https://kendo.dev) for issue tracking. Requires th
 | [docs-auditor](agents/docs-auditor.md) | Audit CLAUDE.md and docs against codebase for drift |
 | [efficiency-hunter](agents/efficiency-hunter.md) | Hunt N+1 queries, missed concurrency, hot-path bloat in branch diffs |
 | [librarian](agents/librarian.md) | Scan other repos for shareable skills/agents, grade and recommend imports |
+| [precedent-reviewer](agents/precedent-reviewer.md) | Review a branch against written standards, sibling implementations, and its own plan prose; PR-time pair with runtime-integrity-reviewer |
 | [qa](agents/qa.md) | Diagnose CI failures or evaluate implementations against acceptance criteria |
 | [reviewer](agents/reviewer.md) | Review PRs for code quality, architecture, and pattern consistency |
+| [runtime-integrity-reviewer](agents/runtime-integrity-reviewer.md) | Review a branch for transaction, concurrency, lifecycle, scaling, and silent-failure defects; PR-time pair with precedent-reviewer |
 | [silent-failure-hunter](agents/silent-failure-hunter.md) | Hunt empty catches, swallowed errors, missing user feedback in branch diffs |
 | [simplicity-reviewer](agents/simplicity-reviewer.md) | Verify the implementation is the simplest shape that meets the plan |
+| [surface-reviewer](agents/surface-reviewer.md) | Audit a plan's Security & Cost Surface section against six question-shaped rows; plan-time, runs beside plan-reviewer |
 | [task-alignment-reviewer](agents/task-alignment-reviewer.md) | Verify TASKS.md fully covers PLAN.md — criteria, wireframes, scope |
 | [wireframe-reviewer](agents/wireframe-reviewer.md) | Verify WIREFRAMES.md completeness, token validity, and plan coverage |
 
