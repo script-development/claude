@@ -8,6 +8,8 @@ description: |
 argument-hint: "[PR number or branch name]"
 ---
 
+> Superseded by `shepard`, which drives CI and review findings in one loop. Kept for reference.
+
 # Babysit
 
 Watch a PR's CI pipeline. When checks fail, read the logs, fix the code, commit, push, and repeat
