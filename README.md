@@ -11,6 +11,7 @@ Work in any project, no configuration needed.
 | Skill | Description |
 |-------|-------------|
 | [babysit](skills/babysit/) | Watch a PR's CI, auto-fix failures, push until green |
+| [build-it](skills/build-it/) | Implement the last grill-me alignment: cut a worktree, write plan docs if chosen, build, run gates, open the PR |
 | [catchup](skills/catchup/) | Load branch context, show progress, sync with base branch |
 | [commit](skills/commit/) | Small, focused commits with conventional messages + push |
 | [fix-bug](skills/fix-bug/) | End-to-end bug-fix workflow: reproduce, diagnose, fix, verify via bug-fix-verifier |
