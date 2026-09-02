@@ -27,7 +27,8 @@
 #
 # Exit codes:
 #   0  the PR reached a terminal state (MERGED or CLOSED) — the watch is done
-#   3  setup failure: no PR, missing dependency, unreadable repo
+#   3  setup failure: no PR, missing dependency, unreadable repo — or `--source bus`
+#      with no town-crier row for this PR after 20 ticks
 #
 # The token is read from $TOWN_CRIER_TOKEN, else from $TOWN_CRIER_ENV_FILE
 # (default ~/Code/crit/.env). It is never printed, and no line this script emits
@@ -155,6 +156,7 @@ bus_snapshot() {
 
 declare -A prev=()
 declare -A cur=()
+bus_live=0   # 1 when THIS tick read the bus row; a missing read is not a change
 
 load_into_cur() {
   local json="$1" k v n=0
@@ -181,15 +183,20 @@ emit_changes() {
     head_note=" (STALE — bus read ${cur[bus_head]}, PR head ${cur[head]})"
   fi
 
-  if changed bus_reviews && [[ "${cur[bus_reviews]-0}" -gt "${prev[bus_reviews]-0}" ]]; then
-    echo "[bus] review $(now bus_reviews) by ${cur[reviewer]:-?} — findings $(now findings) (b/m/n/nit) · gate $(now gate)$head_note"
-  elif changed findings; then
-    echo "[bus] findings $(was findings) -> $(now findings) (b/m/n/nit)$head_note"
+  # An unreadable bus row contributes no keys this tick. Comparing the remembered row
+  # against nothing would print every bus field as "-> —" on every outage tick; the
+  # [warn] line in the loop is the one announcement an outage gets.
+  if [[ $bus_live -eq 1 ]]; then
+    if changed bus_reviews && [[ "${cur[bus_reviews]-0}" -gt "${prev[bus_reviews]-0}" ]]; then
+      echo "[bus] review $(now bus_reviews) by ${cur[reviewer]:-?} — findings $(now findings) (b/m/n/nit) · gate $(now gate)$head_note"
+    elif changed findings; then
+      echo "[bus] findings $(was findings) -> $(now findings) (b/m/n/nit)$head_note"
+    fi
+    changed gate       && echo "[bus] gate $(was gate) -> $(now gate)$head_note"
+    changed trial      && echo "[bus] trial (ci-passed) $(was trial) -> $(now trial)"
+    changed bus_status && echo "[bus] request status $(was bus_status) -> $(now bus_status)"
+    changed conflict   && [[ "${cur[conflict]-}" != "clean" ]] && echo "[bus] merge conflict: $(now conflict)"
   fi
-  changed gate       && echo "[bus] gate $(was gate) -> $(now gate)$head_note"
-  changed trial      && echo "[bus] trial (ci-passed) $(was trial) -> $(now trial)"
-  changed bus_status && echo "[bus] request status $(was bus_status) -> $(now bus_status)"
-  changed conflict   && [[ "${cur[conflict]-}" != "clean" ]] && echo "[bus] merge conflict: $(now conflict)"
 
   changed ci_fail && {
     if [[ -n "${cur[ci_fail]-}" ]]; then
@@ -267,6 +274,14 @@ while true; do
     else
       attach_ticks=$(( attach_ticks + 1 ))
       if [[ $attach_ticks -eq 20 ]]; then
+        # The operator who asked for the bus BY NAME gets a failure, not a silent
+        # degradation: 20 ticks (10 min at the default interval) is past any dispatch
+        # delay, so a row still missing means this PR is not on the bus.
+        if [[ "$SOURCE" == "bus" ]]; then
+          echo "error: --source bus, but no open town-crier request for PR #${PR_NUMBER} after ${attach_ticks} ticks" >&2
+          echo "[end] --source bus: no open town-crier request for PR #${PR_NUMBER} after ${attach_ticks} ticks — not a PR outcome"
+          ended=setup; exit 3
+        fi
         echo "[warn] no town-crier row after ${attach_ticks} ticks — this PR may not be dispatched for review; github surface only so far"
       fi
     fi
@@ -287,6 +302,7 @@ while true; do
     sleep "$INTERVAL"; continue
   fi
 
+  bus_live=0; [[ -n "$bus_json" ]] && bus_live=1
   if [[ -n "$BUS_ID" && -z "$bus_json" ]]; then
     bus_streak=$((${bus_streak:-0} + 1))
     if [[ $bus_streak -eq 3 ]]; then

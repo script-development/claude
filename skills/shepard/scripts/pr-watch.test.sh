@@ -145,14 +145,16 @@ gh_tick 3 MERGED aaaaaaaa 0 0
 out=$(run); rc=$?
 check "no change emits no line" 0 "$out" $rc "[watch] PR #42" "[end] PR #42 MERGED" "!->"
 
-# The signal /shepard exists for: a review landed.
+# The signal /shepard exists for: a review landed. Once a bus row is attached it owns the
+# review surface, so the GitHub review count must NOT be reported as well — that would be
+# the same review announced twice, every round.
 reset; bus_listed
 gh_tick 1 OPEN aaaaaaaa 0 0; bus_tick 1 clear 0 0 aaaaaaaa
 gh_tick 2 OPEN aaaaaaaa 1 0; bus_tick 2 blocked 1 2 aaaaaaaa
 gh_tick 3 MERGED aaaaaaaa 1 0; bus_tick 3 blocked 1 2 aaaaaaaa
 out=$(run); rc=$?
 check "new bus review emits one line" 0 "$out" $rc \
-  "[bus] review 1 by crit" "findings 2/0/0/0" "[bus] gate clear -> blocked" "[pr]  +1 GitHub review(s)"
+  "[bus] review 1 by crit" "findings 2/0/0/0" "[bus] gate clear -> blocked" "![pr]  +1 GitHub review(s)"
 
 # A verdict at a replaced head is not a result about the code now on the branch.
 reset; bus_listed
@@ -172,16 +174,19 @@ out=$(run); rc=$?
 check "ci red then green both emit" 0 "$out" $rc "[ci]  FAILING: test-unit" "[ci]  all red checks cleared"
 
 # A bus outage must not take the GitHub surface down with it, and must announce
-# itself rather than let the quiet read as "no reviews yet".
+# itself rather than let the quiet read as "no reviews yet". Two silences are pinned
+# alongside: the review surface stays the bus's even while the row is unreadable (no
+# [pr] comment line), and the remembered bus fields must not flap to "—" every tick.
 reset; bus_listed
 gh_tick 1 OPEN aaaaaaaa 0 0; bus_tick 1 clear 0 0 aaaaaaaa
 gh_tick 2 OPEN aaaaaaaa 0 1; : > "$state/bus_2.json"
-gh_tick 3 OPEN aaaaaaaa 0 2; : > "$state/bus_3.json"
+gh_tick 3 OPEN aaaaaaaa 0 2 test-unit; : > "$state/bus_3.json"
 gh_tick 4 OPEN aaaaaaaa 0 3; : > "$state/bus_4.json"
 gh_tick 5 MERGED aaaaaaaa 0 3
 out=$(run); rc=$?
 check "bus outage warns, github keeps reporting" 0 "$out" $rc \
-  "[warn] bus row #2575 unreadable for 3 ticks" "[pr]  +1 comment(s)"
+  "[warn] bus row #2575 unreadable for 3 ticks" "[ci]  FAILING: test-unit" \
+  "![pr]  +1 comment(s)" "!-> —"
 
 # GitHub itself unreadable: the watcher is blind and must say so. Silence here
 # would be indistinguishable from a PR nobody has touched.
@@ -218,12 +223,14 @@ out=$(TOWN_CRIER_TOKEN=fake-token bash "$subject" 42 --interval 5 --heartbeat 0 
        pid=$!; sleep 1; kill -TERM $pid 2>/dev/null; wait $pid 2>/dev/null)
 check "a killed watch says it stopped" 143 "$out" $? "[end] watch on PR #42 stopped"
 
-# --source bus on a PR the bus never heard of must fail loudly at setup, not
-# silently degrade — the operator asked for the bus surface by name.
+# --source bus on a PR the bus never heard of must fail loudly, not silently
+# degrade — the operator asked for the bus surface by name. Not at setup, though:
+# the row appears at dispatch, after the PR opens, so the script retries the attach
+# for 20 ticks first. Past that it exits 3 instead of watching GitHub forever.
 reset; bus_absent
 gh_tick 1 OPEN aaaaaaaa 0 0
 out=$(run --source bus); rc=$?
-check "--source bus without a request exits 3" 3 "$out" $rc "no open town-crier request"
+check "--source bus without a request exits 3" 3 "$out" $rc "no open town-crier request" "after 20 ticks" "!stopped (signal or timeout)"
 
 # No token at all is the common case on a repo that is not on the bus. It is a
 # degradation, not an error.
