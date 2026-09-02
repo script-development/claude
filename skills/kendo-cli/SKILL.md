@@ -372,6 +372,7 @@ The backend accepts both formats. Prefer keys for readability.
 
 ## User Stories
 
-When creating issues, write descriptions in English following the user story format:
-"As a [role], I want [functionality] so that [goal]". See the kendo-mcp skill's
-`references/issue-templates.md` for the full feature + bug templates.
+When creating issues, you **must** write the description against the canonical templates in the
+kendo-mcp skill's `references/issue-templates.md` — Feature (User Story / Context / Acceptance
+Criteria / Scope / Testing) or Bug (Problem / Cause-or-repro / Acceptance Criteria / Scope /
+Testing), in English. Don't improvise a structure or stop at the `As a [role]…` opening line.
