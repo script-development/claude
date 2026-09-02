@@ -56,29 +56,30 @@ plan got the full treatment. Reasons usually fall into:
 Without the reason, a future Claude encountering this TASKS.md will think
 the Phase 0 gate failed and try to "fix" it.
 
-## Phase 4 — alignment gate
+## Phase 4 — coverage gate
 
-**The rule:** spawn `task-alignment-reviewer`. Score must be ≥ 7. Below
-that, fix the gaps and re-run until it passes. Fail-closed.
+**The rule:** walk the self-check in `verification.md` and fix every unchecked
+row before handing off. Fail-closed, and self-administered — no agent audits
+this afterwards, so honesty here is the whole gate.
 
 ### Sycophancy guards specific to the output
 
-- "Most of the ACs are covered" is not a passing answer. The reviewer
-  reports COVERED / IMPLICIT / MISSING per AC. **Implicit is a yellow
-  flag** — it means the task probably covers the AC but doesn't say so
-  explicitly. The fix is usually adding an `**Acceptance Criteria:**`
-  line, not creating a new task.
-- "The reviewer always finds something" is not a reason to lower the bar
-  to 7. The threshold is exactly 7 because that's where the reviewer's
-  scoring catches genuine gaps without forcing perfectionism on small
-  plans.
-- A score of 7 with three IMPLICIT verdicts is fine to ship. A score of
-  10 with one MISSING verdict masquerading as "the developer can figure
-  it out" is not.
+You are checking your own work, which is exactly the condition under which
+"close enough" wins. Three guards:
 
-### What the reviewer checks
+- **"Most of the ACs are covered" is not a passing answer.** Classify each AC
+  as COVERED / IMPLICIT / MISSING. **Implicit is a yellow flag** — the task
+  probably covers the AC but doesn't say so. The fix is usually adding an
+  `**Acceptance Criteria:**` line, not creating a new task.
+- **Three IMPLICIT verdicts is fine to ship. One MISSING is not** — least of
+  all when it's rationalised as "the developer can figure it out."
+- **Write the counts down, not an adjective.** "8/8 acceptance criteria,
+  24/24 planned files" is checkable by the next reader. "Coverage looks good"
+  is what this gate produces when it isn't really being run.
 
-The reviewer reads PLAN.md and TASKS.md side-by-side and verifies:
+### What to verify
+
+Read PLAN.md and TASKS.md side by side:
 
 1. Every acceptance criterion maps to at least one task's
    `**Acceptance Criteria:**` field
@@ -90,28 +91,26 @@ The reviewer reads PLAN.md and TASKS.md side-by-side and verifies:
 6. Critical edge cases from PLAN.md are addressed by task action items
    or test descriptions
 
-The reviewer **does not** assess task quality, TDD ordering, or whether
-the breakdown is well-written. That's `simplicity-reviewer`'s job (later,
-during `/next`).
+Don't assess task quality, TDD ordering, or whether the breakdown reads well.
+Nothing downstream does either — TASKS.md is scaffolding for execution, not a
+reviewed artifact. The pre-PR reviewers grade the code, not the plan for
+writing it.
 
-### When the reviewer flags scope creep
+### When you find scope creep
 
-`task-alignment-reviewer` flags tasks that don't trace back to the plan.
-Two valid responses:
+A task that doesn't trace back to the plan has two valid responses:
 
-1. **Plan was incomplete** — the task is real work the plan missed.
-   Update PLAN.md to include it, then re-spawn the reviewer.
-2. **Task is genuine creep** — the task is doing work the plan didn't
-   ask for. Remove it from TASKS.md.
+1. **Plan was incomplete** — the task is real work the plan missed. Update
+   PLAN.md to include it, with the developer's confirmation.
+2. **Task is genuine creep** — it's doing work the plan didn't ask for. Remove
+   it from TASKS.md.
 
-Don't paper over it by adding the task to the plan retroactively without
-the developer's confirmation — that erodes the plan's role as the
-contract.
+Don't paper over it by adding the task to the plan retroactively without that
+confirmation — it erodes the plan's role as the contract.
 
 ### Audit trail
 
-The reviewer appends a `## Review Notes` section to TASKS.md (Step 9 of
-its workflow). That section is the audit trail — future readers can see
-the verdict without re-running the review. Don't delete it; if you re-run
-after revisions, the reviewer replaces it rather than appending a second
+Record the coverage counts in a `## Review Notes` section at the bottom of
+TASKS.md (template in `SKILL.md` Phase 4), so a future reader sees the coverage
+without re-deriving it. Replace it on re-runs rather than appending a second
 one.

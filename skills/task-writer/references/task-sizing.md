@@ -35,13 +35,13 @@ Phase N: [Feature Name] (2-3 tasks)
       → Arch tests + unit tests + feature tests, per the project's testing conventions
       → Load the project's backend testing skill before writing tests
       → Success: backend test suite passes, type/static analysis passes
-      → On completion, `/next` automatically runs acceptance-reviewer + simplicity-reviewer; both must score ≥ 7
+      → On completion, verification is the gate (tests + types + lint); review runs once per branch via `/review-branch`
 
 - [ ] N.2 Frontend end-to-end (TDD)
       → Types, state, pages, components, modals, frontend tests
       → Load the project's frontend testing skill before writing tests
       → Success: frontend test suite passes (use the project's narrowed domain test command)
-      → On completion, `/next` automatically runs acceptance-reviewer + simplicity-reviewer; both must score ≥ 7
+      → On completion, verification is the gate (tests + types + lint); review runs once per branch via `/review-branch`
 
 - [ ] N.3 Manual verification
       → Hands-on browser testing of the full feature
@@ -89,7 +89,7 @@ When the default backend / frontend split isn't enough:
 
 - "This touches a lot of files." One coherent task can own a full backend layer (migrations + models + services + HTTP + tests). Splitting at intra-backend boundaries creates handoffs without reducing risk.
 - "I want progress to feel granular." Tasks are not check-ins; they're units of integration.
-- "The reviewer might miss something." That's what `acceptance-reviewer` and `simplicity-reviewer` are for — they read full commits, not the task list.
+- "The reviewer might miss something." The pre-PR reviewers read the whole branch diff, not the task list — task granularity doesn't change what they see.
 
 ## Decision framework
 
