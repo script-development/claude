@@ -71,14 +71,17 @@ If a Watch out has no matching verification, you've documented a risk you're
 not enforcing. Either add the check, or remove the Watch out — leaving it
 hanging is worse than not flagging it at all.
 
-## Reviewer agents run automatically
+## Review happens once per branch, not per task
 
-`/next` Step 6 spawns `acceptance-reviewer` and `simplicity-reviewer` in
-parallel after each task. Both must score ≥ 7 before the task is marked
-complete. **You don't need to list them as verification steps in the task —
-they always run.** Address any BLOCKER / MAJOR findings from
-`simplicity-reviewer` (duplicated helpers, DECISIONS.md drift, scope creep)
-the same way you'd address an `acceptance-reviewer` FAIL.
+`/next` does **not** spawn reviewer agents — per-task review was retired in
+April 2026 because first-pass scores were 9-10 nearly every time. The gate for
+a task is its verification: tests, types, lint.
+
+Review runs once against the whole branch via `/review-branch`, which spawns
+`runtime-integrity-reviewer` and `precedent-reviewer`. **Don't list them as
+verification steps in a task** — they don't run at task granularity, and the
+defects they hunt (transaction boundaries, sibling drift) only become visible
+once the branch is whole.
 
 ## Lint, types, and CI — don't list these
 
@@ -115,7 +118,8 @@ already doing.
 
 ## Self-check before finalising TASKS.md
 
-Walk through these rows before handing off to `task-alignment-reviewer`:
+This checklist **is** the Phase 4 gate — nothing downstream re-checks it. Walk
+every row before showing TASKS.md to the developer:
 
 ### Structure
 
@@ -154,6 +158,6 @@ Walk through these rows before handing off to `task-alignment-reviewer`:
 - [ ] Every verification step in final verify task?
 - [ ] No items from plan "fell through the cracks"?
 
-If any row is unchecked, fix it before spawning `task-alignment-reviewer` —
-the reviewer's job is to confirm what you've already self-checked, not to
-discover gaps for you.
+If any row is unchecked, fix it before handing off. No agent audits this
+afterwards, so an unchecked row here is a gap that reaches implementation.
+Record the coverage counts in TASKS.md's `## Review Notes` (see Phase 4).

@@ -35,7 +35,8 @@ branches/PRs, and proposes board moves for anything that's already been merged.
 Fetch all of these simultaneously — they're independent:
 
 1. **Issues**: `kendo://projects/{id}/issues` (MCP resource)
-2. **Lanes**: `kendo://projects/{id}/lanes` (MCP resource) — identify the Done lane (last lane)
+2. **Project context**: `mcp__kendo__prepare-project-context-tool` with `project_id: {id}` — read
+   `lanes[]` from the response and identify the Done lane (last entry by `order`)
 3. **Remote branches**: `gh api repos/{owner}/{repo}/branches --paginate --jq '.[].name'`
 4. **All PRs**: `gh pr list --state all --limit 100 --json number,title,state,headRefName,mergedAt,baseRefName`
 

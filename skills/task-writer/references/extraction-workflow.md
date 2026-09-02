@@ -83,7 +83,7 @@ inventory — every box ticked above must trace forward to a task. The check
 itself lives in SKILL.md Phase 3 because it's a fail-closed gate; the
 rationale lives here:
 
-A coverage check is not "did I list everything?" — that's `task-alignment-reviewer`'s
-job in Phase 4. It's "did the tasks I just wrote actually reflect the inventory
+A coverage check is not "did I list everything?" — that's the Phase 4 coverage
+gate. It's "did the tasks I just wrote actually reflect the inventory
 I just built?" Two gates, both fail-closed, because losing an item between
 inventory and task wording is the most common mid-implementation surprise.

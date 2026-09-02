@@ -4,13 +4,13 @@ description: |
   Structured bug-fix workflow: identify the issue, reproduce the defect,
   confirm it isn't already fixed on the base branch, capture the investigation in
   docs/bugs/<slug>/BUG.md, propose the fix and wait for developer approval,
-  implement it, and gate on the bug-fix-verifier agent before PR. Use whenever
-  the user wants to fix a bug, says "fix bug", "bug fix", "debug this issue",
-  "work on bug <key>", "/fix-bug", or is picking up a bug-type issue. Prefer
-  this over /plan-feature for bugs — bugs don't have wireframes or acceptance
-  criteria, they have "does the defect still reproduce?". This skill is the
-  bug-side analogue of /plan-feature + /implement-plan collapsed into one
-  lighter flow.
+  implement it, gate on the bug-fix-verifier agent, and gate styling/animation
+  fixes on manual browser confirmation before PR. Use whenever the user wants
+  to fix a bug, says "fix bug", "bug fix", "debug this issue", "work on bug
+  <key>", "/fix-bug", or is picking up a bug-type issue. Prefer this over
+  /plan-feature for bugs — bugs don't have wireframes or acceptance criteria,
+  they have "does the defect still reproduce?". This skill is the bug-side
+  analogue of /plan-feature + /implement-plan collapsed into one lighter flow.
 ---
 
 # Fix Bug
@@ -25,7 +25,9 @@ condition that reveals a missing synchronisation primitive), promote it to
 
 **Path 3b carve-outs.** Mechanical fixes (typo / off-by-one / null-deref
 with a stack trace) skip the hypothesis-ranking ceremony in Phase 6 and
-the post-mortem prompt in Phase 10. Carve-out details live inline in
+the post-mortem prompt in Phase 10 unconditionally. Phase 8.5's
+visual-risk gate is **not** unconditionally skipped for 3b — it still
+fires if the diff touches styling. Carve-out details live inline in
 those phases.
 
 ## Phase 0: Parse arguments
@@ -145,6 +147,20 @@ The mechanics live in
 - **Get acceptance via `AskUserQuestion`** — clickable options, plus the
   rejection-recovery rule for two consecutive dismissals.
 
+**If diagnosis reveals it isn't actually a bug, or a duplicate of an
+already-fixed/already-tracked defect** — stop here. Don't propose a
+fix for a non-bug. Explain the finding to the developer (cite
+`file:line` or the duplicate issue) and confirm via `AskUserQuestion`:
+
+> Diagnosis suggests this isn't a bug — `<one-line reason, e.g. "the
+> feature already handles this via gesture Z" or "duplicate of
+> <KEY>, already fixed on the base branch">`. Abandon this branch?
+> - **Yes, abandon** — update Status to `Abandoned`, note why in Notes
+>   / Follow-ups, and stop the workflow. Do not proceed to Phase 7 or
+>   `/pr`.
+> - **No, the diagnosis is wrong / keep investigating** — stay in
+>   Phase 6, revise Root Cause with the developer's correction.
+
 For Path 3b this whole phase collapses to a single short message — don't
 ceremonialise a typo into a four-paragraph proposal.
 
@@ -166,7 +182,10 @@ Normal implementation loop, using the **Chosen Approach** from Phase 6.
 - **Run your repro** — the failing test should now pass, manual steps
   should now behave correctly.
 - **Run the narrow domain test suite** for the area you changed.
-- **Run `/ci --quick`** (or equivalent lint + types check) before declaring
+- **Trust the hooks for lint and types.** If the repo runs lint at commit
+  and type checks at push, a failing hook means fix the underlying issue
+  and re-commit/re-push — don't pre-emptively rerun those checks here. If
+  the repo has no such hooks, run its lint + types check before declaring
   done.
 
 Update BUG.md as you go: fill in **Fix**, change Status to `Fixing`, then
@@ -192,23 +211,90 @@ a score (1-10). Threshold: 7.`
 })
 ```
 
-- **Score ≥ 7 / PASS** — proceed to Phase 9. Update Status to `Verified`.
-- **Score < 7 / FAIL** — fix what the verifier found, re-run your repro,
-  re-spawn. Don't hand off to `/pr` until ≥ 7. Shipping a "fix" that still
-  reproduces is worse than shipping no fix — it erodes trust in the issue
-  tracker.
+- **Score ≥ 7 AND Verdict reads `PASS`** (plain, or the literal `PASS
+  (requires developer confirmation)` that path-3c reproductions get —
+  Phase 8.5 is what resolves that string, so treat it as a pass here
+  too) — check Phase 8.5's visual-risk gate, then proceed to Phase 9.
+  Update Status to `Verified`.
+- **Score < 7, OR Verdict reads `PARTIAL`/`FAIL`, OR "Required fixes
+  before PR" is non-empty** — fix what the verifier found, re-run your
+  repro, re-spawn. Don't hand off to `/pr` until the verdict reads a
+  clean `PASS` (in either form above) with no outstanding required
+  fixes. The score and the verdict are independently-written fields; a
+  high score doesn't override a verdict or a required-fix list that
+  says otherwise. Shipping a "fix" that still reproduces — or one the
+  verifier flagged but wasn't waved through — is worse than shipping no
+  fix — it erodes trust in the issue tracker.
 
 If the verifier can't run the repro for environmental reasons (missing
 service, missing data), surface it to the user — don't lower the threshold.
 
+## Phase 8.5: Visual-risk gate
+
+Claude cannot judge rendered styling or animation from source — only
+describe what the code should do. A passing verifier score does not mean
+the fix *looks* right.
+
+Trigger this gate if either is true:
+
+- `git diff origin/<base>...HEAD -- <component and stylesheet globs>`
+  (e.g. `'*.vue' '*.tsx' '*.css' '*.scss'`) — read the actual diff
+  content, not `--stat` (a path + line-count summary can't show whether
+  the changed lines are styling) — contains `<style>` blocks, class
+  bindings, utility classes, or animation/transition properties
+  (`transition`, `animate-`, `@keyframes`, `duration-`, `ease-`), beyond
+  a trivial one-line tweak.
+- Reproduction Steps used **path 3c** (visual glitch / animation /
+  browser-specific) — `bug-fix-verifier`'s 3c walkthrough only ever
+  reaches "PASS (requires developer confirmation)" for these; it cannot
+  close the loop itself (see `bug-fix-verifier.md` Step 2, "Manual steps
+  (3c)").
+
+Skip this gate when neither trigger condition above fired — path alone
+(3a/3b/3c) doesn't determine visual risk, diff content does. A 3b fix
+diagnosed from a stack trace or null-check stays exempt because it never
+touches styling; a 3b fix for a visible typo still trips the first
+trigger and still needs eyes on it.
+
+When triggered, stop before Phase 9 and ask via `AskUserQuestion`. Word the
+question around confirming the defect is gone, not just "does it render" —
+path 3c also covers races and cross-tab timing, which have nothing to do
+with rendering:
+
+> This change touches styling, animation, or something else I can only
+> confirm by eye. Have you re-run the reproduction steps and confirmed
+> the bug is actually fixed?
+> - **Yes, verified — proceed to /pr**
+> - **Run a browser-driving skill or the Playwright MCP first** — good
+>   for catching visual issues via screenshots, but take a look yourself
+>   too; it won't catch timing or race-condition problems
+> - **No — hold off, I'll check manually**
+
+Each answer resolves BUG.md's `## Verification` section before Phase 9 can
+run — a path-3c fix otherwise carries the verifier's literal `PASS
+(requires developer confirmation)` string, which `/pr`'s gate does not
+recognise as a plain `PASS`:
+
+- **Yes** — update **Verdict:** to plain `PASS`. This is what actually
+  unblocks `/pr`'s gate (see [`pr/SKILL.md`](../pr/SKILL.md) § Bug
+  branches) — confirming here without rewriting the Verdict leaves the
+  old string in place and `/pr` would ask for an override anyway.
+- **Run a browser-driving skill or the Playwright MCP first** — after it
+  finishes, re-ask the same question above. Don't fall through to Phase 9
+  on completion alone; a screenshot is not a "Yes."
+- **No — hold off** — stop the workflow here, do not hand off to `/pr`.
+  Update **Verdict:** to `BLOCKED — pending manual browser confirmation`
+  and set **Status:** back to `Fixing`. `/pr`'s bug-branch gate reads this
+  section directly, so this is what actually stops a later `/pr` run in a
+  fresh session — a note in Notes / Follow-ups alone would not.
+
 ## Phase 9: Hand off to /pr
 
 Run `/pr`. It will push, post the standard feedback comment on the
-linked issue, and skip the `/review-branch` handoff (bug fixes are gated by
-`bug-fix-verifier`, not by `acceptance-reviewer` + `simplicity-reviewer`).
-If `/pr` still asks for a review handoff because it can't find
-`docs/plans/<slug>/`, answer "no" — bugs live under `docs/bugs/`, and the
-verifier verdict in BUG.md is the gate.
+linked issue, and embed `bug-fix-verifier`'s verdict from BUG.md's
+`## Verification` section as the gate — bug fixes are gated by the
+verifier, not by the pre-PR reviewer pair, so `/pr` will not ask for a
+`/review-branch` handoff on a bug branch.
 
 PR title names the defect (`fix: modal backdrop sticks after escape during
 open animation`) rather than the issue key alone. PR body cites the issue
