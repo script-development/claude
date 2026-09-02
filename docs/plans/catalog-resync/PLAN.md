@@ -16,72 +16,72 @@ Ordered. Each row is one PR. Tick the box when its PR merges.
 
 **Agents first — every roster rewrite depends on them.**
 
-- [ ] `agents/runtime-integrity-reviewer.md`, `agents/precedent-reviewer.md`,
+- [x] `agents/runtime-integrity-reviewer.md`, `agents/precedent-reviewer.md`,
       `agents/surface-reviewer.md` — lifted from kendo (`79e77d0b`, `KD-0711`), generalised.
       This PR.
 
 **Roster rewrites — old five-agent pipeline → the always-on pair.**
 
-- [ ] `review-branch` — spawn `runtime-integrity-reviewer` + `precedent-reviewer` always; add
+- [x] `review-branch` — spawn `runtime-integrity-reviewer` + `precedent-reviewer` always; add
       `docs/bugs/<slug>/` support and the no-directory fallback; inline the review-file format;
       drop the `REVIEWERS.md` citation.
-- [ ] `pr` — add `git fetch` first, the branch-type gate table (bug branch reads BUG.md
+- [x] `pr` — add `git fetch` first, the branch-type gate table (bug branch reads BUG.md
       `## Verification`, exact `PASS`, never prompt `/review-branch` on a bug branch), the
       Bug Fix Verification block. Remove the multi-runner `REVIEW_<RUNNER>.md` glob.
-- [ ] `implement-plan` — Step 7 runs `/review-branch` and gates on both reviewers ≥ 7; drop the
+- [x] `implement-plan` — Step 7 runs `/review-branch` and gates on both reviewers ≥ 7; drop the
       `/ci --quick` step.
-- [ ] `task-writer` — Phase 4 becomes a self-administered coverage checklist with an inline
+- [x] `task-writer` — Phase 4 becomes a self-administered coverage checklist with an inline
       Review Notes template; `verification.md` says review runs once per branch.
-- [ ] `wireframe` — new `references/wireframes-template.md`, `issue-board.md`,
+- [x] `wireframe` — new `references/wireframes-template.md`, `issue-board.md`,
       `anti-patterns.md`; Step 1a zero-UI guard; Step 1b resume-vs-restart; Step 5 self-gate
       with `wireframe-reviewer`.
-- [ ] `plan-feature` — Phase 1.4 citation pre-flight (`scripts/verify-citations.sh` + test),
+- [x] `plan-feature` — Phase 1.4 citation pre-flight (`scripts/verify-citations.sh` + test),
       Phase 1.6 Security & Cost Surface gate (`references/surface-questions.md`), Phase 2
       interview-with-hypotheses, Phase 5 spawns `plan-reviewer` + `surface-reviewer` then hands
       off to `/wireframe`. Generalise the `CONTEXT.md` glossary read.
-- [ ] `agents/wireframe-reviewer.md` — Step 9 appends review notes; sole gate; arch-test checks
+- [x] `agents/wireframe-reviewer.md` — Step 9 appends review notes; sole gate; arch-test checks
       generalised.
-- [ ] `agents/bug-fix-verifier.md` — labels 3a/3b/3c; preserve prior verification; Score/Verdict
+- [x] `agents/bug-fix-verifier.md` — labels 3a/3b/3c; preserve prior verification; Score/Verdict
       table with PARTIAL; sole default gate.
 
 **Plain lifts.**
 
-- [ ] `triage-reports` — four verdicts (Promote / Combine / Dismiss-with-reason / Park), Step 0
+- [x] `triage-reports` — four verdicts (Promote / Combine / Dismiss-with-reason / Park), Step 0
       product-fit check, `docs/triage/decisions.md` log with declined patterns. Generalise the
       company-docs hook and the log path.
-- [ ] `fix-bug` — Phase 8.5 visual-risk gate; "not a bug / duplicate" stop after Phase 4; `/pr`
+- [x] `fix-bug` — Phase 8.5 visual-risk gate; "not a bug / duplicate" stop after Phase 4; `/pr`
       gate on the BUG.md verdict.
-- [ ] `prepare-issue` — `argument-hint` / `allowed-tools` frontmatter, `$issue` URL form,
+- [x] `prepare-issue` — `argument-hint` / `allowed-tools` frontmatter, `$issue` URL form,
       pre-resolved `!` context, parallel gather, `evals/evals.json`.
-- [ ] `kendo-mcp` — kendo base: `unlink-branch` + `get-sprints` rows, @mention pre-processing,
+- [x] `kendo-mcp` — kendo base: `unlink-branch` + `get-sprints` rows, @mention pre-processing,
       Task template + AC principles. Plus crit's four rows: `search-issues`, `type: 0-2`,
       link-branch guard, prefer `prepare-issue-context` when the key is known.
-- [ ] `newbranch` — parallel gather, members from the bundle.
-- [ ] `board-sync` — lanes from `prepare-project-context`. Keep Step 1 and key matching.
-- [ ] `kendo-cli` — issue descriptions must follow `issue-templates.md`.
-- [ ] `commit` — crit's rule: never hardcode a model name in the trailer.
-- [ ] `agents/plan-reviewer.md` — Step 2b module-shape re-check (FAIL caps at 6), surface
+- [x] `newbranch` — parallel gather, members from the bundle.
+- [x] `board-sync` — lanes from `prepare-project-context`. Keep Step 1 and key matching.
+- [x] `kendo-cli` — issue descriptions must follow `issue-templates.md`.
+- [x] `commit` — crit's rule: never hardcode a model name in the trailer.
+- [x] `agents/plan-reviewer.md` — Step 2b module-shape re-check (FAIL caps at 6), surface
       delegation, `### Plan Review` notes. Drop the kendo Repo Quick Reference.
-- [ ] `startup` — four generic patterns only: Docker Compose for redis/minio, pre-resolved `!`
+- [x] `startup` — four generic patterns only: Docker Compose for redis/minio, pre-resolved `!`
       context, confirmation gate, inline-frontend / agent-backend split.
 
 **New skills.**
 
-- [ ] `shepard` (personal, with `references/crit.md` as the house-rules example). README row for
+- [x] `shepard` (personal, with `references/crit.md` as the house-rules example). README row for
       `babysit` marked "superseded by shepard"; folder stays.
-- [ ] `worktree`, `grill-me`, `build-it` (personal).
-- [ ] `lint-issues` + `agents/issue-linter.md`, `memory-hygiene`, `sync-worktrees` (kendo,
+- [x] `worktree`, `grill-me`, `build-it` (personal).
+- [x] `lint-issues` + `agents/issue-linter.md`, `memory-hygiene`, `sync-worktrees` (kendo,
       each generalised).
 
 **Deletions.**
 
-- [ ] `agents/acceptance-reviewer.md`, `simplicity-reviewer.md`, `silent-failure-hunter.md`,
+- [x] `agents/acceptance-reviewer.md`, `simplicity-reviewer.md`, `silent-failure-hunter.md`,
       `efficiency-hunter.md`, `task-alignment-reviewer.md`. Remove after every roster rewrite
       above has merged, so no catalog skill points at a missing agent.
 
 **Finish.**
 
-- [ ] README catalog tables reflect every row above.
+- [x] README catalog tables reflect every row above.
 
 ### Out
 
