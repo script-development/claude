@@ -270,8 +270,20 @@ view; it is a reason to label the view as sourced from documentation rather than
 and to stop before designing further transcript analyses against it. The TTL semantics this repo
 relies on (a read refreshes the timer; lifetime is measured from request *start*, so generation time
 counts against it; writes bill 1.25× at 5 minutes and 2× at the hour; 4 breakpoints maximum; a
-20-block lookback window) come from the bundled `claude-api` skill's `shared/prompt-caching.md`, not
+20-slot lookback window) come from the bundled `claude-api` skill's `shared/prompt-caching.md`, not
 from anything measured here.
+
+**Two units, one word for both.** The bundled documentation calls both of these a *position*; this
+repo does not. A **boundary** is a cut point in the rendered prefix — the end of the block a
+`cache_control` marker sits on. Entries are keyed on boundaries, and a request's read, write and
+uncached spans are delimited by them; "read boundary" and "write boundary" throughout this repo mean
+exactly that. A **slot** is what the lookback counts in: the flattened block sequence with a run of
+consecutive `tool_use` blocks collapsing to one and a run of consecutive `tool_result` blocks to
+one, so a turn of twenty parallel tool calls spans two slots, not forty. Boundaries are the
+locations, slots are the metric over them, and the metric is degenerate — five `tool_result` blocks
+hold five boundaries inside one slot. The collapse is a Claude API counting rule rather than a
+consequence of flattening, which the source states; how the two units interact it does not, and that
+part is a reading of the two rules together.
 
 **What is still measurable, and worth the run.** Questions phrased as *"does the prefix read
 collapse?"* rather than *"which entry was refreshed?"* stay inside what `usage` can answer, because

@@ -191,7 +191,7 @@ context, not the clock.
 nothing expired at all. The read did not stop short of the previous request's write — it reached
 exactly where that write ended. What it stopped short of is `prevPrefix`, which counts everything
 request t *sent*, and a request always sends more than it writes: a write extends only to the
-deepest `cache_control` breakpoint, and whatever follows that position bills as ordinary input and
+deepest `cache_control` breakpoint, and whatever follows that boundary bills as ordinary input and
 is stored nowhere. Call that uncached remainder `tail`, and the identity above becomes
 
 ```
@@ -206,28 +206,23 @@ twice" implies. When the remainder holds steady turn over turn the two terms can
 is what the 2,566 pairs sitting at 1.0 are.
 
 Why the boundary lags the end of the request is not decidable from this corpus —
-`docs/calibration.md`'s measurement ceiling — but the documented mechanisms make the lag
-unremarkable rather than mysterious. Three of them, each leaving a remainder for the next request to
-write:
+`docs/calibration.md`'s measurement ceiling — but one documented mechanism fits the signature.
+Automatic caching places its single breakpoint on the last *cacheable* block, silently stepping back
+to the nearest eligible one when the last block is not; a `clear_at: "next_user_message"` system
+message, the per-turn-reminder pattern, is explicitly not cache-eligible — `cache_control` on it is
+a 400, and the marker goes on the preceding user turn instead. A harness injecting one every turn
+holds the write boundary a full turn behind the request, every turn, and the turn it left bare is
+written on the next request as ordinary prefix. An explicit marker sitting on the last stable turn
+rather than after the newest tool results does the same thing for a different reason, and `usage`
+cannot tell the two apart.
 
-- **The final block cannot carry a marker, so automatic placement walks backward.** Automatic
-  caching puts its one breakpoint on the last *cacheable* block and silently steps back to the
-  nearest eligible one when the last block is not. A `clear_at: "next_user_message"` system message
-  — the per-turn-reminder pattern — is explicitly not cache-eligible; `cache_control` on it is a
-  400, and the marker goes on the preceding user turn instead. A harness that injects one every
-  turn pushes the write boundary back by a full turn, every turn.
-- **The marker is deliberately placed before a volatile tail.** When a request ends in per-request
-  content — retrieved rows, a one-off question — the documented pattern is an explicit breakpoint at
-  the end of the *shared* portion, precisely so the unique tail is never written. There the
-  remainder is the design working, not failing: the alternative pays the 1.25× premium on bytes
-  nothing will ever read back.
-- **The prefix is under the model's minimum.** Below 512 tokens on Opus 5 a marker writes nothing
-  and says nothing — no error, just `cc = 0` — so the boundary stays wherever the last
-  above-minimum breakpoint was. This one can only bite at the very start of a session; a
-  conversation of any size has long since cleared the floor.
-
-Which of the three applies to the 7 pairs here is not answerable from `usage`, and the three are not
-mutually exclusive.
+Two other documented ways to leave an uncached remainder are *not* candidates, which is worth
+stating because both look like ones. A marker deliberately placed before a volatile tail — the
+recommended pattern when a request ends in per-request content that will never recur — leaves a
+remainder that is never written at all, so it produces no second payment and no pair. And the
+minimum cacheable prefix (512 tokens on Opus 5) is measured from position 0, so once a session
+clears it no breakpoint is ever below it. Whatever produces the remainder here has to be something
+that leaves this turn's material bare and the next turn's request paying for it.
 
 **Cause 3 — the read runs past what was sent**, which is the `< 1.0` case and the interesting one.
 The server occasionally serves the previous turn's output as a *read*, charging no write for it: of
