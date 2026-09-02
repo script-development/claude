@@ -14,6 +14,7 @@ Work in any project, no configuration needed.
 | [catchup](skills/catchup/) | Load branch context, show progress, sync with base branch |
 | [commit](skills/commit/) | Small, focused commits with conventional messages + push |
 | [fix-bug](skills/fix-bug/) | End-to-end bug-fix workflow: reproduce, diagnose, fix, verify via bug-fix-verifier |
+| [grill-me](skills/grill-me/) | Interview the developer through AskUserQuestion before any code is written; ends with docs-or-not and build-or-stop |
 | [implement-plan](skills/implement-plan/) | Execute a feature plan end-to-end without TASKS.md, gated by acceptance-reviewer |
 | [memory-hygiene](skills/memory-hygiene/) | Audit the project memory store for stale, codified, duplicate entries; dry-run proposal, then sync worktree memory stores |
 | [newbranch](skills/newbranch/) | Create a new branch from the default branch |
