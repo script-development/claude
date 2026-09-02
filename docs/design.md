@@ -147,20 +147,85 @@ written once. Across the 2,471 such pairs the match is near-exact: 4,900,771 tok
 4,900,656 new, 115 apart in total. The _first_ request of a session is **not** an instance of it —
 there is no predecessor to difference against, and `cr = 0` excludes it as a cold start.
 
-**> 1.0** means paying writes for more tokens than were new, i.e. re-writing material already sent.
-Idle time past the TTL is the cause: come back from a long lunch and the prefix is re-established at
-1.25× for content the model had already read. The single over-hour pair here is 545 tokens of new
-material against 83,347 written. One correction to the obvious telling of it — if the entry expires
-*entirely*, `cr` drops to 0 and the pair is filtered out as a cache miss rather than showing up here
-as a high ratio. Every row above is therefore *partial* expiry: an earlier breakpoint still alive,
-later ones dead, so part of the prefix is read and the tail re-written.
+**Every ratio in that table is one identity.** Since `Δprefix = (cr + cc + inp)[t+1] − prevPrefix`,
+substituting and cancelling gives, for every pair without exception:
 
-TTL is the only cause **in this table**, not the only cause there is. Compaction and rewinding a
-conversation are the same phenomenon — a shared head served as reads, everything from the first
-divergence written again — and both are absent here because both make the prefix *shrink*, which
-the `Δ > 0` filter drops. The exclusion is structural rather than cautious: the ratio only means
-"writes per new token" while the new prefix is the old one plus a suffix, and a rewritten history
-breaks that identity, so the denominator stops denoting anything rather than going out of range.
+```
+cc − Δprefix  ≡  prevPrefix − read − inp
+```
+
+That is algebra, not a finding — worth writing down because it collapses the whole table into a
+single question. The ratio is not measuring three phenomena; it is measuring **how far request t+1's
+cache read reached, relative to everything that was sent on request t.**
+
+| read vs. prior prefix | ratio | what happened |
+| --------------------- | ----- | ------------------------------------------------------- |
+| `read = prevPrefix`   | 1.0   | the read reached exactly what was sent last time        |
+| `read < prevPrefix`   | > 1   | the read stopped short; the gap is written again        |
+| `read > prevPrefix`   | < 1   | the read covered *more* than was sent — the generated tokens too |
+
+So the only real question is why the read stopped where it did, and the corpus gives three answers
+plus a residue.
+
+**Cause 1 — TTL expiry.** The head entry survives, the body does not:
+
+```
+gap  7.1m   prior prefix 103,257   read 32,917   wrote 71,709   ratio 52.3
+gap 10.7m   prior prefix 109,579   read 32,917   wrote 77,997   ratio 58.3
+```
+
+Read sizes across every large-ratio pair cluster at 27,430 / 29,489 / 30,750 / 32,917 / 32,934 — the
+harness preamble, the same ~31k the compaction addendum reads. The conversation body is written
+again against a surviving preamble; both of those wrote at the 5-minute TTL with a gap just past
+five minutes. The intuitive telling — back from a long lunch, pay for the prefix again — is right
+about the cost but names the case the table *excludes*: expire the head too and `read` drops to 0,
+which the warm filter discards as a cache miss. A short lunch is what stays in and shows a ratio.
+
+**Cause 2 — breakpoint granularity**, and numerically the common one: 7 of the 13, ratios 1.1–2.4,
+nothing expired at all. The read stops at the last usable breakpoint, which sits short of where the
+previous request's write ended, so a tail of 657–1,839 tokens is written a second time alongside
+the new material. Those tokens really are paid for twice; the amount is just small.
+
+**Cause 3 — the read runs past what was sent**, which is the `< 1.0` case and the interesting one.
+The server occasionally serves the previous turn's output as a *read*, charging no write for it: of
+53,693 shortfall tokens, **51,896** arrive that way, across 43 of 45 pairs, with `inp` averaging 2
+tokens. _This document asserted the opposite on first writing_ — that a sub-1.0 ratio was increment
+landing in uncached input because the breakpoint had not advanced. The decomposition refutes it, and
+`tools/context-billing.js` now prints that decomposition on every run so the next reader measures it
+rather than trusting a sentence. There is no user-facing example, because there is no user-facing
+cause: it is unprovokable, about 2% of turns, and oddly concentrated in the 1–5 minute band (16% of
+pairs there against 0.8% under a minute) — which is the whole reason that band reads 0.71 while
+every other sits at or above 1.0.
+
+Causes 1 and 2 push the ratio above 1.0 and cause 3 pulls it below, and across this corpus they
+very nearly cancel — **+599,096** tokens written a second time against **−551,424** never written at
+all, a net of **+47,787** over 2,651 warm pairs, with the aggregate at **1.008**.
+
+_Resist reading that as a mechanism._ An earlier draft of this section called causes 2 and 3 "one
+bookkeeping lag seen from both ends", which implies the same tokens paid once and late. They are not
+the same tokens: cause 2's are written twice and cause 3's are never written, by unrelated
+mechanisms, and nothing defers or settles up. The near-cancellation is a coincidence of this corpus
+and is not load-bearing for anything. What *is* safe to say is that the deviation is small in both
+directions relative to the 2,566 pairs that sit exactly at 1.0.
+
+Nothing here is misattributed, either — a natural suspicion, since a deviation between "written" and
+"new" looks like a charge landing on the wrong request. `cc(t+1)` is a real charge incurred by
+request t+1, the transcript records it faithfully, and the identity is exact. What is only a proxy
+is `Δprefix` standing in for "new material", which holds while the read boundary lands at
+`prevPrefix` and stops holding when it does not. That is a limitation of this metric, not of the
+billing or the transcript.
+
+**The residue.** Four pairs resist all three — gaps of 0.1m, 2.3m, 8.2m and 124m, all tagged 1-hour
+TTL. Six seconds apart with the whole body re-written is not expiry under any reading, and a TTL or
+breakpoint-strategy switch is exactly what `docs/calibration.md`'s measurement ceiling says the
+transcript cannot show. Left unattributed rather than explained.
+
+Two further instances of the same phenomenon are absent from the table altogether. Compaction and
+rewinding a conversation both do exactly what partial expiry does — a shared head served as reads,
+everything from the first divergence written again — and neither appears here, because both make the
+prefix *shrink*, which the `Δ > 0` filter drops. The exclusion is structural rather than cautious:
+the identity above needs the new prefix to be the old one plus a suffix, and a rewritten history
+breaks it, so the denominator stops denoting anything rather than merely going out of range.
 Compaction's version of it is measured — `docs/measured.md`'s
 [2026-08-31 addendum](measured.md#addendum-2026-08-31--what-a-compaction-costs-in-two-numbers) has
 the first post-compaction request reading 31,059 tokens of harness preamble and writing 45,458
@@ -169,12 +234,6 @@ compaction as two numbers. Rewind's version is not measured and cannot be from t
 re-writes from the nearest live breakpoint at or below the rewind point, and breakpoint positions
 are not in the transcript (`docs/calibration.md`'s measurement ceiling), nor does a rewind leave the
 detectable prefix-collapse signature that makes compaction findable at all.
-
-**< 1.0** has no user-facing cause, which is why no example suggests itself. It is the free-read
-minority above: the server occasionally serves the previous turn's output as a read and charges no
-write for it. A windfall, not a lever — unprovokable, ~2% of turns, and oddly concentrated in the
-1–5 minute band (16% of pairs there against 0.8% under a minute), which is the whole reason that
-band reads 0.71 while every other sits at or above 1.0.
 
 Idle time is billable in this cost model, then, and a session left open across a break pays to
 re-establish precisely what it already had. Nothing in this design pulls that lever and the
@@ -195,8 +254,8 @@ Lifetime multiples of base input:
 So **position overtakes provenance as depth grows.** At corrected corpus-wide amplification
 (`R` = 58.6) an output token costs 1.7× an input token of the same size; at the worst measured
 context's 111× (finding #1) it is 1.4×; for a token sitting at position zero of that 486-request
-session (finding #6), 1.1×. Deep enough in, it stops mattering much whether a token was expensive to produce — the
-replay term swamps its origin.
+session (finding #6), 1.1×. Deep enough in, it stops mattering much whether a token was expensive
+to produce — the replay term swamps its origin.
 
 This is the arithmetic under the implication ranking, and it is worth stating explicitly because the
 two levers act on different terms: input hygiene (#4) reduces the **coefficient**, session-lifecycle

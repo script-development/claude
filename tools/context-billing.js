@@ -168,6 +168,17 @@ const phase = { pairs: 0, write: 0, free: 0, neither: 0, sumCC: 0, sumDelta: 0, 
 // Where the shortfall goes in sub-1.0 pairs. inp -> deferred write (breakpoint lagging);
 // cr growth beyond the previous prefix -> the tokens were served free. Measured, not assumed.
 const residue = { pairs: 0, sumShortfall: 0, sumInp: 0, sumCrOverrun: 0, crServed: 0 };
+// Signed deviation of cc from delta, over every warm growing pair. The identity
+//     cc - delta  ==  prevPrefix - read - inp
+// makes this exactly 'how far the read fell short of, or ran past, everything sent last
+// time'. Split by sign because the two directions are different money: over -> tokens
+// written a SECOND time, under -> tokens never written at all. They are different tokens
+// and unrelated mechanisms, so DO NOT read a near-zero net as a mechanism -- it is a
+// property of whatever corpus you point this at. An earlier draft of docs/design.md
+// called them one deferral seen from both ends; they are not, and this split is what
+// refutes it.
+const dev = { exact: { n: 0, dev: 0 }, over: { n: 0, dev: 0 }, under: { n: 0, dev: 0 } };
+let allCC = 0, allDelta = 0;
 const GAPS = ['<1m', '1-5m', '5-60m', '>60m'];
 const gapKey = m => (m < 1 ? '<1m' : m < 5 ? '1-5m' : m < 60 ? '5-60m' : '>60m');
 const gaps = {};
@@ -187,6 +198,11 @@ for (const rs of contexts.values()) {
         g.pairs++; g.cc += b.cc; g.delta += delta;
       }
     }
+
+    const d = b.cc - delta;
+    allCC += b.cc; allDelta += delta;
+    const bucket = d > delta * TOLERANCE ? 'over' : d < -delta * TOLERANCE ? 'under' : 'exact';
+    dev[bucket].n++; dev[bucket].dev += d;
 
     // Phase test: only pairs where the hypotheses are far enough apart to decide.
     if (a.out < MIN_OUT) continue;
@@ -223,6 +239,9 @@ if (AS_JSON) {
     root: ROOT, since: SINCE, until: UNTIL, requests: totalRequests, contexts: contexts.size,
     totals: T, minOut: MIN_OUT, tolerance: TOLERANCE,
     phaseTest: phase, residue: residue,
+    deviation: { buckets: dev, sumCC: allCC, sumDelta: allDelta,
+      net: dev.exact.dev + dev.over.dev + dev.under.dev,
+      aggregateRatio: allDelta ? allCC / allDelta : null },
     phaseVerdict: phase.write > phase.free ? 'output re-billed as cache write' : 'output rides in as cache read',
     gapTable: GAPS.map(g => ({ gap: g, pairs: gaps[g].pairs, cc: gaps[g].cc, delta: gaps[g].delta,
       ratio: gaps[g].delta ? gaps[g].cc / gaps[g].delta : null })),
@@ -234,6 +253,7 @@ if (AS_JSON) {
 
 const pc = (a, b) => (b ? (100 * a / b).toFixed(1) + '%' : '-');
 const M = n => (n / 1e6).toFixed(2) + 'M';
+const sgn = n => (n < 0 ? '-' : '+') + Math.abs(Math.round(n)).toString();
 
 console.log('');
 console.log('  CONTEXT BILLING  —  how one token is charged over its lifetime');
@@ -298,6 +318,26 @@ if (residue.pairs) {
   console.log('     write was charged for it. Do not attribute a sub-1.0 ratio to breakpoint');
   console.log('     placement without reading these two rows.');
 }
+
+console.log('');
+console.log('  -- WHO PAID TWICE, AND WHO DID NOT PAY ----------------------------');
+console.log('     Signed deviation of cc from delta, every warm growing pair. Over means');
+console.log('     tokens written a SECOND time; under means tokens never written at all.');
+console.log('     Different tokens, unrelated mechanisms -- a small net is NOT a mechanism.');
+console.log('');
+console.log('     ' + 'population'.padEnd(12) + 'pairs'.padStart(7) + 'signed deviation'.padStart(20));
+for (const k of ['exact', 'over', 'under'])
+  console.log('     ' + k.padEnd(12) + String(dev[k].n).padStart(7)
+    + (sgn(dev[k].dev) + ' tok').padStart(20));
+const netDev = dev.exact.dev + dev.over.dev + dev.under.dev;
+console.log('     ' + 'NET'.padEnd(12) + String(dev.exact.n + dev.over.n + dev.under.n).padStart(7)
+  + (sgn(netDev) + ' tok').padStart(20));
+console.log('');
+console.log('     aggregate cc/delta  ' + (allDelta ? (allCC / allDelta).toFixed(3) : '-')
+  + '   over ' + (dev.exact.n + dev.over.n + dev.under.n) + ' pairs');
+if (dev.over.dev > 0 && dev.under.dev < 0)
+  console.log('     over/under magnitude ratio ' + (dev.over.dev / -dev.under.dev).toFixed(2)
+    + '   (near 1.0 is a coincidence of this corpus, not a law)');
 
 console.log('');
 console.log('  -- LIFETIME COST OF ONE TOKEN -------------------------------------');

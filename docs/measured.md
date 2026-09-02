@@ -534,21 +534,44 @@ was written, output included; `cc(t+1) ≈ Δ − out(t)` means the output rode 
 consecutive pairs with `out(t) ≥ 300`, `cc(t+1)` matches the whole `Δ` in **97.0%** of cases — 2.3%
 match `Δ − out(t)`, 0.6% neither. For pairs under a minute apart, `cc/Δ = 1.01`.
 
-**The 2.3% minority is real, and getting it wrong is instructive.** Both this correction's first
-write-up and `docs/design.md` explained those pairs as increment that landed in uncached input
-because the cache breakpoint had not advanced. The decomposition refutes it: `inp` averages 2
-tokens in those pairs while `cr` grows by more than the whole previous prefix, by very nearly
-exactly `out(t)` — 51,896 of 53,693 shortfall tokens served as reads, across 43 of 45 pairs. The
-server does sometimes retain the KV it computed while generating and extend the entry at no write
-charge; rarely, and for reasons this corpus cannot reach.
+**The 2.3% minority is real, and one identity explains it and its mirror image.** Because
+`Δ = (cr + cc + inp)[t+1] − prevPrefix`, substituting and cancelling gives, for every pair without
+exception:
 
-The instructive part is that the wrong explanation was already ruled out in writing. It is exactly
-the class of claim `docs/calibration.md`'s measurement-ceiling section forbids — breakpoint
-placement is not in the transcript, so *no* transcript-derived finding can attribute anything to
-it. A rule stated in one document did not stop the same repository asserting its negation in
-another, five days later, in a section whose whole subject was being exact. The tool now prints the
-`inp`-versus-`cr` decomposition on every run, which is the form of the fix that survives being
-forgotten: the reader is handed the discriminating numbers instead of a sentence to trust.
+```
+cc − Δ  ≡  prevPrefix − read − inp
+```
+
+Algebra, not a finding — but it collapses what looked like several phenomena into one question: how
+far did request t+1's cache read reach, relative to everything sent on request t. Reaching exactly
+`prevPrefix` gives `cc = Δ`. Falling short writes the gap again. Running *past* it means the
+generated tokens were already in the entry and no write was charged — which is the 2.3%. Measured:
+of 53,693 shortfall tokens, **51,896** arrive as reads, across 43 of 45 pairs, with `inp` averaging
+2 tokens. So the server does sometimes retain the KV it computed while generating and extend the
+entry for free; rarely, and for reasons this corpus cannot reach. The three causes of a read
+stopping where it does — TTL expiry, breakpoint granularity, free extension — are worked through in
+[`docs/design.md`](design.md#why-the-quadratic-is-a-replay-artifact).
+
+**Do not read the near-cancellation as a mechanism.** Split by sign over every warm growing pair:
+**+599,096** tokens written a second time against **−552,709** never written at all, a net of
+**+46,502** across 2,671 pairs, aggregate `cc/Δ` = **1.008**. Those are different tokens produced by
+unrelated mechanisms, and nothing defers or settles up — the tokens written twice really are paid
+for twice. An earlier draft of `docs/design.md` called the two directions "one bookkeeping lag seen
+from both ends", which implies the same tokens paid once and late. They are not. The magnitudes
+landing within 8% of each other is a property of this corpus, not a law, and nothing should be built
+on it. `tools/context-billing.js` prints the split on every run.
+
+**Two wrong explanations, and why they are recorded rather than quietly replaced.** The first draft
+of this correction, and of the design write-up, explained the sub-1.0 pairs as increment landing in
+uncached input because the breakpoint had not advanced. That is exactly the class of claim
+`docs/calibration.md`'s measurement-ceiling section forbids — breakpoint placement is not in the
+transcript, so no transcript-derived finding can attribute anything to it. A rule stated in one
+document did not stop this repository asserting its negation in another, five days later, in a
+section whose whole subject was being exact. Both errors have the same shape: an observation tidied
+into a neater mechanism than the numbers supported. The durable fix is not better prose but the
+instrument — `tools/context-billing.js` prints the `inp`-versus-`cr` decomposition and the signed
+split on every run, handing the next reader the discriminating numbers instead of a sentence to
+trust.
 
 **What changes: finding #1's amplification, 51.6× → 58.6×.** "Re-sent about 52 times" becomes
 about **59**. This needs no re-run — it is arithmetic on finding #1's own published totals:
