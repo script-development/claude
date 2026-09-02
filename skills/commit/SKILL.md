@@ -46,13 +46,15 @@ type(scope): description
 
 Optional body with more details.
 
-Co-Authored-By: Claude <noreply@anthropic.com>
+<attribution trailer, exactly as the harness injects it for this session>
 EOF
 )"
 ```
    - Types: feat, fix, refactor, docs, test, chore, style, ci
    - Keep the first line under 72 characters
    - Focus on the "why" rather than the "what"
+   - Keep whatever trailer convention the harness injects for this session — do not hardcode a
+     model name here, it goes stale.
 
 c. Repeat for each logical group of changes.
 
