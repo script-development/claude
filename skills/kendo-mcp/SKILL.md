@@ -52,8 +52,10 @@ Use this ID for all `project_id` parameters and resource URIs below.
 | `mcp__kendo__add-comment-tool` | Add comment to issue (max 2000 chars) |
 | `mcp__kendo__delete-issue-tool` | Delete issue (destructive) |
 | `mcp__kendo__link-branch-tool` | Link a git branch to an issue |
-| `mcp__kendo__prepare-project-context-tool` | Read-only bundle: returns `project + lanes + active_sprint + members + members_count + current_user` in one call. Use as the gather step for any project-scoped flow (triage, board sync, branch creation, picking up an issue); replaces separate reads of `kendo://projects/{id}`, `kendo://projects/{id}/lanes`, `kendo://projects/{id}/sprints`, `kendo://projects/{id}/members`, plus the legacy `git config user.email` heuristic |
+| `mcp__kendo__unlink-branch-tool` | Remove a git branch link from an issue (multi-repo: pass `repo_full_name` to disambiguate) |
+| `mcp__kendo__prepare-project-context-tool` | Read-only bundle: returns `project + lanes + sprints (Planned/Active) + active_sprint shortcut + labels + members + members_count + current_user` in one call. Use as the gather step for any project-scoped flow (triage, board sync, branch creation, picking up an issue); replaces separate reads of `kendo://projects/{id}`, `kendo://projects/{id}/lanes`, `kendo://projects/{id}/sprints`, `kendo://projects/{id}/members`, plus the legacy `git config user.email` heuristic |
 | `mcp__kendo__prepare-issue-context-tool` | Read-only bundle: returns `issue + epic` (full issue payload with comments, branches, attachments). For project meta, fire `prepare-project-context-tool` in parallel — see the parallel-gather pattern below |
+| `mcp__kendo__search-issues-tool` | Text search across title, description, and issue key. Does not match numeric database IDs |
 | `mcp__kendo__start-work-on-issue-tool` | Idempotent one-call write: assigns user, moves to lane, optionally updates sprint, and links a git branch. The act step that pairs with the gather tools. Repo is auto-resolved from the project's primary GitHub repo |
 
 ### Time Logging
@@ -80,6 +82,7 @@ Use this ID for all `project_id` parameters and resource URIs below.
 | `mcp__kendo__update-sprint-tool` | Update sprint title, dates, or status (partial updates supported) |
 | `mcp__kendo__complete-sprint-tool` | Complete the active sprint, move incomplete issues to target sprint |
 | `mcp__kendo__assign-issues-to-sprint-tool` | Bulk-assign up to 100 issues to a sprint (or `null` to clear). Prefer over looping `update-issue` when the only change is sprint membership |
+| `mcp__kendo__get-sprints-tool` | List sprints for a project (all statuses, or filter by `status` 0/1/2). Use to resolve a sprint id by name before write operations, or to list Completed sprints (excluded from `prepare-project-context`). Optional `sprint_id` for a single sprint. |
 
 ### Reports
 
@@ -107,7 +110,7 @@ title: "Clear descriptive title"
 description: "Markdown content"
 lane_id: <lane-id> (optional, defaults to first lane)
 priority: 0-4 (0=Highest, 2=Medium default, 4=Lowest)
-type: 0-1 (0=Feature, 1=Bug)
+type: 0-2 (0=Feature, 1=Bug, 2=Task)
 assignee_id: <user_id> (optional)
 sprint_id: <sprint_id> (optional)
 ```
@@ -115,6 +118,37 @@ sprint_id: <sprint_id> (optional)
 **Important:** The response includes both `id` (database ID, e.g. `206`) and `key` (display
 reference, e.g. `PROJ-0142`). These are different values — always use `key` for branch names and
 user-facing references, and `id` for API calls to other tools.
+
+### Mentions in description / comment body
+
+When writing `description` (create-issue-tool, update-issue-tool) or `content` (add-comment-tool), a plain
+`@Full Name` or unique `@FirstName` of a project member is resolved server-side into a
+mention that notifies the named person. Ambiguous or unknown names stay as literal text —
+no error is raised.
+
+Applies to: `create-issue-tool`, `update-issue-tool`, `add-comment-tool`.
+
+#### @Mention pre-processing
+
+Before passing content to `create-issue-tool`, `update-issue-tool`, or `add-comment-tool`, scan the `description` / `content` argument for bare `@Name` patterns and pre-process them. This catches ambiguous names that the server would silently leave as literal text and lets the agent resolve them interactively.
+
+**Prerequisite:** `members[]` must be in context from a prior `prepare-project-context-tool` call. If it is not, skip pre-processing entirely and write the content as-is — the server-side resolver is the fallback.
+
+**What to scan:** every `@Name` token in prose — not inside fenced (` ``` `) or inline (`` ` ``) code spans, and not already in `[@ id="N"]` wire-format (those are already resolved).
+
+**Matching policy** (mirrors the server-side resolver):
+1. For each `@Name` token, compare case-insensitively against member full names first, then first names; evaluate longest candidate first.
+2. A name qualifies only when it maps to **exactly one** member — any ambiguity disqualifies it from the unambiguous path.
+
+**Unambiguous match** (one member maps to `@Name`): write `@Name` as-is. The server will resolve it; the agent may note in its reasoning that the mention is confirmed.
+
+**Ambiguous match** (multiple members share the name): use `AskUserQuestion` with one question per ambiguous token. List all matching members as options plus a "none of these" option:
+- User picks a member → rewrite that token to `[@ id="N"]` (server will render the chip; the person is notified)
+- User picks "none of these" → leave the token as literal text
+
+**Multiple ambiguous tokens:** handle one per `AskUserQuestion` call. If more than 4 ambiguous tokens appear in a single piece of content, ask in rounds of up to 4.
+
+**`update-comment-tool` is excluded** — the server neither resolves nor notifies mentions on a comment update; pre-processing comment updates is a no-op.
 
 ### Move Issue (via update-issue)
 
@@ -130,6 +164,10 @@ issue_id: <issue-id>
 branch_name: "feature/my-branch"
 # GitHub repo is auto-resolved from the issue's project (primary repo preferred)
 ```
+
+**Guard:** when the branch name already carries the issue key (e.g.
+`feat/{{ISSUE_KEY_PREFIX}}-0003-target-context`), Kendo auto-links it — do not call `link-branch`
+for that branch. Reserve the tool for branches whose name does not contain the key.
 
 ### Log Time
 
@@ -173,7 +211,8 @@ existing issue you just looked up). The two tools are sized to be cheap to call 
 
 Use `ReadMcpResourceTool` with `server: "kendo"` and `uri: "kendo://issues/{id}"` to fetch a single
 issue directly. This returns full details including comments, branch links, blocking relations,
-and time spent. **Always prefer this over searching when you have the issue ID.**
+and time spent. **Always prefer this over searching when you have the issue ID.** Prefer
+`prepare-issue-context-tool` when you have the key and want the gather bundle.
 
 ### Search Issues
 
@@ -185,4 +224,4 @@ Note: this searches text fields only — it does not match on numeric database I
 | File | Content |
 |------|---------|
 | [setup.md](references/setup.md) | MCP server setup instructions |
-| [issue-templates.md](references/issue-templates.md) | Issue templates (feature user story + bug report) — single source of truth, referenced by `/newbranch`, `/triage-reports`, `/plan-feature`, `/task-writer`, `/kendo-cli` |
+| [issue-templates.md](references/issue-templates.md) | Issue templates (feature user story + bug report + task) — single source of truth, referenced by `/newbranch`, `/triage-reports`, `/plan-feature`, `/task-writer`, `/kendo-cli` |
