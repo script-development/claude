@@ -10,7 +10,7 @@ Work in any project, no configuration needed.
 
 | Skill | Description |
 |-------|-------------|
-| [babysit](skills/babysit/) | Watch a PR's CI, auto-fix failures, push until green |
+| [babysit](skills/babysit/) | Superseded by [shepard](skills/shepard/). Watch a PR's CI, auto-fix failures, push until green |
 | [build-it](skills/build-it/) | Implement the last grill-me alignment: cut a worktree, write plan docs if chosen, build, run gates, open the PR |
 | [catchup](skills/catchup/) | Load branch context, show progress, sync with base branch |
 | [commit](skills/commit/) | Small, focused commits with conventional messages + push |
@@ -26,6 +26,7 @@ Work in any project, no configuration needed.
 | [retro](skills/retro/) | Write retrospectives capturing what went wrong, why, and what changed |
 | [review-branch](skills/review-branch/) | Code review all changes on current branch vs base |
 | [review-mcp-descriptions](skills/review-mcp-descriptions/) | Improve MCP tool/resource descriptions for discoverability |
+| [shepard](skills/shepard/) | Drive one PR to green and answered: fix red CI, dispose every review finding, push once per cycle, arm a live watch |
 | [sync-worktrees](skills/sync-worktrees/) | Copy gitignored .env* files and refresh dependencies from the primary worktree into every secondary worktree; optional safe fast-forward |
 | [task-writer](skills/task-writer/) | Break down features into structured TASKS.md with verification |
 | [wireframe](skills/wireframe/) | Generate structured WIREFRAMES.md with ASCII layouts, design tokens, and interaction specs |
