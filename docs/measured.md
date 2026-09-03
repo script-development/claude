@@ -861,3 +861,86 @@ claude --debug api   # then drive one turn; inspect the emitted log for body con
 For route 2, enumerate record shapes in a transcript with a short jq/node pass over
 `type`, `subtype`, and `attachment.type` (or their absence) across every line of the `.jsonl` file,
 and separately list `~/.claude/sessions/` to confirm it holds only locks/state, not content.
+
+---
+
+## Finding #12, 2026-09-03 — the A/B test: flag-on relocates bytes into cache-read, not into plain input
+
+**Question.** Finding #11 above left this open: "this repo has not run a controlled A/B with
+`--exclude-dynamic-system-prompt-sections` toggled to confirm the cache-reuse improvement it
+claims." This finding runs it.
+
+**Method.** Four `claude -p "Reply with just the word OK." --output-format json` single-turn
+sessions, flag off/on paired across two unrelated project directories (`context-economy`,
+`mission_control`), all under one account within a short window. `--output-format json` returns
+`message.usage` for the sole request directly, so no transcript parsing was needed. Prompt text
+held constant across all four so only the flag varies within a pair.
+
+**Result.**
+
+```
+                     create    read    total   input
+context-economy off  11,919  24,467  36,386    2
+context-economy on    7,893  28,410  36,303    2   (Δtotal -83)
+mission_control  off  21,627  24,467  46,094    2
+mission_control  on   16,449  29,562  46,011    2   (Δtotal -83)
+```
+
+**Answers the question under test cleanly.** Finding #11's open question had two branches: does
+the read side grow because more static content becomes a shared/cacheable prefix once the
+per-machine sections move out, or does it stay flat while those bytes just relocate to uncached
+first-message `input_tokens`? `input_tokens` is unchanged (2, both flags, both directories) —
+ruling out the second branch. Read grows and create shrinks by close to the same amount in both
+pairs — supporting the first: the relocated per-machine content still lands inside the *cached*
+portion of the request either way; moving it out of the system prompt just makes it more likely to
+already match an existing cache entry (a "read") instead of writing a fresh one (a "create").
+
+**What actually matters is cost, not the raw create+read sum.** A create token here bills at the
+1h-cache-write rate and a read token at the cache-read rate — 2× and 0.1× base, the same
+multipliers finding #10's own arithmetic uses (`docs/calibration.md`) — a 20x spread. Summing
+create and read as if they were equally expensive is what makes the shift look like a wash; it
+isn't. Re-priced at those rates:
+
+```
+                     create×2   read×0.1   effective   Δeffective
+context-economy off   23,838      2,447      26,285
+context-economy on    15,786      2,841      18,627      -7,658  (-29%)
+mission_control  off   43,254      2,447      45,701
+mission_control  on    32,898      2,956      35,854      -9,847  (-22%)
+```
+
+The flag cuts this single request's effective cost by roughly a fifth to a third. That's what
+finding #11's "improves cross-user prompt-cache reuse" claim cashes out to economically: not less
+content moving through the request, but 4,000-5,000 tokens per request moving from the most
+expensive tier (a fresh 1h write) to the cheapest (a read).
+
+**The flag-off read is identical across both projects: 24,467, in both.** Not project-specific —
+this read reflects a shared cache entry independent of which directory the session runs in
+(presumably the generic tool-schema/harness-instructions prefix), while create tracks
+project-specific content (memory files, CLAUDE.md, skill listings) and varies widely (11,919 vs
+21,627).
+
+**The raw create+read total barely moves (Δtotal -83 in both pairs) — noted, not the finding.**
+That near-equality just says the relocation is close to like-for-like at the byte level, which is
+expected: the same content is still being sent, only reclassified. It has no bearing on cost, which
+is the effective-token calculation above, not this sum.
+
+**What this does not settle.** All four runs are under one account within a short window
+(~10 minutes), so this confirms cache reuse *within an account's own session pool*, not the flag's
+literal claim of *cross-user* reuse — testing that would need a second, unrelated account, which
+this corpus can't provide. It also doesn't test whether the effect holds outside a single-turn,
+near-empty prompt, or after the 1-hour ephemeral tier actually expires — `cache_creation`'s
+`ephemeral_1h_input_tokens` field was the only non-zero one in every run; `ephemeral_5m` was 0
+throughout.
+
+### Reproduction
+
+```
+cd <project-a> && claude -p "Reply with just the word OK." --output-format json
+cd <project-a> && claude -p "Reply with just the word OK." --exclude-dynamic-system-prompt-sections --output-format json
+cd <project-b> && claude -p "Reply with just the word OK." --output-format json
+cd <project-b> && claude -p "Reply with just the word OK." --exclude-dynamic-system-prompt-sections --output-format json
+```
+
+`--output-format json` returns `message.usage` for the single request directly — no transcript
+parsing needed for a one-turn `-p` session.
