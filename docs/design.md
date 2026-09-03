@@ -1021,6 +1021,15 @@ this list rather than by recollection.
   pre-`|` half — measures ~0% on a real list against ~95% on prose, so the majority test has room to
   spare. The `|` fragment half is excluded from the test, since it is prose by design.
 
+- **O9 — Does `--exclude-dynamic-system-prompt-sections` change anything about the handoff's design?**
+  Considered and closed without pursuing further, not left open. The flag (`docs/measured.md`
+  finding #11) only relocates cwd/env/memory-*paths*/git-status between the system prompt and the
+  first user message, and affects cross-context prompt-cache reuse — a different layer from what the
+  handoff protects. It doesn't change what survives compaction, what `## Do not re-derive` needs to
+  capture, or the wave-append mechanism `docs/measured.md` finding #10 documents for `nested_memory`/
+  `skill_listing` — those are content-injection attachments, not the *paths* this flag moves. No
+  design change follows from it either way.
+
 ---
 
 ## Build order

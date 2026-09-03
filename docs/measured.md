@@ -620,3 +620,244 @@ corrections to this report:
   position dominates provenance. Finding #4 already reasons this way ("its true cost is its size
   times its remaining lifetime in that context"); this is that sentence with the arithmetic
   attached, and it is written up in `docs/design.md`.
+
+---
+
+## Finding #10, 2026-09-03 — the post-compaction rewrite arrives in two waves, and the second one is cheaper for arriving late
+
+Numbered as a finding rather than folded into the 2026-08-31 addendum because it looks at that
+addendum's `create` figure (36–45k tokens, the "one-off charge") at attachment granularity instead
+of as one number, and finds it is not one write. It does **not** touch the addendum's other figure —
+whether the surviving ~30k read really is the tools-plus-system preamble is still open (see "What
+this does not settle" below).
+
+**The write splits into two waves, one immediate and one request later.** Wave 1 — file re-reads,
+`compact_file_reference`, `invoked_skills`, `deferred_tools_delta`, `agent_listing_delta`,
+`mcp_instructions_delta`, hook messages — lands inside the first post-boundary request's
+`cache_creation_input_tokens`, matching the addendum's published figures exactly. Wave 2 —
+`nested_memory` (CLAUDE.md files from subdirectories below the project root, e.g. `frontend/CLAUDE.md`
+and `frontend/tests/CLAUDE.md`) plus a `skill_listing` delta and small diagnostics/reminder
+attachments — shows up as a **second, separate** `cache_creation_input_tokens` charge on the
+*following* request, not the one the addendum measured:
+
+```
+                        wave 1 (request 1)       wave 2 (request 2)
+kendo-2/7efc5ac2        create=36,473 read=29,600   create=7,397  read=66,073
+kendo-2/7359db87        create=45,458 read=31,059   create=8,256  read=76,517
+mission-control/29e903e9 create=39,488 read=30,092   (none)
+```
+
+Every `read` on the request after a write equals the exact sum of the previous request's `read` and
+`create` (29,600+36,473=66,073; 31,059+45,458=76,517) — nothing is double-billed and nothing gets
+rewritten, wave 2 purely appends to the prefix wave 1 established.
+
+**Wave 2 is conditional, not universal — mission-control has nothing to append.** Its session has
+**zero** `nested_memory` attachments anywhere in its transcript (checked the full file, not just
+around the boundary), so there is nothing for a second wave to carry. The absence is not evidence
+against the pattern; it is the pattern's own predicted null case, since `nested_memory` only fires
+for projects with CLAUDE.md files below the root.
+
+**Wave 2 is not triggered by the request it rides in on.** In both cases where it fires, the tool
+call sitting between wave 1 and wave 2 has nothing to do with the paths that reappear: a plain
+`git status --short && git log --oneline -1` in the first case, a PowerShell `Get-Process` scan for
+stray node processes in the second — neither touches a file. What does line up, checked for the
+first case: the 260 lines before that boundary contain 123 tool calls referencing `frontend/`,
+ending in an `Edit` to `frontend/tests/integration/.../Show.spec.ts` and a commit of `frontend/`
+changes — exactly the two directories (`frontend/`, `frontend/tests/`) whose CLAUDE.md reappears in
+wave 2. This reads as the harness restoring a working set the session already had, lagging one
+request behind, not as the current turn's tool use discovering new paths. (A separate, unpublished
+line of analysis from an earlier session found the same async-settling shape in `skill_listing`'s
+`isInitial` flag near session start; not cited further here since it never made it into this
+document.) Not independently confirmed for the second case's specific paths, only that its
+intervening tool call is equally unrelated.
+
+**The two-wave split is measurably cheaper than an eager single-request bundle would have been, not
+neutral.** Counterfactual arithmetic on the numbers above, at the ephemeral-1h rates this report uses
+throughout (write 2×, read 0.1×) — not a re-run, the same kind of derivation as the 2026-09-02
+correction's headline number:
+
+```
+kendo-2/7efc5ac2, requests 1+2
+  actual (split):   36,473×2 + 29,600×0.1  +  7,397×2 + 66,073×0.1  =  97,307 effective
+  bundled into r1:  43,870×2 + 29,600×0.1  +  0       + 73,470×0.1  =  98,047 effective
+  split is cheaper by 740
+
+kendo-2/7359db87, requests 1+2
+  actual (split):   45,458×2 + 31,059×0.1  +  8,256×2 + 76,517×0.1  = 118,186 effective
+  bundled into r1:  53,714×2 + 31,059×0.1  +  0        + 84,773×0.1 = 119,011 effective
+  split is cheaper by 826
+```
+
+The reason is the same one behind finding #4's "size × remaining lifetime": every resident token
+pays the 0.1× read tax on every subsequent request, so writing wave 2's bytes at request 1 means
+they immediately get read back at request 2 for free information they didn't need to carry yet.
+Writing them one request later, only once something (here, nothing in particular — see next
+paragraph) asks for them, skips that one extra read-forward. This is finding #9's "lazy beats eager"
+result again, quantified for a case where the delay is exactly one request instead of arbitrarily
+many.
+
+**Caveat: request 2 was not created by the split.** It exists because request 1 ends in a tool call
+(`git status`, `Get-Process`) whose result has to be fed back before the agent can continue — that
+request happens regardless of what rides along in it. The only free variable is which request wave
+2's bytes are written on, not whether a second request occurs. The "bundled" counterfactual above
+compares two ways of filling a request that was going to happen anyway, not a bundled-request-vs-two-
+requests choice.
+
+**What this does not settle.** Whether the addendum's ~30k surviving read really is the
+tools-plus-system preamble is untouched by any of the above — this finding is entirely about the
+*write* side. The cost-arithmetic and causation results are each n=2 (only two of the three
+boundaries have a wave 2 to analyze); the null case is n=1. And the delay measured is exactly one
+request in every instance seen — whether a longer lag would keep compounding the saving, or whether
+something eventually forces wave 2 in sooner, is not tested here.
+
+### Addendum, 2026-09-03 — session-start read is tightly clustered, create is not
+
+The "What this does not settle" paragraph above left one question open: whether the addendum's
+~30k surviving post-compaction read really is the tools-plus-system preamble. A session's very
+first request — before any compaction, before any project-specific work has happened — offers a
+size-only test of that, in the same spirit as `docs/calibration.md`'s distinction between
+prefix-*size* questions (answerable from `usage`) and boundary-*content* questions (not, per
+finding #11 below): if a fixed tools+system block dominates that first read, its size should look
+similar across different projects even though the projects' own work differs completely.
+
+It does. First `assistant` record (by unique `requestId`) in each of the same three transcripts:
+
+```
+                          request 1 (session start)
+kendo-2/7efc5ac2          create=29,942   read=26,417
+kendo-2/7359db87          create=32,466   read=27,510
+mission-control/29e903e9  create=14,019   read=26,518
+```
+
+**Read clusters tightly: 26,417 / 26,518 / 27,510**, a spread of 1,093 tokens (4%) across two
+unrelated projects (`kendo-2`, `mission-control`) with nothing in common at the code level.
+**Create spreads widely: 14,019 to 32,466**, more than 2×. That split is consistent with — does
+not contradict — a reading where the tightly-clustered read is a largely shared, static block
+(tool schemas plus the harness's own static system-prompt section) while the widely-spread create
+is per-project dynamic material (memory files, CLAUDE.md, project-specific instructions), the same
+static/dynamic split `--exclude-dynamic-system-prompt-sections`'s own description names (finding
+#11). It is still an inference from size, not an inspection of content.
+
+**One thing this settles by definition, not by inference — and it's not the part worth calling
+surprising.** `cache_read_input_tokens` on a session's first-ever request cannot be a from-cold
+value: a read is a cache hit, so those 26,417–27,510 tokens were necessarily written by some
+*other* process before this session sent its first request. What is worth noting is what that
+implies given the cache is ephemeral (`docs/calibration.md`'s 5-minute and 1-hour tiers, nothing
+longer): that other write must have landed recently enough — within whichever tier applies — to
+still be alive at this session's start. That is a fact about **usage cadence on this account**
+(sessions in different projects running close enough together in time to keep an entry warm across
+the gap), not a fact about architecture — the existence of a shared static block is already
+established architecturally by `--exclude-dynamic-system-prompt-sections`'s own description
+(finding #11) and isn't the notable part of this addendum.
+
+**What this still does not settle.** n=3, a thin basis for "tightly clustered" — nothing here
+rules out coincidence at this sample size. Which specific prior session or process wrote the warm
+entry each of these three hit is unknown — the transcripts only show that *something* did, not
+what. And whether the content actually read really is the tools-plus-system preamble, versus some
+other shared material, is still a content question this corpus cannot answer (finding #11).
+
+### Reproduction
+
+Not shipped as a `tools/` script — built ad hoc for this finding and not saved anywhere durable, so
+re-derive from the method rather than hunting for the original: for a given transcript, find the
+`system`/`compact_boundary` record, then walk forward through `attachment` records grouping by
+contiguous timestamp runs (a "wave" is a burst that shares one timestamp), joining each wave to the
+next `assistant` record's `message.usage` to get its `cache_creation_input_tokens` /
+`cache_read_input_tokens`. To check causation, look at the `tool_use` between two waves and, for the
+directories a `nested_memory` attachment names, grep backward through the same transcript's earlier
+`tool_use` records for that path. For the session-start addendum: dedupe `assistant` records on
+`requestId` and take the first one's `message.usage`.
+
+---
+
+## Finding #11, 2026-09-03 — the rendered system prompt is not recoverable from anything on disk; the harness's own flag docs are the next-best source
+
+**Question.** `docs/calibration.md:294` already asserts a ceiling: a boundary's *position* is
+observable (a token count) but the *content* at that position — which block it fell on —
+"needs the rendered payload, which these transcripts do not carry." This finding asks whether
+that's actually true, by trying the two routes that could plausibly get at the rendered payload
+anyway, and finds it holds — then extends it: the ceiling isn't specific to breakpoint placement,
+it covers the system prompt's content generally.
+
+**Route 1 — `claude --debug api`.** Captured one real request/response cycle this way (a 29.6KB
+log). It is pure operational telemetry: MCP connection timing, permission-rule loading, lines like
+`Dynamic tool loading: 0/15 deferred tools included` and `turn 1 end (usage in=2 out=4
+cost=$0.0517)`. No request or response body appears anywhere in it. One field is explicitly
+redacted — `autocompact: tokens=[REDACTED]` — which reads as a deliberate omission rather than an
+oversight; the harness appears to intentionally keep size/content fields out of debug output, not
+just skip logging them by accident.
+
+**Route 2 — the transcript files themselves.** Enumerated every distinct `type` /
+`subtype` / `attachment.type` combination across the full 7.5MB `kendo-2/7efc5ac2` transcript
+(4,720+ records, the same file finding #10 uses). There is no system-prompt-bearing record type —
+nothing that carries the literal rendered system prompt or tool schemas. Also checked for an
+on-disk snapshot file (the session's own state directory, `~/.claude/sessions/`): nothing
+content-bearing there either, only locks and small state files.
+
+**So the ceiling holds, and generalizes.** `docs/calibration.md:294` was written about breakpoint
+*placement* specifically. This finding did not find a narrower gap — the same absence covers the
+system prompt's *content*, full stop. Nothing readily available on this machine carries the
+rendered bytes.
+
+**What does move the question forward: two flags' own documentation, not measurement.** `claude
+--help` describes two flags whose descriptions are, in Anthropic's own words, claims about harness
+behavior that this repo's transcripts cannot independently verify but also has no reason to doubt:
+
+- `--exclude-dynamic-system-prompt-sections`: "Move per-machine sections (cwd, env info, memory
+  paths, git status) from the system prompt into the first user message. Improves cross-user
+  prompt-cache reuse. Only applies with the default system prompt (ignored with
+  `--system-prompt`)." The *effect* stated — cross-user cache reuse improves when this content
+  moves out — is itself proof, not inference, that the default system prompt contains
+  machine-varying content today: reuse across users can only be incomplete if something in the
+  shared prefix currently differs per user/machine. This is the same shared-warm-prefix shape the
+  session-start numbers elsewhere in this repo point at, now with a named cause instead of an
+  inferred one. What it does **not** say is that these four are the *only* dynamic sections — the
+  parenthetical lists items without "e.g." or "such as," which reads like an enumeration by CLI-help
+  convention, but that is a convention-based reading, not a stated exhaustiveness guarantee. Treat
+  the list as "at least these," not "only these."
+- `--system-prompt-snapshot <on|off>`: "Record the system prompt once per conversation and reuse
+  it verbatim on every request and resume... on: an existing record in the conversation is sent
+  as-is (a later launch's different `--system-prompt`/`--append-system-prompt` is ignored **until
+  compaction**)." This is a direct, textual statement that compaction is the harness's own trigger
+  point for re-establishing the system prompt — not something inferred from token-count deltas
+  the way finding #10's wave split was.
+
+Both are worth citing by their literal flag text rather than paraphrased, and are a stronger
+source than anything derivable from the transcripts, because they describe the mechanism directly
+instead of being reverse-engineered from its `usage` side effects.
+
+**A same-session observation sharpens the exhaustiveness question further, with its own caveat.**
+Whether the four-item list is complete turns out to matter less than it first looked, because the
+benefit is incremental, not binary: cache reuse improves by whatever a given move-out covers,
+independent of whether it covers everything dynamic. What's more informative is this: in *this*
+conversation, both `currentDate` and `gitStatus` — one of the four named items — arrived as a
+`<system-reminder>` block attached to the first user turn, not as anything resembling a
+system-prompt field, and this session never set `--exclude-dynamic-system-prompt-sections` (default
+`false`). That suggests at least one of the four named items is already kept out of the system
+prompt **unconditionally**, regardless of this flag's state — i.e. the flag's real function may be
+"extract more of what's already selectively extracted elsewhere," not "extract these four for the
+first time." Caveat, and it's a real one: this is an architectural signal observed from this
+session's own rendering, not from the `--help` text, and not measurement in the sense the rest of
+this document uses the word — the wire-level API payload is exactly the thing finding #11's two
+dead-end routes above could not reach, so there is no confirmation that what renders to me as a
+`<system-reminder>` corresponds to the same injection point the flag's help text calls "the first
+user message," or is some other, unrelated mechanism the harness also happens to use.
+
+**What this does not settle.** These flag descriptions are still documentation, not measurement —
+this repo has not run a controlled A/B with `--exclude-dynamic-system-prompt-sections` toggled to
+confirm the cache-reuse improvement it claims, and finding #9/#10's own results were reached
+without needing it. Nor is the four-item list confirmed exhaustive, or the `currentDate`/`gitStatus`
+observation confirmed to share a mechanism with the flag. They narrow *where to look* and *what the
+boundary's content plausibly is*; they do not supply the bytes.
+
+### Reproduction
+
+```
+claude --help 2>&1 | grep -A6 "exclude-dynamic-system-prompt-sections"
+claude --help 2>&1 | grep -A16 "system-prompt-snapshot"
+claude --debug api   # then drive one turn; inspect the emitted log for body content (there is none)
+```
+
+For route 2, enumerate record shapes in a transcript with a short jq/node pass over
+`type`, `subtype`, and `attachment.type` (or their absence) across every line of the `.jsonl` file,
+and separately list `~/.claude/sessions/` to confirm it holds only locks/state, not content.
