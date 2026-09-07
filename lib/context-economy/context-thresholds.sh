@@ -1,9 +1,9 @@
 #!/bin/bash
 # Context-reset thresholds, in resident input tokens.
 #
-# SINGLE SOURCE OF TRUTH. lib/context-gauge.sh renders against these; the
-# threshold hook that will later inject a one-shot advisory for unattended runs decides
-# against the same numbers. Two copies would drift silently — and worse, drift in
+# SINGLE SOURCE OF TRUTH. lib/context-gauge.sh renders against these; hooks/handoff-urge.sh
+# decides its one-shot advisory for unattended runs against the same numbers. Two copies
+# would drift silently — and worse, drift in
 # different units (one in tokens, one in percent) — with nothing failing to announce it.
 # Consumers source this file; they never restate the numbers, not even as a fallback
 # default. A missing file means "no advisory", not "guess" — degrade capability, never

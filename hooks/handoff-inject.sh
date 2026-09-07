@@ -67,8 +67,9 @@ input=$(cat)
 # swallows the error, and source_kind comes back empty -- indistinguishable from "not a clear
 # event" to the case below, so this hook would exit 0 exactly as silently on a machine missing jq
 # as it does on an ordinary `startup`/`resume`. That is the "guard that skips without saying so"
-# failure this repo's CLAUDE.md calls out for install.sh, reproduced here. A plain-text grep for
-# the one field this early check needs is enough to tell those two cases apart and say so.
+# failure downstream consumer repos are expected to call out for their own install.sh, reproduced
+# here. A plain-text grep for the one field this early check needs is enough to tell those two
+# cases apart and say so.
 if ! command -v jq >/dev/null 2>&1; then
     case "$(printf '%s' "$input" | tr -d '\r')" in
         *'"source"'*'"clear"'*)
