@@ -1,6 +1,6 @@
 # Plan directory derivation
 
-Canonical algorithm for resolving a work directory — `docs/plans/<slug>/`, or `docs/bugs/<slug>/` for `/review-branch` — from the current git branch. Used by `/next`, `/implement-plan`, `/review-branch`, and `/pr` to locate `PLAN.md`, `DECISIONS.md`, `WIREFRAMES.md`, `TASKS.md`, `BUG.md`, and `REVIEW_CLAUDE.md` for the work in progress.
+Canonical algorithm for resolving a work directory — `docs/plans/<slug>/`, or `docs/bugs/<slug>/` for `/review-branch` — from the current git branch. Used by `/next`, `/implement-plan`, `/review-branch`, and `/pr` to locate `PLAN.md`, `DECISIONS.md`, `WIREFRAMES.md`, `TASKS.md` and `BUG.md` for the work in progress.
 
 `/plan-feature` itself doesn't need this algorithm — it creates the directory, so it knows the slug — but it documents the algorithm here because it owns the directory's naming convention.
 
@@ -38,8 +38,8 @@ Each consuming skill decides what to do when no plan directory is found:
 
 - **`/next`** — falls back to `TASKS.md` in the repository root, then asks the user.
 - **`/implement-plan`** — asks the user where the plan lives; does not guess a fallback.
-- **`/review-branch`** — still spawns **both** reviewers; neither requires `PLAN.md`. Per *Which root* above it resolves `docs/plans/` then `docs/bugs/`, and writes `REVIEW_CLAUDE.md` into whichever it found. Only when neither exists does it drop to a chat-only review and write nothing.
-- **`/pr`** — skips review-file lookup entirely; the branch isn't plan-driven and `/pr` proceeds without a review summary. Note the review-handoff prompt is scoped to **plan-driven branches only**: on a bug branch `/pr` reads `bug-fix-verifier`'s verdict from BUG.md instead and never asks for a `/review-branch` handoff.
+- **`/review-branch`** — still spawns the always-on reviewers; neither requires `PLAN.md`. Per *Which root* above it resolves `docs/plans/` then `docs/bugs/` and reads whichever it found for context. It reports in chat on every branch shape and writes nothing, so a missing directory changes the context the reviewers get, not the deliverable.
+- **`/pr`** — skips the reviewer-pair check entirely; the branch isn't plan-driven and `/pr` proceeds without one. Note that prompt is scoped to **plan-driven branches only**: on a bug branch `/pr` reads `bug-fix-verifier`'s verdict from BUG.md instead and never asks for `/review-branch`. The docs-accuracy gate is the exception — it is triggered by the diff's paths, so it runs on all three shapes.
 
 ## Bug-side parallel
 

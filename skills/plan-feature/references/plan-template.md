@@ -1,8 +1,20 @@
 # PLAN.md template
 
 Save the plan to `docs/plans/{{ISSUE_KEY_PREFIX}}-XXXX-slug/PLAN.md`. Use this exact structure — the downstream
-agents (`plan-reviewer`, `surface-reviewer`, `/wireframe`, `/task-writer`, `precedent-reviewer`)
-all parse it.
+agents (`plan-reviewer`, `surface-reviewer`, `/wireframe`, `/task-writer`, `/implement-plan`,
+`precedent-reviewer`) parse the section names, so don't rename the ones you keep.
+
+The plan has two readers, and every section is sized for them: the implementing session, which
+often starts after a `/clear` with nothing but `CLAUDE.md` and this file, and `precedent-reviewer`
+at PR time, which holds the Security & Cost Surface prose against the diff. A section that
+neither reader needs does not go in. What the planner needed to *reach* the plan — the gap table,
+the pre-flight resolver output — stays in the planning conversation. So does everything the
+reviewers produce: `plan-reviewer` and `surface-reviewer` report to the session, and the plan
+carries no record of their verdicts. A plan that passed is the record.
+
+Two sections are conditional: `## Sweep Inventory` and `## Migration / Schema Changes` appear
+only when they have content. A feature that adds no cross-cutting rule and no schema change omits
+both headings rather than carrying an `N/A` row.
 
 ```markdown
 # {{ISSUE_KEY_PREFIX}}-XXXX: <name>
@@ -43,23 +55,6 @@ arch test enforces each rule.
 layer's dependency rules allow it to depend on everything it needs (per the project's
 static-analysis config).
 
-## Planning Evidence
-
-The Phase 1.5 gap table, carried over verbatim. Every row must be ✓ by the time the plan is
-saved, and every ✓ carries the quoted source it was marked from. This is what lets a reviewer
-check the plan against its inputs instead of taking the plan's word for them.
-
-| Required for a plan | Marker | Source |
-|---|---|---|
-| Goal | ✓ | <quoted line from issue body / first prompt> |
-| Acceptance criteria (≥ 3) | ✓ | <quoted, or where they were agreed> |
-| In-scope | ✓ | <file list or domain boundary, with its source> |
-| Out-of-scope | ✓ | <the explicit non-goal and where it was agreed> |
-| Edge cases | ✓ | <where each came from> |
-| Architecture fit | ✓ | <file paths from Phase 1b/1c> |
-| Module shape | ✓ | <Phase 1d reckoning, per module> |
-| Risk / uncertainty | ✓ | <where identified> |
-
 ## Wireframes
 
 <if feature includes frontend work>
@@ -78,22 +73,23 @@ No frontend changes — wireframes not applicable.
 
 ## Sweep Inventory
 
-For every cross-cutting rule this plan **adds** — a header every response must stamp, a broadcast
+<Only when the plan adds a cross-cutting rule — a header every response must stamp, a broadcast
 every status transition must fire, an audit hook every variant must call, a pattern every sibling
-component must adopt — enumerate the sibling sites mechanically and mark each one. The site list
-comes from the Phase 1.4 grep, not from memory: cite the pattern searched.
+component must adopt. Omit the heading otherwise.>
+
+Enumerate the sibling sites mechanically and mark each one. The site list comes from the
+Phase 1.4 grep, not from memory: cite the pattern searched.
 
 | Rule added | Sibling site (grep hit) | Status |
 |---|---|---|
 | <the rule> | <file / route / component the rule must reach> | Applied / Skipped — <reason a reviewer can check> |
 
-`N/A — no cross-cutting rule added` when the feature introduces none. An unmarked row blocks
-Phase 4d — review keeps finding site N+1 of an N-site sweep, and this table is where site N+1
-gets found first.
+An unmarked row blocks Phase 4d — review keeps finding site N+1 of an N-site sweep, and this
+table is where site N+1 gets found first.
 
 ## Security & Cost Surface
 
-Carried forward from Phase 1.6. Six rows; each row is a **prose answer** to the row's questions, or `N/A — <one-line reason>`. Audited at Phase 5 by `surface-reviewer` (running in parallel with `plan-reviewer`).
+Carried forward from Phase 1.6. Seven rows; each row is a **prose answer** to the row's questions ending in a `Proof:` line, or `N/A — <one-line reason>`. Audited at Phase 5 by `surface-reviewer` (running in parallel with `plan-reviewer`).
 
 The canonical questions for each row live in [`surface-questions.md`](surface-questions.md) (next to this template) — fill prose here that answers those questions, don't paraphrase them back.
 
@@ -115,6 +111,9 @@ The canonical questions for each row live in [`surface-questions.md`](surface-qu
 ### Convention enforcement level
 <prose: each new structural rule introduced, its Enforcement Escalation Ladder level (L1 arch test / L2 static-analysis rule / L3 runtime / L4 code-review-only with explicit trade-off), and for new methods on existing convention-bearing clients, which host conventions are inherited and where; OR `N/A — <reason>`>
 
+### Client-side state
+<prose: each request that can be re-issued before its answer lands and what discards a superseded response; each watcher, realtime handler or prime that writes state a user gesture also writes, and its mask; what the user sees after each swallowed error; each new interactive element's native control or accessible name and the gate covering it; OR `N/A — no client change` (not acceptable when the Approach lists a component, store or composable)>
+
 ## Acceptance Criteria
 
 Verifiable conditions that must ALL be true for this feature to be complete.
@@ -125,29 +124,30 @@ QA will check each criterion against the implementation.
 | 1 | <user-visible outcome — binary pass/fail> | <how to verify: route to visit, action to take, assertion to check> |
 | 2 | ... | ... |
 
-## Shared Reuse
-<list shared components, services, and patterns being reused — with file paths>
+## Reuse and patterns
 
-## Patterns to Follow
-<reference existing code that does something similar, with file paths>
+<One list. Each line is a file path plus what the implementer takes from it: a helper, component
+or service to **call**, or a sibling whose **shape to mirror**. This is the only place a session
+that starts cold learns which existing code the plan was built on — the Approach names the files
+to create or edit, not the files to copy from.>
+
+- `<path>` — call: <what it provides>
+- `<path>` — mirror: <what shape to copy>
+
+Write "no reuse — building from scratch because X" when there is genuinely nothing; never leave
+the section empty or say "follow project conventions".
 
 ## Migration / Schema Changes
-<if applicable — table changes, new columns, indexes>
+
+<Only when the plan changes the schema — table changes, new columns, indexes. Omit the heading
+otherwise.>
 
 ## Testing Strategy
 
-### Mandatory Rules
-1. **TDD is non-negotiable:** Write failing tests first → implement to make them green → refactor
-2. **Stack-specific testing skills MUST be loaded before writing any test** — the project's testing
-   conventions (mock organisation, AAA format, coverage rules) live in those skills.
-3. **100% coverage** on all new code (or whatever threshold the project enforces)
-4. **Single-run test variants only** — never use watch-mode commands in agent-driven flows.
+<Per-PR test tables only. The standing rules — TDD, the coverage threshold, single-run test
+variants, and loading the project's testing skill before writing a test — live in the repo's
+`CLAUDE.md`, which every session loads; do not restate them here.>
 
-### Testing Philosophy
-Test behavior, not implementation. Every test answers "what can the user do?" not "what
-does the code call internally?"
-
-### Per-PR Test Tables
 <for each PR, include a table with test file names and behavioral test descriptions>
 <test names MUST start with "should" and describe user-visible outcomes>
 <3-6 tests per component — more means you're testing implementation>
@@ -174,6 +174,11 @@ documentation conventions (often a `site/` or `docs/` tree). Common categories w
 | New user-facing feature | landing-page claims |
 | **Any** docs change above | Every mirror of the docs — e.g. an LLM-facing text export (`llms-full.txt` or similar) copied verbatim into the build. A claim fixed in the source docs alone keeps shipping in the mirror; one past fix corrected one of two claim locations and review found the other |
 | Conventions, allowlists, or components this feature deletes or renames | The `CLAUDE.md` entry or design-system reference describing them — a stale description steers the next contributor toward a file that is gone |
+
+This table asks **which** documents change. What they then *claim* is graded after the fact by
+`docs-accuracy-reviewer`, which runs on any branch whose diff touches `{{DOC_PATHS}}`. There is
+no eighth surface row for it: user-facing text is most often edited on branches that wrote no
+plan at all, so a plan question would never reach them and the gate has to sit at review time.
 
 ## Edge Cases
 <cases from the Q&A — how each is handled>

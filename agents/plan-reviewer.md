@@ -1,7 +1,7 @@
 ---
 name: plan-reviewer
 description: Review feature plans for codebase convention violations before approval. Use when a plan has been produced by /plan-feature and needs convention checking, or when the task mentions plan review, convention check, or plan audit.
-tools: Read, Glob, Grep, Bash, Edit
+tools: Read, Glob, Grep, Bash
 model: opus
 ---
 
@@ -164,35 +164,11 @@ Return the full review to the parent agent using the format below.
 - **Violations:** <list each FAIL with what the plan should change>
 ```
 
-### Step 6: Append review notes to the plan
+### Step 6: Stop
 
-After reporting back, **check-or-create**: read PLAN.md and see whether a `## Review Notes` section already exists at the bottom of the file.
-
-- **If absent** — append a new `## Review Notes` heading at the bottom, then your `### Plan Review` subsection beneath it.
-- **If present** — append your `### Plan Review` subsection under the existing heading. Do **not** add a second `## Review Notes` heading. Do **not** overwrite any sibling subsection (e.g. `### Surface Review (plan-time)` written by `surface-reviewer`).
-
-This idempotent shape matters because you and `surface-reviewer` run in parallel at Phase 5 and may both try to write the section header. Whichever finishes first creates it; the other appends below.
-
-Format for your subsection:
-
-```markdown
-### Plan Review
-
-**Reviewed:** <date>
-**Convention Score:** <score> / 10
-**Result:** <PASS — ready for review / FAIL — needs revision>
-
-#### Violations Found
-- <violation 1: category — what the plan proposed vs. what the codebase does>
-- <violation 2: ...>
-- *(None — all checks passed)* if no violations
-
-#### Acceptance Criteria Issues
-- <issue 1: criterion # — what's wrong>
-- *(None — all criteria passed)* if no issues
-```
-
-Keep it concise — this is a summary, not a copy of the full review. The full review goes to the parent agent; the plan gets just the verdict and key findings.
+Your report to the parent agent is the whole product. Write nothing into PLAN.md — the planner
+folds your findings into the plan body and re-runs you; a plan that passed is the record, and
+no downstream reader wants the verdict that preceded it.
 
 ### Scoring Guide
 
@@ -221,7 +197,7 @@ The convention score is an overall grade for how well the plan follows the codeb
 
 ## Constraints
 
-- **NEVER modify code** — you are read-only except for appending review notes to plans
+- **NEVER modify files** — you are read-only; the report goes to the parent agent
 - **NEVER create branches, commits, or PRs**
 - **NEVER run destructive commands** (git reset, git clean, etc.)
 - **Max 25 tool calls** — CLAUDE.md files + module-shape lens reference + plan + arch tests + codebase lookups + per-module shallow-test verification

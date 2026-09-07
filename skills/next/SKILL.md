@@ -20,7 +20,7 @@ following TDD flow, and mark it done with learnings.
 > **Review runs once per branch, not per task.** Do not spawn reviewer agents after each task —
 > per-task reviews burn tokens for near-zero signal (first-pass scores are 9-10 the vast majority
 > of the time). The gate for a task is **verification** (tests + types + lint). Reviewers run
-> once via `/review-branch` before `/pr`.
+> once via `/review-branch` before `/pr`. That skill reports in chat.
 
 ## Step 1: Locate TASKS.md
 

@@ -130,10 +130,10 @@ broken.
 
 ## Step 7: Branch review
 
-Run `/review-branch`. It spawns the two canonical pre-PR reviewers in parallel against the full
-branch diff and writes `REVIEW_CLAUDE.md` into the plan directory for `/pr` to consume. Don't
-spawn reviewer agents directly here — `/review-branch` owns that orchestration, so the two flows
-can't drift apart.
+Run `/review-branch`. It spawns the canonical pre-PR reviewers in parallel against the full
+branch diff and reports in chat for `/pr` to consume in this session. Don't spawn reviewer
+agents directly here — `/review-branch` owns that orchestration, so the two flows can't drift
+apart.
 
 **What to do with the result:**
 
