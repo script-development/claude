@@ -10,5 +10,10 @@
     "session",
     "statusline"
   ],
+  "author": {
+    "name": "bjvle",
+    "url": "https://github.com/bjvle"
+  },
+  "repository": "https://github.com/bjvle/context-economy",
   "license": "MIT"
 }
