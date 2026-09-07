@@ -3,7 +3,7 @@ name: worktree
 description: >
   Cut a fresh git worktree in the current repo and set it up — branch, dependencies, env files,
   ready to work. Repo-agnostic: auto-detects the integration branch and the setup steps, and
-  loads per-repo house rules from references/<repo>.md when that file exists (kendo has one).
+  loads per-repo house rules from references/<repo>.md when you have written one for that repo.
   Handles new work off the integration branch and existing branches you want to resume, fix, or
   review. Then hands back the path and stops; what you do in there is yours.
   Use whenever the user says "cut a worktree", "new worktree", "/worktree", "fresh worktree for
@@ -30,7 +30,8 @@ no remote, use the toplevel directory's basename.
 
 Then look for `references/<repo-name>.md` **in this skill's directory**. If it exists, read it
 now — it overrides every default below and carries the repo's house rules. If it does not exist,
-run on the defaults and say so in the hand-back. Never refuse a repo just because it has no file.
+run on the defaults and say so in the hand-back. Never refuse a repo just because it has no file —
+the catalog ships only `_template.md`, so the no-file path is the normal one.
 
 ## 1 · Name it and pick the base
 
@@ -176,7 +177,13 @@ skill's directory. Structure it as:
 - **House rules** — what matters once work starts (gates, hooks, shipping flow).
 
 Only write down what was verified in that repo, with the reason it is true. A rule without its
-why goes stale silently. `references/kendo.md` is the model.
+why goes stale silently — and because a file here overrides the setup detection outright, the
+skill follows a wrong line rather than falling back.
+
+Copy [`references/_template.md`](references/_template.md) to start. It carries the sections above
+with a note on what each is for, and on which do-nots are worth writing down. The catalog ships
+no real repo's file: those are personal, they live beside your own copy of this skill, and none
+of them is needed to use it.
 
 ## What this skill never does
 

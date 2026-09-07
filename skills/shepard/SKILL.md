@@ -59,7 +59,8 @@ every time; this skill exists for the repos that have none.
 
 Then read `references/<repo-name>.md` **in this skill's directory**. If it exists it overrides every
 default below. If it does not, run on the defaults and say so in the hand-back. Never refuse a repo
-just because it has no file.
+just because it has no file — the catalog ships only `_template.md`, so the no-file path is the
+normal one.
 
 ## The five dispositions
 
@@ -398,7 +399,7 @@ you resolve anything. Reviewers split into two camps and the wrong guess is expe
 
 | Camp | Who resolves | Cost of getting it wrong |
 |---|---|---|
-| **The reviewer resolves** — it replies with its own evidence, then closes the thread (crit works this way) | It does. You only reply. | **Resolving yourself permanently buries the finding.** A resolved thread is treated as settled and never re-read, so the reviewer stops checking whether the fix held. |
+| **The reviewer resolves** — it replies with its own evidence, then closes the thread | It does. You only reply. | **Resolving yourself permanently buries the finding.** A resolved thread is treated as settled and never re-read, so the reviewer stops checking whether the fix held. |
 | **The author resolves** — the reviewer reads resolution state as your signal | You do, under the bars below | An unresolved thread keeps withholding approval |
 
 Default to **not** resolving when you do not know. An unresolved thread costs one repeated
@@ -509,9 +510,14 @@ One watch per PR: check for a running monitor on this PR before arming a second.
 | `[hb]  alive` | nothing has happened for 30 min | nothing |
 | `[end] …` | terminal, the script exited | report and stop |
 
-The bus half covers **every repo announced on town-crier**, not just crit — all of them appear in
-the same ledger. The bus token is read from `$TOWN_CRIER_TOKEN`,
-else from `~/Code/crit/.env`; no token is a degradation, not an error.
+**The bus half is optional, and most repos will never use it.** town-crier is a review ledger a
+repo can announce onto; a repo that does not is watched through GitHub alone and loses nothing.
+Every repo that *is* announced appears in the same ledger, whichever repo it is.
+
+The bus token is read from `$TOWN_CRIER_TOKEN`, else from the env file named by
+`$TOWN_CRIER_ENV_FILE`. That variable's built-in default points at one personal checkout, which
+is a convenience for whoever set it up and nothing more — set `$TOWN_CRIER_ENV_FILE` yourself, or
+just export the token. No token means no bus surface, which is a degradation, not an error.
 
 **The bus is the review surface; GitHub is kept for the per-job CI names.** Once a row is
 attached the script stops emitting the `[pr]` review, comment and decision lines, because the
@@ -585,4 +591,9 @@ hazards — write `references/<repo-name>.md` in this skill's directory:
 - **House rules** — hooks, formatters, testing skills to load, language.
 
 Only write down what was verified in that repo, with the reason it is true. A rule without its why
-goes stale silently. `references/crit.md` is the model.
+goes stale silently — the skill trusts this file over its own defaults, so a wrong line here is
+followed without question.
+
+Copy [`references/_template.md`](references/_template.md) to start. It carries the sections above
+with a note on what each is for. The catalog ships no real repo's file: those are personal, they
+live beside your own copy of this skill, and none of them is needed to use it.
