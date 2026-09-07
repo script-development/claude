@@ -1,6 +1,6 @@
 # Security & Cost Surface — canonical questions
 
-This is the **single source of truth** for the six row questions that:
+This is the **single source of truth** for the seven row questions that:
 
 - the planner answers in PLAN.md's `## Security & Cost Surface` section during Phase 1.6 of `/plan-feature`
 - the `surface-reviewer` agent grades the answers against at plan-time (prose-vs-Approach) and `precedent-reviewer` runs drift detection against at PR-time (prose-vs-code)
@@ -55,11 +55,12 @@ The row covers every surface a client can hit: REST routes **and** broadcast cha
 - Is the rate limit a **named** limiter registration (e.g. `RateLimiter::for()`) with a per-user or per-tenant cap, not the framework default (`throttle:120,1` or equivalent)?
 - For endpoints that consume paid external resources, what's the per-user/per-tenant spend cap?
 - For endpoints that accept redirect-bound `state` parameters (OAuth callbacks, install flows), is the state an **opaque random token** with payload stored server-side? `tenantId|userId|salt`-shaped states leak identifiers through referrer logs, browser history, and proxy logs.
+- For each guard this feature adds or edits (middleware, route binding, ability check, tenant-linkage check), what does it do when the thing it checks is **absent** — no bound route model, a null tenant, a token without a project link? A guard that runs its ability check and skips the linkage check when the binding is missing fails open. Name the branch that throws.
 - For endpoints that find-or-overwrite a row keyed by an externally-controllable identifier (installation_id, customer_id, subdomain, webhook payload id), where's the `if ($existing->tenant_id !== null && $existing->tenant_id !== $current) throw` guard? Unconditional overwrite is a cross-tenant takeover vector.
 
 *Strong answer:* "`POST /api/records/{record}/summarise` — auth: `update` on `Record` (`viewAny` would let anyone with read access pay for a summary). Rate limit: named `summarise-record` limiter at 5/min/user. Spend cap: 20 sessions/tenant/day via the Action's precondition. No redirect-bound state — flow is intra-app. Cross-tenant guard N/A — record is scope-bound by route, not externally-supplied."
 
-*N/A acceptable when:* feature exposes no new routes, all routes are intra-tenant reads, no OAuth/install/webhook callback is added, and no broadcast channel is added, widened, renamed, or removed.
+*N/A acceptable when:* feature exposes no new routes, edits no guard, all routes are intra-tenant reads, no OAuth/install/webhook callback is added, and no broadcast channel is added, widened, renamed, or removed.
 
 ---
 
@@ -70,6 +71,7 @@ Questions:
 - **When** is the audit row written — at press-time, outcome-time, or both? (A press where the downstream call throws and leaves no outcome row also leaves no audit trail unless the press itself is logged.)
 - **What** does it snapshot — which fields, captured from where? Snapshots must be taken at action-time, not by re-querying referenced rows at log-time (the user may have been deleted, the field may have changed).
 - **Which outcomes** does it record — does the logger enumerate failure / expiry / terminate / timeout, or hard-code `status: 'success'` regardless of caller?
+- **Write volume** — how many audit rows (and broadcasts) does one call write, and what bounds it? A per-row logging loop inside a transaction scales with the collection it iterates, not with the request. Name the bound, or the bulk-write shape that replaces the loop.
 - **Variant parity** — if a singular Action exists for this operation, does every variant (bulk, scheduled, cascade-induced) share the same audit hook, or carry a documented exception? `DeleteRecordAction` calls the logger; `BulkDeleteRecordsAction` must too.
 
 *Strong answer:* "Press audit: `SummariseRecordAction::execute` writes an audit row immediately on press, snapshotting `user.first_name + last_name + email + role + permission_set_id` into `actor_snapshot` from `$actor`, not re-queried. Outcome audit: `HandleSessionWebhookAction::handleOutcome` writes a second row with `status ∈ {success, failed, max_iterations, terminated, expired}` — the logger signature accepts the outcome enum, no hard-coded success. Variant parity: N/A — summarise is per-record, no bulk variant."
@@ -113,9 +115,42 @@ Questions:
 
 ---
 
+## Row 7 — Client-side state
+
+The rows above are written for the backend. This row is the client half: every place a page or
+store replaces state it did not compute itself, and every element the user must reach. Frontend
+files carry a large share of review findings on a typical branch, and none of the other six rows
+asks about them.
+
+Questions:
+
+- **In-flight ordering** — which requests can be re-issued before the previous answer lands (a search box, a preview, a page fetch, a filter change)? For each, what discards a response that is no longer the latest? Hand-rolled counters are the shape that keeps coming back; a shared latest-request composable is the seam. A plain `await` then assign is the defect.
+- **Re-entry and self-write** — which watchers, realtime handlers or mount-time primes write into state a user gesture is also writing? Name the mask — a pending-guard, a self-write ref cleared on the next tick — or the buffer that keeps an in-flight change from being reverted. Cite the repo's own convention for this if it has one.
+- **Failure leaves visible state right** — for each `catch`, what does the user see after it runs? A swallowed error is a defect when the visible state the request was going to change is left wrong: the spinner is not cleared, the list stays half-replaced, the previous item is still shown, or a disabled control is never re-enabled. Name the state that is reset on the failure path.
+- **Reachable and named** — for each new interactive element: is it a native control, or a `div` with a role? Does a new dialog, checkbox or icon-only control carry an accessible name? Which component owns the page's `h1`, and does it render on every breakpoint? Name the arch or a11y gate that covers your element, or the reason none does.
+
+*Strong answer:* "Palette search: the latest-request composable wraps `searchRecords`; a response whose ticket is not current is dropped before `results` is assigned, and clearing the query bumps the ticket so a late response cannot repopulate an empty box. Failure: the catch resets `results` to `[]` and `searchFailed` to `true`, rendering the existing alert row; no spinner survives it. Re-entry: the `keydown` listener registered on mount is removed on unmount. Reachable: the trigger is the design system's icon button with a label; the dialog carries `aria-labelledby` on its heading; the page `h1` stays with the shell component, unchanged. Proof: `CommandPalette.spec.ts` 'should ignore a search response that resolves after the query changed'."
+
+*N/A acceptable when:* the feature touches no component, no store, and no composable. A backend-only plan writes `N/A — no client change`; a plan whose Approach lists a component file cannot.
+
+---
+
+## Proof — every row ends with the test that would catch it
+
+Each row's prose ends with a **Proof** line: the spec file and case name that fails if the
+row's answer is wrong, or `Proof: N/A — <reason>` when the row itself is N/A. "Covered by the
+existing suite" is THIN; name the case. A mock that replays the answer cannot fail: a unit test
+whose transaction mock invokes the closure once cannot prove retry safety, and a cache-prefix
+test on an in-memory driver cannot prove isolation. A test that exists but cannot fail is the
+largest single theme in review findings, ahead of every defect it was written to catch. The
+Proof line is written at plan time and checked by `surface-reviewer` at PR time against the
+diff, the same way the row prose is.
+
+---
+
 ## How the planner uses this file (Phase 1.6)
 
-Read each row, write a prose paragraph in PLAN.md's `## Security & Cost Surface` section answering the row's questions for *your* feature. Mark `N/A — <one-line reason>` if no question on the row applies — but check the N/A clause first; agentic / paid / cross-boundary features rarely qualify.
+Read each row, write a prose paragraph in PLAN.md's `## Security & Cost Surface` section answering the row's questions for *your* feature, and end it with the Proof line. Mark `N/A — <one-line reason>` if no question on the row applies — but check the N/A clause first; agentic / paid / cross-boundary features rarely qualify.
 
 Paraphrasing the questions back instead of answering them is THIN, not OK (Phase 4d rule). The `surface-reviewer` agent flags THIN prose at Phase 5.
 
@@ -123,4 +158,4 @@ Paraphrasing the questions back instead of answering them is THIN, not OK (Phase
 
 Loads this file once at Step 1. For each row, compares the planner's prose against what the Approach section says the implementation will do.
 
-At PR-time, `precedent-reviewer` reads the `### Surface Review (plan-time)` notes and holds the shipped code against them. A row that PASSed at plan-time and fails against the diff is **drift** — flagged BLOCKER regardless of underlying severity.
+At PR-time, `precedent-reviewer` holds the shipped code against the Surface prose itself. A row that passed at plan-time and fails against the diff is a contradicted claim in that prose; the reviewer weighs it by what the divergence costs, with a contradicted safety or cost claim as the blocker case. No plan-time verdict is persisted for it to read — the prose is the record.

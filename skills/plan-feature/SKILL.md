@@ -185,7 +185,7 @@ Load [`references/quality-gates.md`](references/quality-gates.md) for the ration
 | **Module shape** — every new in-scope module has the **shallow-test reckoning** filled in (not just a "Deep" label); any shallow-and-suspect module has been demoted or promoted | ✓ / ? / ✗ | Phase 1d output — a row that says "Deep" without showing the "method or parameter for the next use case?" reckoning counts as ✗, not ✓ |
 | **Risk / uncertainty** — what could go wrong, what's unknown | ✓ / ? / ✗ | usually missing — interrogate |
 
-Output the table verbatim to the developer with marks and citations filled in, and carry it into PLAN.md's `## Planning Evidence` section at Phase 4c. A table that exists only in chat is invisible to every downstream reviewer, which defeats the point of citing sources.
+Output the table verbatim to the developer with marks and citations filled in. It stays in the planning conversation: it is a gate on the planner, and the sections it proves complete (Goal, Acceptance Criteria, Scope, Edge Cases, Reuse and patterns) are what PLAN.md carries. A cold implementing session needs those sections, not the proof they were gathered.
 
 **Phase 1.6 comes next either way — it is never skipped.** After it:
 
@@ -194,13 +194,13 @@ Output the table verbatim to the developer with marks and citations filled in, a
 
 ## Phase 1.6: Security & Cost Surface (mandatory, fail-closed)
 
-Produce a `## Security & Cost Surface` section in PLAN.md with **six prose paragraphs**, each answering the questions for one row — or `N/A — <one-line reason>` when no question on the row applies. **You may not proceed past Phase 1.6 with any unanswered question on a populated row.**
+Produce a `## Security & Cost Surface` section in PLAN.md with **seven prose paragraphs**, each answering the questions for one row and ending with its Proof line — or `N/A — <one-line reason>` when no question on the row applies. **You may not proceed past Phase 1.6 with any unanswered question on a populated row.**
 
 The canonical questions and worked examples live at [`references/surface-questions.md`](references/surface-questions.md) — load it now. It is the single source of truth shared with the `surface-reviewer` agent at Phase 5. The rows are deliberately question-shaped, not field-shaped, so they generalise to feature shapes not seen yet.
 
 Architecture tests do not cover this. They cover *code shape* — not the flow of untrusted bytes, billing dollars, audit fidelity, partial-failure state space, silent UX degradation, or enforcement of conventions the feature introduces. [`references/quality-gates.md`](references/quality-gates.md) carries the rationale and the sycophancy guards (paraphrasing the questions back is THIN, not OK; an LLM-touching feature cannot mark Row 1 N/A).
 
-Output the six paragraphs to the developer for confirmation, then carry them into PLAN.md at Phase 4c. The `surface-reviewer` agent grades them at Phase 5.
+Output the seven paragraphs to the developer for confirmation, then carry them into PLAN.md at Phase 4c. The `surface-reviewer` agent grades them at Phase 5, and `precedent-reviewer` holds them against the diff at PR time — this is the one part of PLAN.md with a reader after the branch is built.
 
 ## Phase 2: Interrogate
 
@@ -325,19 +325,19 @@ Load [`references/quality-gates.md`](references/quality-gates.md) for the ration
 |---|---|
 | Goal | one sentence; describes user-visible outcome, not implementation |
 | Key Design Decisions | ≥ 1 row per non-trivial new module; every choice cites a concrete codebase reference |
-| Planning Evidence | the Phase 1.5 gap table, all eight rows ✓ with their quoted sources |
 | Scope — In | explicit list, not "the feature" |
 | Scope — Out | ≥ 1 explicit non-goal |
-| Sweep Inventory | every cross-cutting rule the plan adds has its sibling-site table (from the Phase 1.4 grep), zero unmarked rows; **or** explicit `N/A — no cross-cutting rule added` |
-| Security & Cost Surface | six rows, each a prose answer to the row's questions or `N/A — <reason>`; carried forward from Phase 1.6 |
+| Sweep Inventory | present only when the plan adds a cross-cutting rule; then every such rule has its sibling-site table (from the Phase 1.4 grep), zero unmarked rows. No rule added → no heading |
+| Security & Cost Surface | seven rows, each a prose answer to the row's questions ending in a Proof line, or `N/A — <reason>`; carried forward from Phase 1.6 |
 | Approach | enumerates files/components in implementation order |
 | Acceptance Criteria | ≥ 3 verifiable rows with a Verification column filled in |
-| Shared Reuse | ≥ 1 entry **or** an explicit "no reuse — building from scratch because X" line |
-| Patterns to Follow | ≥ 1 file path; not "follow project conventions" |
-| Testing Strategy | per-PR test table with named test files, behavioural descriptions, and a **red case** per test ("fails when ___" — unstatable red case means the test is decoration); every new gate/ban/allowlist names its committed negative fixture; every new test file names the CI job that runs it |
+| Reuse and patterns | ≥ 1 file path marked call or mirror, **or** an explicit "no reuse — building from scratch because X" line; not "follow project conventions" |
+| Testing Strategy | per-PR test table with named test files, behavioural descriptions, and a **red case** per test ("fails when ___" — unstatable red case means the test is decoration); every new gate/ban/allowlist names its committed negative fixture; every new test file names the CI job that runs it. No restated standing rules (TDD, coverage, single-run variants, testing-skill loading) — the repo's `CLAUDE.md` carries those |
 | Edge Cases | ≥ 3 cases drawn from the Phase 1.5 ✓ Edge Cases evidence |
 | Risks | ≥ 1 specific risk; not "the implementation may have bugs" |
-| Wireframes / Migration / Site Docs Sync | substance OR explicit `N/A — <reason>`; Site Docs Sync marks each doc surface **and its mirror** (e.g. an LLM-facing text export of the docs, if the repo ships one) Update / N/A per row |
+| Wireframes / Site Docs Sync | substance OR explicit `N/A — <reason>`; Site Docs Sync marks each doc surface **and its mirror** (e.g. an LLM-facing text export of the docs, if the repo ships one) Update / N/A per row |
+| Migration / Schema Changes | present only when the schema changes; then the table/column/index list. No schema change → no heading |
+| DECISIONS.md entries | each 5–10 non-blank lines, heading included, in the Context / Decision / Rejected shape of [`decisions-template.md`](references/decisions-template.md); a longer entry is split or trimmed |
 | Hedge parentheticals | Zero `(or whatever)` / `(TBD)` / `(or X)` hedges on load-bearing claims. A hedge papers over a decision you owe — decide it and cite it (Phase 1.4), or escalate via `AskUserQuestion`. |
 
 When every row is OK, proceed to Phase 5.
@@ -347,11 +347,15 @@ When every row is OK, proceed to Phase 5.
 **Before showing the plan to the developer**, spawn **two reviewers in parallel** against the saved PLAN.md:
 
 - `plan-reviewer` — scores 1-10 against codebase conventions (enums, auth, module shape, arch tests). Owns the convention bar.
-- `surface-reviewer` — scores 1-10 against the six question-shaped rows of the Security & Cost Surface section, with `mode: "plan"`. Owns the security / cost / audit / lifecycle / enforcement bar.
+- `surface-reviewer` — scores 1-10 against the seven question-shaped rows of the Security & Cost Surface section, with `mode: "plan"`. Owns the security / cost / audit / lifecycle / enforcement bar.
 
 **Spawn both in a single message with two `Agent()` calls** so they run concurrently. Do not issue them sequentially — if parallel spawning is unavailable in this environment, stop and say so instead. The reviewers are designed to run on a static snapshot of PLAN.md at the same moment; sequencing them lets the second see partial edits from the first and undermines the independent-context property that makes the dual-spawn valuable.
 
-Both must score ≥ 7 to proceed. Below 7 on either, fix the relevant section of the plan and re-run that reviewer until it passes. The two reviewers exist because you'll rationalise your own design choices — context-free agents won't. They probe different surfaces (codebase conventions vs cross-cutting non-functional gaps), so a clean score on one doesn't substitute for the other.
+Both must score ≥ 7 to proceed. The two reviewers exist because you'll rationalise your own design choices — context-free agents won't. They probe different surfaces (codebase conventions vs cross-cutting non-functional gaps), so a clean score on one doesn't substitute for the other.
+
+**Below 7 on either, the plan body changes before anything re-runs.** Each reviewer returns its findings to you in chat and writes nothing. Take every finding and fold it into the section it names — correct the citation, restructure the module, rewrite the row prose, record a reversed call in DECISIONS.md — then re-run that reviewer. The plan carries no `## Review Notes` and no verdict: a downstream reader wants the plan that passed, not the history of how it got there. One plan reached 1225 lines under the old rule, 769 of them ten rounds of appended notes.
+
+**Two failing re-runs, then stop and ask.** If a reviewer is still below 7 after two re-runs, the disagreement is a design call, not a convention slip — on that same plan, rounds three to five were reviewers finding new faults in the fixes for round two. Put the open finding to the developer with `AskUserQuestion`, recommending an option, and continue only on their answer.
 
 Then present the plan + both reviewer reports to the developer and ask: "Does this look good?". When approved, update PLAN.md `Status: Approved`.
 

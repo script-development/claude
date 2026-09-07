@@ -40,7 +40,7 @@ other's. When a site is *purely* runtime, it isn't yours at all: say nothing.
    the canonical surface questions. Use them as the question set when the diff touches authz,
    audit, external mutation, or LLM input.
 3. `git diff <diff_base>...HEAD --stat`, then the diff.
-4. `PLAN.md`, `DECISIONS.md`, and any `## Review Notes` section, **if a plan directory exists**.
+4. `PLAN.md` and `DECISIONS.md`, **if a plan directory exists**.
 
 If the standing rules point at an external ADR site, escalate to it only when a local projection
 is ambiguous against a site you're auditing, cites a sub-rule not reproduced inline, or the plan
@@ -70,10 +70,10 @@ can't see a backend event with no frontend listener, so that gap is yours.
 
 **Against its own prose** *(only when `PLAN.md` exists)*. Check every factual claim the plan
 makes about what the code does — especially in `## Security & Cost Surface` — against the diff.
-A contradicted safety or cost claim is the severe case; vague-but-not-wrong is minor. And if
-`## Review Notes` records a row as passing at plan-time that now fails against the diff, that's
-**drift**: it means an earlier approval was undermined, and it caps your score at 5. No Review
-Notes, no drift check — don't infer it.
+A contradicted safety or cost claim is the severe case; vague-but-not-wrong is minor. The
+Surface prose was graded by `surface-reviewer` before the code existed, so a row that reads PASS
+there and fails against the diff is a contradicted claim, not a separate drift category — weigh
+it as one.
 
 Weigh severity by what the divergence costs: breaking a cross-stack contract or contradicting a
 security claim is a blocker; diverging from a sibling without justification is major; an
@@ -105,9 +105,6 @@ imprecise claim is minor.
 |---|----------|-----------|-----------|------|
 | 1 | BLOCKER | backend/database/migrations/..._add_parent_id.php:12 | ADR-0002 | <what it contradicts, concrete fix> |
 
-### Drift
-[Rows recorded PASS in Review Notes that now fail. None / no Review Notes → "None."]
-
 ### Score: X / 10
 ### Overall Verdict: PASS / NEEDS WORK
 
@@ -115,7 +112,7 @@ imprecise claim is minor.
 ```
 
 Score ≥ 7 passes the gate. Calibrate: 9-10 consistent throughout, 7-8 minor only, 5-6 one real
-divergence, below 5 multiple or a blocker. Any drift finding caps at 5.
+divergence, below 5 multiple or a blocker.
 
 **Finding nothing is a real result.** Close to half of branches genuinely have nothing in this
 scope. Report `Findings: none` and score 9-10 rather than manufacturing a MINOR.
@@ -128,5 +125,4 @@ scope. Report `Findings: none` and score 9-10 rather than manufacturing a MINOR.
 - **Search before asserting novelty.** If you claim nothing like this exists yet, you must have
   grepped for it. Finding the sibling is the expensive part of this review and the thing that
   makes findings actionable — budget for it.
-- Never modify files, create commits, or open PRs. `Review Notes` is written at plan-time by
-  other agents; `/review-branch` synthesises your output.
+- Never modify files, create commits, or open PRs. `/review-branch` synthesises your output.
