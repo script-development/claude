@@ -944,3 +944,236 @@ cd <project-b> && claude -p "Reply with just the word OK." --exclude-dynamic-sys
 
 `--output-format json` returns `message.usage` for the single request directly — no transcript
 parsing needed for a one-turn `-p` session.
+
+---
+
+## Finding #13, 2026-09-07 — `PreCompact` can fire with no compaction behind it; when it does lead to compaction, it blocks with no observed timeout
+
+**Question.** A live probe of four claims about the `PreCompact` hook, asked while scoping a
+redesign that would write a fresh handoff at compaction time instead of at an earlier, easily-stale
+`Stop`-hook boundary: does the harness block compaction (and the paired
+`SessionStart(source:"compact")`) on `PreCompact` completing; does that blocking have a timeout;
+does `PreCompact`'s live payload match `mission_control`'s report
+(`reports/2026-08-24-harness-automation-surface.md`, finding F3), which derived it from static
+binary-string extraction rather than a live fire; and is a file `PreCompact` writes just before
+returning reliably visible to the `SessionStart(source:"compact")` that follows it.
+
+**Method.** `claude-haiku-4-5-20251001`, `--autocompact 100000` (the CLI's minimum), against an
+isolated scratch project with its own `.claude/settings.json` registering a `PreCompact` hook
+(logs its full input payload plus entry/exit timestamps, sleeps for a duration set by an env var,
+writes a `precompact.done` marker before exiting) and a `SessionStart` hook (on `source:"compact"`
+only: logs its own entry timestamp and whether the marker is already present). Resident context was
+pushed over the threshold with base64-random filler piped via stdin (per this doc's own finding #9/
+#10 methodology — repetitive filler tokenizes far too dense to reach a target size predictably),
+using `claude -p` then `claude -p -c` to continue the same session. Six `-p` calls total, ~$0.50.
+Scratch project and the `~/.claude/projects/*compact-probe-2*` transcript directories it created
+were deleted immediately after, so there is no on-disk artifact to cite by `path:line` — re-derive
+via the method above rather than looking for the original logs.
+
+**1. `PreCompact` firing does not mean compaction happens in that request.** Observed twice,
+identically: the request that first pushes resident context over the threshold (~119k tokens
+against a 100k `--autocompact` window) fires `PreCompact` at the end of that turn, but no
+`SessionStart(source:"compact")` follows — the transcript is still uncompacted. The *next*
+`-p -c` invocation starts with an ordinary `"resume"`-sourced `SessionStart` (context still ~119k),
+fires a **second** `PreCompact` mid-request, and only that second firing is followed by the real
+`SessionStart(source:"compact")`. Within a firing that does lead to compaction, ordering is
+strictly sequential — the hook's own exit timestamp always precedes the next event, confirming real
+blocking there. But firing alone is not evidence that a compaction is about to complete behind it.
+
+**2. No timeout observed.** Reran with the hook sleeping 65s — past the ~60s figure commonly cited
+as a hook default. It ran the full 65.04s (entry 09:49:28.913 → exit 09:50:33.951) with no kill, and
+`SessionStart(source:"compact")` still followed roughly 10s later. This eliminates the ~60s default
+as a ceiling for `PreCompact` specifically; it does not establish where, or whether, one exists.
+
+**3. Payload mostly matches F3, but the "universal base payload" claim doesn't extend to
+`PreCompact`.** Live JSON carried `session_id`, `transcript_path`, `cwd`, `prompt_id`,
+`hook_event_name:"PreCompact"`, `trigger:"auto"`, `custom_instructions:null` — matching F3's
+static extraction. But finding F5 in the same `mission_control` report claims `permission_mode`,
+`agent_id`, `agent_type` and `effort` as part of "the base payload every event extends"; all four
+were **absent** from the live `PreCompact` payload, not merely null-valued. F5's generalization does
+not hold for this event.
+
+**4. No race between the marker and the paired read.** `precompact.done` was written before
+`PreCompact`'s own exit in every run, and the `SessionStart(source:"compact")` that followed (same
+`prompt_id`, confirming the pairing this doc's earlier compact-injection work established) always
+found it present.
+
+**Design implication, not itself a measurement.** Because `PreCompact` can fire on a turn that
+never compacts, a handoff-write wired directly to every `PreCompact` firing would sometimes run for
+nothing, or run twice for one real compaction. The firing that's safe to act on is the one followed
+by compaction — which `PreCompact` itself cannot know in advance, only `SessionStart(source:"compact")`
+can confirm after the fact. That reopens rather than closes the question of *where* the pre-compaction
+transcript access `PreCompact` has gets paired with the "a compaction genuinely happened" guarantee
+only `SessionStart(source:"compact")` carries.
+
+**What this does not settle.** n=2 for the double-firing pattern and n=1 for the timeout probe — no
+attempt was made to find where a real ceiling starts, only that 65s is under it. Whether the
+double-firing is deterministic (always exactly one wasted `PreCompact` per compaction) or can chain
+further on a slower-growing session is untested. And nothing here establishes *why* the first
+`PreCompact` fires without compacting — only that it does, twice, identically.
+
+### Reproduction
+
+Not preserved on disk (scratch project and its session transcripts were deleted per this repo's own
+cleanup discipline) — re-derive from the method paragraph above: a project-local `PreCompact` +
+`SessionStart` hook pair that timestamp and log their own payloads, `claude -p` / `claude -p -c` on
+`claude-haiku-4-5-20251001` with `--autocompact 100000`, base64-random stdin filler to cross the
+threshold, and a `PRECOMPACT_SLEEP` env var to vary the hook's own runtime across probes.
+
+---
+
+## Finding #14, 2026-09-07 — a real handoff-authoring turn costs 13.7k–64.6k tokens, measured from the existing corpus rather than a fresh probe
+
+**Question.** `docs/design.md`'s write-trigger invariant (`T + fat_turn + authoring_turn <
+effective_window - 13_000`, D10) names `authoring_turn` — the token cost of the turn a forced
+`/handoff` write actually runs — but had never measured it; the only figure on record was F4b's
+qualitative "an unscoped Read or a wide grep can add 50k+", about turns in general, not this one
+specifically. Since the write-trigger has been firing in production for weeks, this asks whether
+the answer already exists in past sessions rather than needing a new live probe.
+
+**Method.** Searched every `*.jsonl` under `~/.claude/projects/` (not just this repo — the shared
+hooks run in `kendo`, `kendo-2` and `mission-control` too) for a `Write`/`Edit` to the canonical
+handoff store (`*/.claude/context-economy/handoffs/*.md` or the older `*/.claude/handoff/*.md`) or a
+`Skill{handoff}` invocation. 61 candidate turns found across 24 sessions; excluded skill-invocation
+turns that don't do the write themselves, false positives (turns whose *other* tool calls merely
+touched files like `design.md` or `verify-handoff.sh` that happen to mention "handoff"), and turns
+missing a usable pre-turn usage record. **20 clean initial-authoring turns remained**, one per
+session. For each: dedupe `assistant` records by `requestId` (this doc's own standing trap, findings
+#10/#13), take `before_total` as the last usage sum strictly before the turn starts (a real user
+message, or the `Stop`-hook block that forces the write — F4/F10) and `after_total` as the last usage
+sum at the write itself; `delta = after - before`.
+
+**Result.**
+
+```
+session     project           delta   tools
+7658c602    kendo             13,698    3
+7310dc74    kendo-2           14,610    3
+8fd0710d    kendo             20,064    8
+033afa53    mission-control   20,447    5
+367aef74    mission-control   21,658    5
+7198be60    mission-control   22,125    4
+10aaa0fe    mission-control   22,318    7
+7db65f0d    mission-control   22,624    7
+3b6df54f    kendo-2           23,472    7
+49681234    mission-control   23,905    7
+4e720b15    mission-control   26,145    6
+ccc601ec    mission-control   28,132    8
+b298c8fd    context-economy   31,398    9
+c597a1b6    context-economy   32,680   12
+07dd28fb    context-economy   32,885   18
+1ff6cff8    mission-control   38,633   16
+45a76607    mission-control   41,274    7
+be77ebc2    context-economy   46,630   19
+c99b1e61*   mission-control   53,166   25
+593f5e02    context-economy   64,618   19
+```
+
+**n=20, min=13,698, max=64,618, median=25,025, mean=30,024.** One outlier flagged, not folded into
+the headline range: `c99b1e61` (53,166 tokens, 25 tool calls, marked `*`) opens with a
+`ScheduleWakeup` call and several `Read`/`Edit` pairs unrelated to the handoff *before* the write —
+mixed work in the same turn, not pure authoring cost. Excluding it: max=46,630, mean=28,435, median
+essentially unchanged. Four sessions also had smaller, later same-session *revision* turns (5,024 /
+5,244 / 8,226 / 18,056 tokens) — reported separately since those are follow-up edits, not the forced
+initial write the invariant is about.
+
+**What this settles.** `authoring_turn` is not the unbounded "could be anything" the invariant's
+naming implied — it is empirically 13.7k–64.6k across a real, varied corpus (three different
+projects, 20 independent sessions, tool-call counts from 3 to 25). Combined with F4b's existing
+`fat_turn` figure, a write-trigger needs on the order of **90k–115k tokens of slack** below
+`compact_threshold` to survive a worst-case authoring turn stacked on a worst-case fat turn — a
+concrete number where the invariant previously had a name and a qualitative worry.
+
+**What this does not settle.** The corpus is retrospective and self-selected: it only contains turns
+where the write-trigger already fired and completed successfully, so it says nothing about turns
+that might have been *larger* than what a session's own configured `T` allowed for (if any such
+turn had blown through the ceiling into an actual compaction race, the resulting handoff would most
+likely never have been written cleanly enough to match this measurement's file-path signal, and
+would be invisible to this method — a survivorship gap, not a contradiction of the range above). The
+outlier's contamination was judged by reading its tool-call sequence, not by an objective threshold;
+a stricter or looser contamination bar could move it in or out of the clean sample. And all 20 turns
+ran under this repo's own current `/handoff` skill and citation-gate implementation — a heavier or
+lighter future version of that skill would shift the range without this measurement knowing.
+
+### Reproduction
+
+```
+# For each project directory under ~/.claude/projects/*/*.jsonl:
+grep -l 'context-economy/handoffs/\|\.claude/handoff/' *.jsonl        # candidate sessions
+# then, per candidate file: locate the Write/Edit tool_use to that path, walk back to the
+# preceding real user message or Stop-hook block reason, dedupe assistant usage by requestId,
+# and diff the last usage sum before that point against the last usage sum at the write.
+```
+
+No script was saved for this pass — re-derive with the method above rather than hunting for one.
+
+---
+
+## Finding #15, 2026-09-07 — `fat_turn` is bimodal; the mid-session tail runs 3–6x above F4b's qualitative "50k+"
+
+**Question.** `docs/design.md`'s write-trigger invariant (`T + fat_turn + authoring_turn <
+effective_window - 13_000`, D10) names `fat_turn` — the token cost a single turn can add via a wide
+`Read`/grep or similar — but the only figure on record was `mission_control`'s F4b, a qualitative
+illustration ("one turn containing an unscoped Read or a wide grep can add 50k+"), not a measured
+distribution. This asks whether the historical corpus already answers it, the same way finding #14
+answered `authoring_turn`.
+
+**Method.** Corpus-mined, not live-probed (explicit user preference, same as #14). A "turn" is
+F4b's own definition: everything between one real `type:"user"` message (never a `tool_result`
+wrapper) and the next, spanning 1..N assistant tool-use requests. Per turn: dedupe `assistant`
+records by `requestId`, keeping the *last* occurrence per id (findings #10/#13/#14's standing
+trap); `before_total` = last deduped usage sum strictly before the turn's start; `after_total` =
+last deduped usage sum at the turn's end; `delta = after_total - before_total`. Sampled the largest
+transcript files (by size) across the same four projects finding #14 used — `context-economy`,
+`kendo`, `kendo-2`, `mission-control` — 12 sessions each, 48 sessions total, every ordinary turn in
+each (not just handoff-authoring turns). 736 turns collected; 2 excluded as post-compaction-boundary
+artifacts (the reset itself, not a fat turn).
+
+**Result.** Two populations, and they must not be pooled:
+
+- **Zero-baseline turns (n=12)** — a session's entire run from a cold start to its first real turn
+  boundary (autonomous/single-prompt sessions with no further human input in between). Median
+  208,403, max 952,946. This is whole-session growth, not what `fat_turn` means in the invariant —
+  excluded from the headline figure.
+- **Mid-session turns (n=724)** — the population the invariant actually cares about, a turn
+  occurring once a session is already substantially along (the realistic scenario near a compaction
+  threshold): **median 6,707, p90 34,897, p95 59,367, p99 158,290, max 323,673.**
+
+Every one of the top 10 mid-session turns is a long, uninterrupted autonomous work stretch (22–259
+tool calls, `Bash`/`Edit`/`Write`-heavy — e.g. the max, `mission-control/8681a850` at 323,673 tokens
+over 259 tool calls: 191 `Bash`, 60 `Edit`, 6 `Write`). None of the top 10 is a single wide
+`Read`/grep the way F4b's illustration framed it; the real driver is sustained multi-step agentic
+work that never pauses for a final answer, not one big file operation.
+
+**What this settles.** F4b's "50k+" is not a conservative floor — it undercounts the real tail by a
+wide margin. It sits just below p90 (34,897) and already below p95 (59,367); p99 (158,290) and max
+(323,673) run 3–6x higher. A `T` sized against "50k+" as a worst case is exposed at exactly this
+repo's own common working pattern (autonomous refactor/fix/probe stretches), not some rare edge
+case. Combined with finding #14's `authoring_turn` (13,698–64,618, median 25,025): designing for
+`fat_turn`'s p99 alone (158,290) plus `authoring_turn`'s clean-corpus max (46,630, finding #14's
+outlier-excluded figure) is already ~205k tokens of required slack — noise against a 1M window's
+~787k slack, but close to the entire budget of a 200k-class window once a margin is added.
+
+**What this does not settle.** *Which* percentile to design `T` against is not decided by this
+measurement — that is a design choice about acceptable failure rate, not a fact to derive. The
+corpus is retrospective and self-selected the same way #14's was: it can only contain turns that
+completed and got logged, so a turn that grew large enough to race an actual compaction may be
+underrepresented (a survivorship gap, not a contradiction of the range above). Sampling picked the
+largest transcript files per project by size, which biases toward sessions with more (and likely
+more varied) turns, not a uniform random sample of all turns ever recorded — the true population
+distribution could differ somewhat, though the bimodal split itself (cold-start vs. mid-session) is
+a structural fact of how turns are bounded, not an artifact of this sampling choice.
+
+### Reproduction
+
+```
+# For each of context-economy, kendo, kendo-2, mission-control: pick the 12 largest *.jsonl
+# files under ~/.claude/projects/<project-dir>/. Within each, walk records in order, splitting
+# into turns at each genuine type:"user" message (excluding tool_result-only wrapper messages).
+# Per turn: dedupe assistant records by requestId (keep last), diff last usage sum at turn end
+# against last usage sum strictly before turn start. Exclude turns that are themselves the
+# immediate post-compaction boundary. Report the cold-start (first turn per session) and
+# mid-session (all others) populations separately.
+```
+
+No script was saved for this pass — re-derive with the method above rather than hunting for one.

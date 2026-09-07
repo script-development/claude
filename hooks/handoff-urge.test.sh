@@ -313,6 +313,91 @@ reset_latches
 assert_contains 'with nothing in flight the instruction says nothing about it' \
     '.reason' 'once per session' "$(payload "$deep" sess-nobg)" CTX_COMPACT_THRESHOLD_TOKENS=900000
 
+# --- The written_at_tokens sidecar ------------------------------------------
+#
+# Once this session's own latch is set, the hook watches for the handoff it demanded actually
+# landing on disk and records the resident size AT THAT MOMENT into a sidecar beside the latch --
+# the figure the `compact` read leg needs to measure how much grew between the write and an
+# eventual auto-compaction. Exercised against a REAL scratch git repo and a real handoff store
+# directory, because git-worktree resolution and store lookup are the mechanism under test here,
+# not something worth faking.
+
+command -v git >/dev/null 2>&1 || { echo "git is required" >&2; exit 2; }
+
+# shellcheck source=../lib/handoff-store.sh
+. "$script_dir/../lib/handoff-store.sh"
+
+sidecar_repo="$fixture/sidecar-repo"
+mkdir -p "$sidecar_repo"
+git -C "$sidecar_repo" init -q -b main
+git -C "$sidecar_repo" -c user.email=t@example.com -c user.name=t commit -q --allow-empty -m init
+sidecar_store="$fixture/sidecar-store"
+mkdir -p "$sidecar_store"
+
+HANDOFF_STORE_DIR="$sidecar_store"
+sidecar_main=$(git -C "$sidecar_repo" worktree list | head -1 | awk '{print $1}')
+sidecar_handoff=$(handoff_store_path "$sidecar_main" main)
+unset HANDOFF_STORE_DIR
+
+sidecar_payload() {  # sidecar_payload <session-id> [stop_hook_active] [cwd]
+    payload "$deep" "$1" "${2:-false}" "$(jq -nc --arg c "${3:-$sidecar_repo}" '{cwd:$c}')"
+}
+
+sidecar_file() { printf '%s/.claude/state/handoff-trigger/%s.written' "$fixture/home" "$1"; }
+
+# Arrange — arm, so the latch exists for the rest of this section.
+reset_latches
+run "$(sidecar_payload sess-sc-1)" CTX_COMPACT_THRESHOLD_TOKENS=900000 HANDOFF_STORE_DIR="$sidecar_store" >/dev/null
+
+# Act & Assert — nothing has been written to the store yet, so the next Stop must stay silent
+# AND must not manufacture a sidecar out of no evidence.
+assert_silent 'the Stop right after arming is itself silent' \
+    "$(sidecar_payload sess-sc-1 true)" CTX_COMPACT_THRESHOLD_TOKENS=900000 HANDOFF_STORE_DIR="$sidecar_store"
+if [ ! -e "$(sidecar_file sess-sc-1)" ]; then
+    passed=$((passed + 1)); echo "ok   no sidecar is written before the handoff exists"
+else
+    failed=$((failed + 1)); echo "FAIL no sidecar is written before the handoff exists — one was written anyway"
+fi
+
+# Arrange — the handoff lands, necessarily after the latch (this write happens second).
+mkdir -p "$(dirname "$sidecar_handoff")"
+printf -- '---\nbranch: main\ncheckout: %s\n---\n\nbody\n' "$sidecar_repo" > "$sidecar_handoff"
+
+# Act
+run "$(sidecar_payload sess-sc-1 true)" CTX_COMPACT_THRESHOLD_TOKENS=900000 HANDOFF_STORE_DIR="$sidecar_store" >/dev/null
+
+# Assert
+if [ -e "$(sidecar_file sess-sc-1)" ]; then
+    passed=$((passed + 1)); echo "ok   the sidecar appears once the handoff's mtime moves past the latch"
+    got=$(jq -r '.written_at_tokens' "$(sidecar_file sess-sc-1)" 2>/dev/null)
+    if [ "$got" = "250000" ]; then
+        passed=$((passed + 1)); echo "ok   written_at_tokens is the resident size at that Stop"
+    else
+        failed=$((failed + 1)); echo "FAIL written_at_tokens is the resident size at that Stop — got [$got]"
+    fi
+else
+    failed=$((failed + 1)); echo "FAIL the sidecar appears once the handoff's mtime moves past the latch — none written"
+fi
+
+# An unrelated repo shares the same branch name but resolves to a DIFFERENT store filename (the
+# hash half of `handoff_store_name` is keyed on the worktree path), so the only handoff in the
+# store is a "recent" pick for it, never "exact". A recent pick must never populate the sidecar --
+# misattributing someone else's write would poison the coverage check with the wrong figure.
+reset_latches
+other_repo="$fixture/sidecar-repo-other"
+mkdir -p "$other_repo"
+git -C "$other_repo" init -q -b main
+git -C "$other_repo" -c user.email=t@example.com -c user.name=t commit -q --allow-empty -m init
+run "$(sidecar_payload sess-sc-2 false "$other_repo")" \
+    CTX_COMPACT_THRESHOLD_TOKENS=900000 HANDOFF_STORE_DIR="$sidecar_store" >/dev/null
+run "$(sidecar_payload sess-sc-2 true "$other_repo")" \
+    CTX_COMPACT_THRESHOLD_TOKENS=900000 HANDOFF_STORE_DIR="$sidecar_store" >/dev/null
+if [ ! -e "$(sidecar_file sess-sc-2)" ]; then
+    passed=$((passed + 1)); echo "ok   a recent (not exact) pick never populates the sidecar"
+else
+    failed=$((failed + 1)); echo "FAIL a recent (not exact) pick never populates the sidecar — one was written"
+fi
+
 # --- Degrading -------------------------------------------------------------
 #
 # Every one of these is "capability, never execution": the hook goes quiet, and the session

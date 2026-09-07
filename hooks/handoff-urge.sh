@@ -78,12 +78,6 @@ session_id=$(printf '%s' "$input" | jq -r '.session_id // empty')
 transcript=$(printf '%s' "$input" | jq -r '.transcript_path // empty')
 stop_active=$(printf '%s' "$input" | jq -r '.stop_hook_active // false')
 
-# The harness's own re-entry flag. It covers exactly one case -- we are already inside the
-# continuation this hook caused -- and it is NOT a session latch: a background task waking the
-# session later arrives with it false and the threshold still crossed. The on-disk latch below
-# is what makes this fire once. Both are needed; neither substitutes for the other.
-[ "$stop_active" = "true" ] && exit 0
-
 [ -n "$session_id" ] || exit 0
 [ -n "$transcript" ] || exit 0
 
@@ -96,7 +90,76 @@ fi
 
 latch_dir="$HOME/.claude/state/handoff-trigger"
 latch="$latch_dir/$session_id"
-[ -e "$latch" ] && exit 0
+
+if [ -e "$latch" ]; then
+    # ── The written_at_tokens sidecar, for the compact read leg's coverage check ────────────
+    #
+    # This session already asked (or declined) once; there is nothing left to arm. But the
+    # `compact`-sourced read leg (`handoff-inject.sh`) needs to know how big this session was
+    # AT THE MOMENT the handoff actually got written, so it can measure how much grew between
+    # that write and an eventual auto-compaction. That figure does not exist until the model
+    # complies, which can take more than the one turn `stop_hook_active` covers -- so this
+    # checks on EVERY Stop after the latch is set, not only the stop-hook-induced one, and it
+    # stops checking for good once the sidecar exists. Modelled on the existing `/clear` marker
+    # (`session-end-marker.sh`, `$HOME/.claude/state/last-clear/`): the same kind of external
+    # hook-to-hook plumbing, and for the same reason -- a value this specific does not belong in
+    # the handoff document's own envelope ([D16](../docs/design.md#d16)).
+    sidecar="$latch_dir/$session_id.written"
+    if [ ! -e "$sidecar" ]; then
+        cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null | tr -d '\r')
+        [ -n "$cwd" ] || cwd=$PWD
+        if command -v cygpath >/dev/null 2>&1; then
+            cwd=$(cygpath -u "$cwd" 2>/dev/null || printf '%s' "$cwd")
+        fi
+        if [ -d "$cwd" ]; then
+            main=$(git -C "$cwd" worktree list 2>/dev/null | head -1 | awk '{print $1}')
+            ref=$(git -C "$cwd" rev-parse --abbrev-ref HEAD 2>/dev/null)
+            [ "$ref" = HEAD ] && ref=$(git -C "$cwd" rev-parse --short HEAD 2>/dev/null)
+            if [ -n "$main" ] && [ -n "$ref" ] && [ -r "$hook_dir/../lib/handoff-store.sh" ]; then
+                slug=$(printf '%s' "$ref" | tr '/' '-')
+                # shellcheck source=../lib/handoff-store.sh
+                . "$hook_dir/../lib/handoff-store.sh"
+                handoff_store_resolve "$main" "$slug"
+                # Only an EXACT match is this session's own handoff. A "recent" pick can be an
+                # unrelated branch's document, and misreading its mtime as THIS session's write
+                # would poison the sidecar with a figure that describes someone else's work.
+                #
+                # `-ge`, not `-gt`: both timestamps are second-granularity (`stat -c %Y`, same as
+                # every other mtime comparison in this bundle), and a fast write can land in the
+                # same second the latch did. Treating a tie as "written" is the safe direction --
+                # the alternative is silently never recording a sidecar for a handoff that (by
+                # every other signal) is clearly this session's own.
+                latch_mtime=$(stat -c %Y "$latch" 2>/dev/null); latch_mtime=${latch_mtime:-0}
+                if [ "$HANDOFF_PICK" = exact ] && [ -n "$HANDOFF_FILE" ] && [ -n "$HANDOFF_MTIME" ] \
+                   && [ "$HANDOFF_MTIME" -ge "$latch_mtime" ]; then
+                    written_resident=$(jq -r 'select(.message.usage != null)
+                                      | .message.usage
+                                      | (.input_tokens // 0)
+                                        + (.cache_creation_input_tokens // 0)
+                                        + (.cache_read_input_tokens // 0)' "$transcript" 2>/dev/null | tail -1)
+                    case "${written_resident:-}" in
+                        ''|*[!0-9]*) ;;
+                        *)
+                            jq -n --argjson w "$written_resident" --argjson t "$(date +%s)" \
+                                --arg h "$HANDOFF_FILE" \
+                                '{written_at_tokens: $w, written_at_epoch: $t, handoff_path: $h}' \
+                                > "$sidecar" 2>/dev/null
+                            ;;
+                    esac
+                fi
+            fi
+        fi
+    fi
+    exit 0
+fi
+
+# The harness's own re-entry flag. It covers exactly one case -- we are already inside the
+# continuation this hook caused -- and it is NOT a session latch: a background task waking the
+# session later arrives with it false and the threshold still crossed. The on-disk latch above
+# is what makes this fire once. Both are needed; neither substitutes for the other. Checked only
+# here, AFTER the latch branch above, so a stop-hook-induced continuation still gets its sidecar
+# chance rather than being turned away before ever reaching it.
+[ "$stop_active" = "true" ] && exit 0
 
 # ── T: resident context in tokens ──────────────────────────────────────────────────────────
 # The last `usage` record in the transcript. Streamed with a per-line filter rather than slurped:

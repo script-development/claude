@@ -28,21 +28,25 @@
 # emit two blobs and leave the reader to join them, at the one moment in a session when spending
 # attention on a join is most expensive.
 #
-# ── SCOPE: `clear` ONLY, DELIBERATELY ──────────────────────────────────────────────────────
+# ── SCOPE: `clear` AND `compact`, DELIBERATELY -- NOT `resume` OR `fork` OR `startup` ──────
 #
-# SessionStart fires with source in startup / resume / clear / compact / fork. Only `clear`
-# is handled here, and the others are not oversights:
+# SessionStart fires with source in startup / resume / clear / compact / fork. `clear` and
+# `compact` are handled here; the others are not oversights:
 #
 #   resume, fork  -- context SURVIVES. The transcript is appended to, so the session already
 #                    holds everything the handoff would tell it. Injecting would be pure cost.
 #   startup       -- a fresh session in a repo that happens to have an old handoff on this
 #                    branch. Nothing says the human means to resume it, and firing here would
 #                    tax every session in the repo forever.
-#   compact       -- context was REPLACED by a summary, so this genuinely wants the handoff.
-#                    It is left to a later build step: wiring it needs the compaction corpus
-#                    (compaction-capture.sh) to say whether the summary already covers it.
 #
-# The list is one `case` below so adding `compact` later is one word, not a restructure.
+# `compact` (Route 1, `docs/design.md`): context was just REPLACED by a summary, in the SAME
+# session (`session_id` is preserved across a compaction, unlike `clear`'s fresh one), so this
+# genuinely wants the last handoff written this session. It reuses the existing write-trigger
+# leg wholesale rather than needing `PreCompact`/`PostCompact` at all -- see the ── COMPACT ──
+# section below for how it differs from `clear`'s marker-based coverage check.
+#
+# The list was one `case` below for exactly this reason: adding `compact` was one word, not a
+# restructure.
 #
 # ── WHAT THIS DOES NOT DO ──────────────────────────────────────────────────────────────────
 #
@@ -79,9 +83,11 @@ fi
 
 source_kind=$(printf '%s' "$input" | jq -r '.source // empty' 2>/dev/null | tr -d '\r')
 case "$source_kind" in
-    clear) ;;
+    clear|compact) ;;
     *) exit 0 ;;
 esac
+
+session_id=$(printf '%s' "$input" | jq -r '.session_id // empty' 2>/dev/null | tr -d '\r')
 
 cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null | tr -d '\r')
 [ -n "$cwd" ] || cwd=$PWD
@@ -122,6 +128,18 @@ slug=$(printf '%s' "$ref" | tr '/' '-')
 # If the lib is absent the hook falls back to the pre-store location. Degrade capability, never
 # execution: a half-finished install must not silence the read leg entirely.
 hook_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+
+# CTX_HANDOFF_ACCEPTABLE_GAP_TOKENS, for the `compact` branch's coverage verdict below. Sourced
+# from the one place this bundle's numbers live (lib/context-economy/context-thresholds.sh),
+# never restated here. Missing or unreadable degrades to "no verdict, state the gap and let the
+# reader judge" rather than silencing the whole branch -- the same capability-not-execution rule
+# every other consumer of this file follows.
+CTX_THRESHOLDS_FILE="${CTX_THRESHOLDS_FILE:-$hook_dir/../lib/context-economy/context-thresholds.sh}"
+if [ -r "$CTX_THRESHOLDS_FILE" ]; then
+    # shellcheck source=../lib/context-economy/context-thresholds.sh
+    . "$CTX_THRESHOLDS_FILE"
+fi
+
 handoff=""
 handoff_checkout=""
 handoff_branch=""
@@ -151,61 +169,124 @@ fi
 # at the orchestrating checkout for every handoff about a sibling one and report a page of MISSING.
 gate_checkout=${handoff_checkout:-$here}
 
-# ── The /clear marker ──────────────────────────────────────────────────────────────────────
-#
-# CONSUMED, not merely read. The marker is news about one specific reset; reporting it again at
-# the next clear would be noise, and worse, would attribute an old loss to a new event.
-state_dir="${LAST_CLEAR_STATE_DIR:-$HOME/.claude/state/last-clear}"
-key=$(printf '%s' "$main" | md5sum 2>/dev/null | cut -c1-32)
-marker=""
-[ -n "$key" ] && marker="$state_dir/$key-$slug.json"
-
 marker_present=false
-if [ -n "$marker" ] && [ -r "$marker" ] && [ -s "$marker" ] \
-   && jq -e . "$marker" >/dev/null 2>&1; then
-    marker_present=true
-    m_resident=$(jq -r '.resident_tokens // empty' "$marker" 2>/dev/null | tr -d '\r')
-    m_transcript=$(jq -r '.transcript_path // empty' "$marker" 2>/dev/null | tr -d '\r')
-    m_ended=$(jq -r '.ended_at // empty' "$marker" 2>/dev/null | tr -d '\r')
-    m_ended_epoch=$(jq -r '.ended_at_epoch // empty' "$marker" 2>/dev/null | tr -d '\r')
-    m_handoff_mtime=$(jq -r '.handoff.mtime // empty' "$marker" 2>/dev/null | tr -d '\r')
-    m_urge=$(jq -r '.urge_fired // false' "$marker" 2>/dev/null | tr -d '\r')
-fi
+urge_ever_fired=false
+sidecar_present=false
+gap=""
+if [ "$source_kind" = clear ]; then
+    # ── The /clear marker ────────────────────────────────────────────────────────────────
+    #
+    # CONSUMED, not merely read. The marker is news about one specific reset; reporting it
+    # again at the next clear would be noise, and worse, would attribute an old loss to a new
+    # event.
+    state_dir="${LAST_CLEAR_STATE_DIR:-$HOME/.claude/state/last-clear}"
+    key=$(printf '%s' "$main" | md5sum 2>/dev/null | cut -c1-32)
+    marker=""
+    [ -n "$key" ] && marker="$state_dir/$key-$slug.json"
 
-# ── A GUESSED PICK NEEDS EVIDENCE ──────────────────────────────────────────────────────────
-#
-# Enumeration is what lets this hook find a handoff for a sibling checkout. Unchecked, it also
-# means every `/clear` anywhere surfaces the newest handoff on the machine -- clear a session in
-# an unrelated repo and you get last week's work in another one, injected as authoritative
-# context. That is strictly worse than the derivation it replaced, which at least said nothing.
-#
-# So an `exact` pick stands on its own, and a `recent` pick must be corroborated: the /clear
-# marker has to exist, and the handoff has to have been written close to that clear. That is the
-# only available evidence that THIS session lineage wrote it and then discarded its context --
-# which is the entire situation the cross-repo case is about. Absent that, the guess is demoted
-# to nothing rather than softened with a warning; a hedged injection still costs the tokens and
-# still frames unrelated work as the thing to resume.
-#
-# The window is the same constant the coverage sentence uses below, deliberately: "recent enough
-# to be worth surfacing" and "recent enough to have covered that session" are one judgement, and
-# two numbers would drift into a state where a handoff is injected and then described as
-# predating the clear it was chosen for.
-if [ "$handoff_present" = true ] && [ "$handoff_pick" != exact ]; then
-    corroborated=false
-    if [ "$marker_present" = true ] && [ -n "${m_ended_epoch:-}" ] && [ -n "${m_handoff_mtime:-}" ]; then
-        pick_gap=$(( m_ended_epoch - m_handoff_mtime ))
-        [ "$pick_gap" -lt 0 ] && pick_gap=0
-        [ "$pick_gap" -le "$COVERAGE_WINDOW_SECONDS" ] && corroborated=true
+    if [ -n "$marker" ] && [ -r "$marker" ] && [ -s "$marker" ] \
+       && jq -e . "$marker" >/dev/null 2>&1; then
+        marker_present=true
+        m_resident=$(jq -r '.resident_tokens // empty' "$marker" 2>/dev/null | tr -d '\r')
+        m_transcript=$(jq -r '.transcript_path // empty' "$marker" 2>/dev/null | tr -d '\r')
+        m_ended=$(jq -r '.ended_at // empty' "$marker" 2>/dev/null | tr -d '\r')
+        m_ended_epoch=$(jq -r '.ended_at_epoch // empty' "$marker" 2>/dev/null | tr -d '\r')
+        m_handoff_mtime=$(jq -r '.handoff.mtime // empty' "$marker" 2>/dev/null | tr -d '\r')
+        m_urge=$(jq -r '.urge_fired // false' "$marker" 2>/dev/null | tr -d '\r')
     fi
-    if [ "$corroborated" = false ]; then
+
+    # ── A GUESSED PICK NEEDS EVIDENCE ────────────────────────────────────────────────────
+    #
+    # Enumeration is what lets this hook find a handoff for a sibling checkout. Unchecked, it
+    # also means every `/clear` anywhere surfaces the newest handoff on the machine -- clear a
+    # session in an unrelated repo and you get last week's work in another one, injected as
+    # authoritative context. That is strictly worse than the derivation it replaced, which at
+    # least said nothing.
+    #
+    # So an `exact` pick stands on its own, and a `recent` pick must be corroborated: the
+    # /clear marker has to exist, and the handoff has to have been written close to that clear.
+    # That is the only available evidence that THIS session lineage wrote it and then
+    # discarded its context -- which is the entire situation the cross-repo case is about.
+    # Absent that, the guess is demoted to nothing rather than softened with a warning; a
+    # hedged injection still costs the tokens and still frames unrelated work as the thing to
+    # resume.
+    #
+    # The window is the same constant the coverage sentence uses below, deliberately: "recent
+    # enough to be worth surfacing" and "recent enough to have covered that session" are one
+    # judgement, and two numbers would drift into a state where a handoff is injected and then
+    # described as predating the clear it was chosen for.
+    if [ "$handoff_present" = true ] && [ "$handoff_pick" != exact ]; then
+        corroborated=false
+        if [ "$marker_present" = true ] && [ -n "${m_ended_epoch:-}" ] && [ -n "${m_handoff_mtime:-}" ]; then
+            pick_gap=$(( m_ended_epoch - m_handoff_mtime ))
+            [ "$pick_gap" -lt 0 ] && pick_gap=0
+            [ "$pick_gap" -le "$COVERAGE_WINDOW_SECONDS" ] && corroborated=true
+        fi
+        if [ "$corroborated" = false ]; then
+            handoff_present=false
+            handoff=""
+        fi
+    fi
+elif [ "$source_kind" = compact ]; then
+    # ── COMPACT: the written_at_tokens sidecar, and a token-distance coverage check ─────────
+    #
+    # No async gap here, unlike `clear`: `session_id` survives a compaction (the same session
+    # continues, it is not a fresh one with a blank transcript), so `hooks/handoff-urge.sh`'s
+    # own per-session latch and sidecar -- keyed by THIS session's session_id, written to
+    # `$HOME/.claude/state/handoff-trigger/` -- are readable directly, with no separate
+    # marker-writing hook needed the way `SessionEnd` is for `clear`.
+    #
+    # And there is no cross-repo "recent pick" story here at all: an EXACT pick is the only one
+    # trusted, full stop. Compaction happens mid-session, on the branch the session is already
+    # standing in -- if this branch has no handoff of its own, the store's newest handoff for
+    # some OTHER branch is not evidence of anything about THIS session, unlike `clear`'s cross-
+    # checkout case, which exists because an orchestrating session can legitimately drive work
+    # in a sibling tree it never `cd`s into.
+    if [ "$handoff_pick" != exact ]; then
         handoff_present=false
         handoff=""
     fi
+
+    if [ -n "$session_id" ]; then
+        latch_dir="${HOME}/.claude/state/handoff-trigger"
+        latch="$latch_dir/$session_id"
+        sidecar="$latch_dir/$session_id.written"
+        [ -e "$latch" ] && urge_ever_fired=true
+
+        if [ -e "$sidecar" ] && jq -e . "$sidecar" >/dev/null 2>&1; then
+            r=$(jq -r '.written_at_tokens // empty' "$sidecar" 2>/dev/null | tr -d '\r')
+            case "${r:-}" in ''|*[!0-9]*) ;; *) sidecar_present=true; sc_written_at_tokens=$r ;; esac
+        fi
+    fi
+
+    # Read THIS session's own last usage record, from THIS payload's own transcript_path --
+    # the same technique `handoff-urge.sh` uses, and safe to read synchronously here for the
+    # reason above: no new request has run since compaction, so the last record in the file is
+    # still the PRE-compaction peak, which is exactly the figure the gap needs on this side.
+    ct_transcript=$(printf '%s' "$input" | jq -r '.transcript_path // empty' 2>/dev/null | tr -d '\r')
+    if command -v cygpath >/dev/null 2>&1; then
+        [ -n "$ct_transcript" ] && ct_transcript=$(cygpath -u "$ct_transcript" 2>/dev/null || printf '%s' "$ct_transcript")
+    fi
+    current_tokens=""
+    if [ -n "$ct_transcript" ] && [ -r "$ct_transcript" ]; then
+        r=$(jq -r 'select(.message.usage != null)
+                   | .message.usage
+                   | (.input_tokens // 0)
+                     + (.cache_creation_input_tokens // 0)
+                     + (.cache_read_input_tokens // 0)' "$ct_transcript" 2>/dev/null | tail -1)
+        case "${r:-}" in ''|*[!0-9]*) ;; *) current_tokens=$r ;; esac
+    fi
+
+    if [ "$sidecar_present" = true ] && [ -n "${sc_written_at_tokens:-}" ] && [ -n "$current_tokens" ]; then
+        gap=$(( current_tokens - sc_written_at_tokens ))
+        [ "$gap" -lt 0 ] && gap=0
+    fi
 fi
 
-# Neither half means nothing to say. This is the ordinary case on a branch nobody has handed off
-# and nobody has cleared mid-work, and it must stay silent.
-if [ "$handoff_present" = false ] && [ "$marker_present" = false ]; then
+# Nothing to say. On `clear`, this is the ordinary case: nobody handed off, nobody cleared
+# mid-work. On `compact`, it means the write trigger never even asked for a handoff this
+# session AND none exists for this branch -- also nothing new to report.
+if [ "$handoff_present" = false ] && [ "$marker_present" = false ] && [ "$urge_ever_fired" = false ]; then
     exit 0
 fi
 
@@ -291,7 +372,40 @@ human_gap() {
 # other copy -- and because they are the two that change what the reader does. Everything else
 # is left to the skill so this does not quietly become a second copy of it.
 compose() {
-    printf '# Context reset (SessionStart, source: clear)\n\n'
+    printf '# Context reset (SessionStart, source: %s)\n\n' "$source_kind"
+
+    if [ "$source_kind" = compact ]; then
+        printf -- '## This session just auto-compacted\n\n'
+
+        if [ "$urge_ever_fired" = false ]; then
+            printf 'The write trigger never armed this session before compaction hit — nothing asked for a\nhandoff, so there may be nothing below that covers the work just summarised.\n\n'
+        elif [ "$sidecar_present" = false ]; then
+            printf 'The write trigger DID ask for a handoff this session, but there is no record of the write\never completing before this compaction. If one exists below, treat its coverage as unknown.\n\n'
+        elif [ -n "$gap" ]; then
+            case "${CTX_HANDOFF_ACCEPTABLE_GAP_TOKENS:-}" in
+                ''|*[!0-9]*)
+                    printf 'The handoff below was written at %sk of resident context, %sk of context ago. No\nacceptable-gap threshold is configured, so judge for yourself whether that gap is small\nenough to trust its coverage.\n\n' \
+                        "$(( sc_written_at_tokens / 1000 ))" "$(( gap / 1000 ))"
+                    ;;
+                *)
+                    if [ "$gap" -le "$CTX_HANDOFF_ACCEPTABLE_GAP_TOKENS" ]; then
+                        printf 'The handoff below was written %sk of context ago, at %sk of resident context. That is\nclose enough to this compaction that it likely covers what just got summarised.\n\n' \
+                            "$(( gap / 1000 ))" "$(( sc_written_at_tokens / 1000 ))"
+                    else
+                        printf -- '**%sk of context accumulated between the handoff below (written at %sk) and this\ncompaction.** That is enough that recent work may not be covered — treat the gap as\nlikely-undocumented until checked.\n\n' \
+                            "$(( gap / 1000 ))" "$(( sc_written_at_tokens / 1000 ))"
+                    fi
+                    ;;
+            esac
+        else
+            printf 'A handoff write was recorded this session, but this session'"'"'s own current context size\ncould not be read, so the gap since the write is unknown. Treat its coverage as unknown.\n\n'
+        fi
+
+        if [ "$handoff_present" = false ]; then
+            printf -- '**No handoff exists for `%s`.**\n\n' "$ref"
+        fi
+        printf -- '---\n\n'
+    fi
 
     if [ "$marker_present" = true ]; then
         printf -- '## The session you just cleared\n\n'

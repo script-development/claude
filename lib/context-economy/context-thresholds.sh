@@ -148,8 +148,9 @@ CTX_URGE_TOKENS=200000
 #
 # Three terms, because a bare `T < ceiling` undercounts twice. The check's resolution is one turn
 # (the Stop event fires once per turn, never at the intermediate requests where context actually
-# grows), and one turn that reads widely adds 50k+. And the handoff-authoring turn is itself wide
-# by construction -- writing citations means reading the files being cited.
+# grows), and one turn that reads widely adds a MEASURED 325,000 at the corpus max (finding #15,
+# below). And the handoff-authoring turn is itself wide by construction -- writing citations means
+# reading the files being cited -- MEASURED 65,000 at its own corpus max (finding #14, below).
 #
 # WHEN THE CHECK FAILS, DECLINE TO ARM AND SAY SO -- do not lower T silently and do not warn and
 # proceed. An armed trigger with negative slack loses the race to compaction every time, and the
@@ -189,19 +190,27 @@ CTX_COMPACT_THRESHOLD_TOKENS=
 # are labelled as such -- the safe direction for a term inside a fail-CLOSED check is too
 # LARGE, which is the opposite of the safe direction for a displayed figure.
 #
-# FAT TURN: mission_control's reports/2026-08-24-harness-automation-surface.md F4b(1) -- external to this bundle -- Stop fires once per TURN,
-# never at the intermediate requests where context actually grows, so the check's resolution is
-# one whole turn, and one turn containing an unscoped Read or a wide grep "can add 50k+". Taken
-# at that stated 50k rather than the 2.07k mean, because a mean is precisely the wrong statistic
-# for a worst-case margin.
-CTX_FAT_TURN_TOKENS=50000
+# FAT TURN: MEASURED 2026-09-07 (docs/measured.md finding #15), superseding mission_control's
+# F4b(1), which was qualitative ("can add 50k+") and turned out not to be conservative. Mined 724
+# mid-session turns across 48 sessions (this repo, kendo, kendo-2, mission-control): median 6,707,
+# p90 34,897, p95 59,367, p99 158,290, MAX 323,673. "50k+" sat between p90 and p95; the real tail
+# runs 3-6x higher. Taken at the corpus MAX rather than a percentile, because a mean or a
+# percentile is precisely the wrong statistic for a worst-case margin, and at the declared 1M
+# ceiling (887,000 below) the corpus max still leaves ample headroom (see the coherence check in
+# context-thresholds.test.sh) -- there is no cost to using the safest available bound here.
+# Revise DOWNWARD only against a wider measurement; a single new session exceeding this value
+# would just mean the corpus was too small, not that the bound was wrong to set this way.
+CTX_FAT_TURN_TOKENS=325000
 
-# AUTHORING TURN: the /handoff run the trigger is about to demand. Estimated, not measured --
-# from the skill's own deliberately small shape (one orientation bash call, one Write, one gate
-# run) plus the skill text, the gate's output and the document itself. That lands near 20k; 30k
-# is carried so an unusually long handoff, or a gate re-run after an exit 1, does not eat the
-# margin. Revise DOWNWARD only against a measurement.
-CTX_AUTHORING_TURN_TOKENS=30000
+# AUTHORING TURN: MEASURED 2026-09-07 (docs/measured.md finding #14), superseding the earlier
+# 30,000 estimate (which turned out close: measured mean was 30,024). 20 initial handoff-authoring
+# turns mined from past sessions across this repo, kendo, kendo-2 and mission-control:
+# 13,698-64,618 tokens, median 25,025, mean 30,024, MAX 64,618 -- taken at that max for the same
+# worst-case-margin reason as CTX_FAT_TURN_TOKENS above, not at the finding's own trimmed-mean
+# figure (which excludes one turn mixing unrelated work into the same authoring turn -- a real
+# scenario a fail-closed bound must still cover, and one that does not change the max either way,
+# since the excluded turn was smaller than 64,618). Revise DOWNWARD only against a measurement.
+CTX_AUTHORING_TURN_TOKENS=65000
 
 # THE 1M-BETA FALLBACK, used only when `[1m]` was detected in the transcript's modelUsage keys
 # and no CTX_COMPACT_THRESHOLD_TOKENS was declared. A DELIBERATE LOWER BOUND on quantity (c),
@@ -276,3 +285,21 @@ HANDOFF_CEILING_TOKENS=8000
 # more prose than code, so this UNDER-states its token count slightly — the
 # conservative direction for a budget.
 CTX_CHARS_PER_TOKEN_X100=268
+
+# ── The compact read leg's coverage check ──────────────────────────────────
+#
+# `handoff-inject.sh`'s `source: compact` branch has no async gap the way `clear` does (the
+# same transcript survives compaction, so it reads its own last usage record synchronously
+# rather than waiting on a marker another hook wrote) -- but it still needs to say whether the
+# handoff on disk, written earlier in the SAME session, is likely to have missed recent work.
+# Unlike `clear`'s COVERAGE_WINDOW_SECONDS (wall-clock, sized for "how long ago was the reset"),
+# this is TOKEN-distance: staleness here is driven by how much got done between the write and
+# the eventual compaction, not by how much time passed -- an hour idle loses nothing, two minutes
+# of a 40k-token autonomous stretch loses a lot, and a clock-based check scores those backwards.
+#
+# ANCHOR, FLOATED RATHER THAN MEASURED: 5 turns at CTX_GROWTH_TOKENS_PER_TURN (2,070/turn,
+# finding #6). "5 turns" is a judgement call about how much unrecorded work still reads as
+# "recent enough" for a reader to reconstruct from context alone, not a quantity anything in
+# this repo has measured directly -- revisit this constant, specifically, before trusting it the
+# way the corpus-derived figures above are trusted.
+CTX_HANDOFF_ACCEPTABLE_GAP_TOKENS=10350

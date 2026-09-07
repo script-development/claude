@@ -884,6 +884,61 @@ third consequence one level up: it is no longer enough for verification to *acce
 the document has to *declare* one. Hence `_Extends [D6](#d6):_` below, which named "which checkout" as
 part of the envelope from the start, is now literally true rather than aspirational.
 
+### D17 — The `compact` read leg reuses the write-trigger's own latch; no new hook, no new marker
+
+Built 2026-09-07 (Route 1, sized in the `T + fat_turn + authoring_turn` build item above). Extends
+`hooks/handoff-inject.sh`'s `source` dispatch — `clear|compact) ;;` — and adds one thing to
+`hooks/handoff-urge.sh` that has nothing to do with arming: once its own per-session latch exists,
+it watches for the handoff it demanded actually landing on disk and records the resident size AT
+THAT MOMENT into a sidecar (`$HOME/.claude/state/handoff-trigger/$session_id.written`) beside the
+latch. That is the whole write side — no `PreCompact`, no `PostCompact`, no compaction corpus
+dependency, exactly as [Decisions #1 of the sizing work](#d10) required.
+
+**Why `session_id`, not the /clear marker's (main worktree, branch) key.** `/clear` starts a
+genuinely new session, so the reading session's own `session_id` cannot key anything the old one
+wrote — hence that marker's key. Compaction does not: `session_id` is **preserved** across it (the
+same session continues), so the read leg can look its own sidecar up directly, with no separate
+`SessionEnd`-style hook needed to bridge an old session to a new one. Simpler than `/clear`'s path
+for exactly the reason the two are different events, not an oversight in one or the other.
+
+**Why the gap is read synchronously, with no async marker at all.** At the exact moment
+`SessionStart(source:"compact")` fires, no new API request has run since compaction — compaction is
+a client-side operation that crafts a new synthetic prefix for *future* requests, it does not itself
+produce a usage record. So the last usage record in the hook's own `transcript_path` is still the
+**pre-compaction peak**, read straight off disk with no intermediary. That is what "no async gap,
+unlike `clear`" means concretely, and it is why `compact`'s coverage math needs no marker-writing
+counterpart to `session-end-marker.sh` at all.
+
+**Why only an EXACT store pick counts, unlike `clear`'s corroborated "recent" pick.** `clear`'s
+cross-checkout case exists because an orchestrating session can legitimately drive a sibling
+checkout it never `cd`s into, so a "recent" guess corroborated by the /clear marker's timing is
+worth surfacing. Compaction happens mid-session, on the branch the session is already standing in —
+if that branch has no handoff of its own, the store's newest handoff for some *other* branch is not
+evidence of anything about this one. So `compact` only ever trusts `handoff_pick = exact`; a
+"recent" pick is discarded outright, no corroboration story needed or wanted.
+
+**Why the coverage check is token-distance, not `COVERAGE_WINDOW_SECONDS`.** Staleness here is
+driven by how much work happened between the write and the compaction, not by how much time passed
+— an hour idle loses nothing, a fat multi-tool-call turn loses a lot (`docs/measured.md` finding
+#15's own tail). `gap = current_tokens - written_at_tokens`, compared against
+`CTX_HANDOFF_ACCEPTABLE_GAP_TOKENS` (10,350 — 5 turns at finding #6's measured 2,070/turn growth
+rate). That "5 turns" is a **floated judgement call, not a measurement**, and is named as such in
+`context-thresholds.sh` precisely so it does not get mistaken for one of the corpus-derived figures
+beside it.
+
+**One-shot, not rolling re-arm — the staleness mitigation this session's `## Decisions` chose.** The
+sidecar is written once, the first time the handoff's mtime moves past the latch's; there is no
+mechanism that re-arms the write trigger for a second handoff later in the same long session. A gap
+past the threshold degrades to a stated warning ("likely-undocumented"), never to a second forced
+write — matching [D10](#d10)'s own "fire once per session" rule for the identical reason: a
+trigger that fires more than once per session risks nagging exactly the autonomous, multi-tool-call
+stretches finding #15 found dominate the tail.
+
+_Rejected, for now:_ Route 4 (a nested `claude -p` synthesizing a fresh handoff from the
+pre-compaction transcript inside `PreCompact` itself). Real and race-free, but `PreCompact` can fire
+with no compaction behind it (`docs/measured.md` finding #13) and blocks the harness synchronously
+for as long as it runs, confirmed with no timeout at 65s but no known ceiling either — a worse cost
+to pay than Route 1's, and unneeded unless Route 1 proves unacceptably stale in practice.
 
 ---
 
@@ -1167,6 +1222,62 @@ SymbolicLink` fails with `Administrator privilege required`, where git-bash's `l
      extra turn), and `reserved_output_tokens` comes off the window before any of this. So the
      invariant is `T + fat_turn + authoring_turn < effective_window - 13_000`, and the hook must
      evaluate it at fire time and decline to arm when it fails.
+   - **`authoring_turn` measured 2026-09-07, from the existing corpus rather than a fresh probe**
+     (`docs/measured.md` finding #14): 20 clean initial handoff-authoring turns, mined from past
+     sessions across this repo, `kendo`, `kendo-2` and `mission-control` — **13,698–64,618 tokens,
+     median 25,025, mean 30,024** (one contaminated outlier at 53,166 excluded from that range).
+   - **`fat_turn` measured 2026-09-07, same method** (`docs/measured.md` finding #15): F4b's own
+     "50k+" was qualitative and, it turns out, not conservative. 724 mid-session turns mined across
+     48 sessions (this repo, `kendo`, `kendo-2`, `mission-control`) give **median 6,707, p90 34,897,
+     p95 59,367, p99 158,290, max 323,673** — a second, excluded population of 12 whole-session
+     "zero-baseline" turns (cold start to first boundary, median 208,403, max 952,946) is a
+     different thing entirely and must not be pooled with the mid-session figures above. "50k+"
+     sits between p90 and p95; p99 and max run 3–6x higher, and every one of the top 10 is a long
+     autonomous `Bash`/`Edit`/`Write` stretch (22–259 tool calls), not the single wide `Read`/grep
+     F4b's illustration described.
+   - **Recomputed against the real check, not the abstract invariant — no percentile trade-off
+     turned out to be needed.** `hooks/handoff-urge.sh` never evaluates the invariant against
+     `effective_window` directly; it evaluates `resident + fat_turn + authoring_turn < ceiling`,
+     where `ceiling` is either `CTX_COMPACT_THRESHOLD_TOKENS` if a machine declared one, or the
+     hard-coded `CTX_1M_COMPACT_THRESHOLD_TOKENS = 887,000` if the `[1m]` suffix was detected, or
+     the hook declines outright — there is no code path today that resolves to an intermediate
+     ceiling like the ~455k a 500k window would need. That collapses the design space to two cases
+     the earlier framing (this paragraph, as it read before this measurement) conflated:
+     - **200k-class window: already dead, independent of `fat_turn`'s value.** `CTX_URGE_TOKENS`
+       (`T` = 200,000) already exceeds the true `compact_threshold` there (~187,000, this section's
+       own table above) before either turn-cost term is added. This was established at 2026-08-26,
+       not by this measurement — `fat_turn`'s real distribution changes nothing about it.
+     - **1M-declared/detected window: the only one that ever arms, and the corpus MAX fits with
+       room to spare.** `resident ≈ T = 200,000` at the moment the hook fires. Plugging in the
+       corpus **max** for both terms — not a percentile, the literal worst value seen — gives
+       `need = 200,000 + 323,673 + 64,618 = 588,291`, against `ceiling = 887,000`: **~299,000
+       tokens of margin remain.** Because the declared ceiling is itself a deliberately
+       conservative lower bound (887,000 vs. the true ~987,000), and because that margin is this
+       wide, there is no cost to skipping the percentile question entirely and sizing both
+       `CTX_FAT_TURN_TOKENS` and `CTX_AUTHORING_TURN_TOKENS` at their corpus maxima (325,000 and
+       65,000, rounded up) rather than gambling on p95 or p99 and hoping the tail doesn't extend
+       further. **Both constants were updated in `lib/context-economy/context-thresholds.sh`
+       2026-09-07** on this basis (fat: 50,000 → 325,000; authoring: 30,000 → 65,000 — the latter
+       taken at finding #14's n=20 max rather than its trimmed-mean figure, since a fail-closed
+       bound must cover a turn that really happened, not just a clean one; the excluded turn was
+       smaller than the max regardless, so this changes nothing about which value is the ceiling).
+       Tests
+       (`context-thresholds.test.sh`, `handoff-urge.test.sh`) pass unchanged — the coherence check
+       `urge + fat + authoring < declared` still holds (590,000 < 887,000), and `handoff-urge.test.sh`
+       fixtures its own thresholds, so retuning the real file cannot break it.
+     - **What would make the percentile question live:** a future ceiling declared for an
+       intermediate window (the exact gap `CTX_1M_COMPACT_THRESHOLD_TOKENS`'s own comment already
+       flagged, e.g. 500k → `compact_threshold ≈ 455,000`). There, max-sizing's 588,291 would
+       exceed the budget while a p95-sized 324,367 (`59,367 + 65,000` on top of `T`) would still
+       clear it with room. Nothing in the current build declares such a ceiling, so this is a note
+       for if one ever gets added, not an open decision blocking anything today.
+     - **So a single static `T` (200,000) remains viable, as configured, for exactly the window
+       class this hook currently serves** — the earlier framing in this paragraph (before this
+       recomputation) read the ~205k of required slack against the true ~787k 1M slack figure and
+       called it "a large fraction... leaves nothing at a 200k-class window"; the second half was
+       already true for an unrelated reason (200k dead on arrival regardless of `fat_turn`), and
+       the first half undersold the margin because the real check gates on the declared 887,000
+       ceiling, where even the corpus max leaves ~34% of it unspent.
    - **Also open, and not the same question:** a session parked above the threshold that is simply
      left alone produces no further `Stop` at all, yet its context survives — resuming appends to the
      same transcript (measured report, "What was measured"). That case belongs to

@@ -144,9 +144,10 @@ exit "${STUB_GATE_EXIT:-0}"
 EOF
 chmod +x "$gate"
 
-payload() {  # payload <source> [cwd]
-    jq -nc --arg s "$1" --arg c "${2:-$repo}" \
-        '{session_id: "sess-1", hook_event_name: "SessionStart", source: $s, cwd: $c}'
+payload() {  # payload <source> [cwd] [session_id] [transcript_path]
+    jq -nc --arg s "$1" --arg c "${2:-$repo}" --arg sid "${3:-sess-1}" --arg tp "${4:-}" \
+        '{session_id: $sid, hook_event_name: "SessionStart", source: $s, cwd: $c}
+         + (if $tp == "" then {} else {transcript_path: $tp} end)'
 }
 
 # HOME is redirected so the gate probe cannot find the developer's real installed copy and
@@ -199,11 +200,11 @@ assert_field() {  # assert_field <label> <jq-filter> <expected> <payload> [env..
 
 # --- Source gating ---------------------------------------------------------
 #
-# Only `clear` injects. The others are not oversights and each has a distinct reason, so each
-# gets a case: silently widening this later would tax every session in the repo.
+# Only `clear` and `compact` inject. The others are not oversights and each has a distinct
+# reason, so each gets a case: silently widening this later would tax every session in the repo.
 
 # Arrange & Act & Assert — one source per iteration
-for s in startup resume compact fork; do
+for s in startup resume fork; do
     assert_silent "source: $s does not inject" "$(payload "$s")" VERIFY_HANDOFF_GATE="$gate"
 done
 
@@ -211,6 +212,80 @@ done
 # case's arrange is its payload and env assignments.
 assert_field 'source: clear injects, tagged as a SessionStart result' \
     '.hookSpecificOutput.hookEventName' 'SessionStart' "$(payload clear)" VERIFY_HANDOFF_GATE="$gate"
+
+assert_field 'source: compact injects, tagged as a SessionStart result' \
+    '.hookSpecificOutput.hookEventName' 'SessionStart' "$(payload compact)" VERIFY_HANDOFF_GATE="$gate"
+
+# --- COMPACT: the token-distance coverage check -----------------------------
+#
+# `hooks/handoff-urge.sh`'s own latch/sidecar files are the contract this branch reads. Written
+# by hand here rather than by running that hook first -- this suite tests handoff-inject.sh's
+# READ of the contract, not handoff-urge.sh's WRITE of it, which has its own suite.
+
+usage_transcript() {  # usage_transcript <name> <resident-total>
+    local path="$fixture/$1.jsonl"
+    jq -nc --argjson t "$2" \
+        '{type:"assistant", message:{model:"claude-opus-5",
+          usage:{input_tokens:$t, cache_creation_input_tokens:0, cache_read_input_tokens:0, output_tokens:400}}}' \
+        > "$path"
+    printf '%s' "$path"
+}
+
+latch_dir="$fixture/home/.claude/state/handoff-trigger"
+write_latch() { mkdir -p "$latch_dir"; : > "$latch_dir/$1"; }
+write_sidecar() {  # write_sidecar <session-id> <written-at-tokens>
+    mkdir -p "$latch_dir"
+    jq -nc --argjson w "$2" '{written_at_tokens: $w, written_at_epoch: 0, handoff_path: "x"}' \
+        > "$latch_dir/$1.written"
+}
+some_tr=$(usage_transcript compact-some 210000)
+
+# The write trigger never armed this session at all: no latch.
+rm -rf "$latch_dir"
+assert_context_has 'compact: the write trigger never having armed is stated' \
+    'never armed this session' "$(payload compact "$repo" sess-ct-1 "$some_tr")" VERIFY_HANDOFF_GATE="$gate"
+
+# Armed, but the write was never confirmed (no sidecar) before this compaction hit.
+rm -rf "$latch_dir"
+write_latch sess-ct-2
+assert_context_has 'compact: an armed-but-unconfirmed write says so' \
+    'no record of the write' "$(payload compact "$repo" sess-ct-2 "$some_tr")" VERIFY_HANDOFF_GATE="$gate"
+
+# Armed and confirmed, gap within CTX_HANDOFF_ACCEPTABLE_GAP_TOKENS (default 10,350): covered.
+rm -rf "$latch_dir"
+write_latch sess-ct-3
+write_sidecar sess-ct-3 205000
+covered_tr=$(usage_transcript compact-covered 210000)   # gap = 5,000
+assert_context_has 'compact: a small gap reads as likely covering the compaction' \
+    'likely covers' "$(payload compact "$repo" sess-ct-3 "$covered_tr")" VERIFY_HANDOFF_GATE="$gate"
+
+# Armed and confirmed, gap past the threshold: flagged, not silently trusted.
+rm -rf "$latch_dir"
+write_latch sess-ct-4
+write_sidecar sess-ct-4 205000
+stale_tr=$(usage_transcript compact-stale 260000)   # gap = 55,000
+assert_context_has 'compact: a large gap is flagged as likely-undocumented' \
+    'likely-undocumented' "$(payload compact "$repo" sess-ct-4 "$stale_tr")" VERIFY_HANDOFF_GATE="$gate"
+
+# Armed, but no handoff exists for THIS branch at all -- must still surface (the early "nothing
+# to say" exit must not fire just because the store's only handoff belongs to a different repo).
+no_handoff_repo="$fixture/no-handoff-repo"
+mkdir -p "$no_handoff_repo"
+git -C "$no_handoff_repo" init -q -b main
+git -C "$no_handoff_repo" config user.email t@example.com
+git -C "$no_handoff_repo" config user.name  Test
+git -C "$no_handoff_repo" commit -q --allow-empty -m init
+rm -rf "$latch_dir"
+write_latch sess-ct-5
+assert_context_has 'compact: an armed session with no handoff for this branch still surfaces' \
+    'No handoff exists' "$(payload compact "$no_handoff_repo" sess-ct-5)" VERIFY_HANDOFF_GATE="$gate"
+
+# And a "recent" pick (the store's only handoff, for an unrelated repo) must never be surfaced
+# as if it were this session's own -- unlike `clear`, `compact` trusts only an exact match.
+assert_context_lacks 'compact: a recent (not exact) pick is never surfaced as this session'"'"'s own' \
+    'a hostile document' "$(payload compact "$no_handoff_repo" sess-ct-5)" VERIFY_HANDOFF_GATE="$gate"
+
+rm -rf "$latch_dir"
 
 # --- i2 — the output must be valid JSON ------------------------------------
 
