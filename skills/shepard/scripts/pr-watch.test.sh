@@ -35,7 +35,7 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 bin="$tmp/bin"
 state="$tmp/state"
-mkdir -p "$bin" "$state"
+mkdir -p "$bin" "$state" "$tmp/emptybin"
 
 passed=0
 failed=0
@@ -171,7 +171,7 @@ gh_tick 2 OPEN aaaaaaaa 0 0 test-unit
 gh_tick 3 OPEN aaaaaaaa 0 0
 gh_tick 4 MERGED aaaaaaaa 0 0
 out=$(run); rc=$?
-check "ci red then green both emit" 0 "$out" $rc "[ci]  FAILING: test-unit" "[ci]  all red checks cleared"
+check "ci red then green both emit" 0 "$out" $rc "[ci]  FAILING: test-unit" "[ci]  all checks green"
 
 # A bus outage must not take the GitHub surface down with it, and must announce
 # itself rather than let the quiet read as "no reviews yet". Two silences are pinned
@@ -239,6 +239,62 @@ gh_tick 1 OPEN aaaaaaaa 0 0
 gh_tick 2 MERGED aaaaaaaa 0 0
 out=$(TOWN_CRIER_TOKEN="" TOWN_CRIER_ENV_FILE=/nonexistent bash "$subject" 42 --interval 0 --heartbeat 0 2>&1); rc=$?
 check "no token degrades to github only" 0 "$out" $rc "[watch] github only"
+
+# A CheckRun that GitHub has sent back to the queue serialises `conclusion` as ""
+# and carries its real state in `.status`. `.conclusion // .state` does not fall
+# through an empty string, so bucketing on conclusion alone drops the job out of
+# every bucket: it is not red, not pending, not passing. The watch then reports the
+# red set as cleared while the job is still running, and /shepard reads that as
+# progress. Bucketing on `.status` first is what keeps it pending.
+reset; bus_absent
+gh_tick 1 OPEN aaaaaaaa 0 0 test-unit
+cat > "$state/gh_2.json" <<'EOF'
+{"state":"OPEN","headRefOid":"aaaaaaaa",
+ "statusCheckRollup":[{"name":"test-unit","status":"IN_PROGRESS","conclusion":""},
+                      {"name":"other","status":"COMPLETED","conclusion":"SUCCESS"}],
+ "reviews":[],"comments":[],"reviewDecision":""}
+EOF
+gh_tick 3 MERGED aaaaaaaa 0 0 test-unit
+out=$(run); rc=$?
+check "a re-running red job is pending, never cleared" 0 "$out" $rc \
+  "[ci]  FAILING: test-unit" "[ci]  red checks re-running, not green yet" "![ci]  all checks green"
+
+# ACTION_REQUIRED and STARTUP_FAILURE block the merge exactly like FAILURE does.
+# Leaving them out of the red bucket makes a blocked PR read green.
+reset; bus_absent
+gh_tick 1 OPEN aaaaaaaa 0 0
+cat > "$state/gh_2.json" <<'EOF'
+{"state":"OPEN","headRefOid":"aaaaaaaa",
+ "statusCheckRollup":[{"name":"deploy-gate","conclusion":"ACTION_REQUIRED"},
+                      {"name":"boot","conclusion":"STARTUP_FAILURE"}],
+ "reviews":[],"comments":[],"reviewDecision":""}
+EOF
+gh_tick 3 MERGED aaaaaaaa 0 0
+out=$(run); rc=$?
+check "every blocking conclusion counts as red" 0 "$out" $rc "[ci]  FAILING: boot,deploy-gate"
+
+# --once has no later tick to speak on. Exiting 3 with an empty stdout is the exact
+# silence this watcher must never produce: Monitor surfaces stdout only, so the
+# caller sees a clean, quiet run rather than a failed one.
+reset; bus_absent
+: > "$state/gh_1.json"
+out=$(run --once); rc=$?
+check "--once says why it found nothing" 3 "$out" $rc "[warn] GitHub unreadable — nothing to report"
+
+# A missing dependency is a setup failure, and setup failures are invisible on
+# stderr: Monitor never shows it. The line has to land on stdout or an armed watch
+# and a dead one look identical.
+reset; bus_absent
+gh_tick 1 OPEN aaaaaaaa 0 0
+bash_bin=$(command -v bash)
+out=$(PATH="$tmp/emptybin" "$bash_bin" "$subject" 42 --once 2>/dev/null); rc=$?
+check "a missing dependency speaks on stdout" 3 "$out" $rc "[end] setup failed:" "watch never started"
+
+# An unknown flag is a setup failure too, and takes the same stdout path.
+reset; bus_absent
+gh_tick 1 OPEN aaaaaaaa 0 0
+out=$(run --nonsense 2>/dev/null); rc=$?
+check "an unknown flag speaks on stdout" 3 "$out" $rc "[end] setup failed: unknown flag '--nonsense'"
 
 echo
 echo "passed: $passed   failed: $failed"

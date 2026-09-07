@@ -28,16 +28,21 @@
 # Exit codes:
 #   0  the PR reached a terminal state (MERGED or CLOSED) — the watch is done
 #   3  setup failure: no PR, missing dependency, unreadable repo — or `--source bus`
-#      with no town-crier row for this PR after 20 ticks
+#      with no town-crier row for this PR after 20 ticks. Said on stdout: Monitor
+#      surfaces only stdout, so a stderr-only exit would look like an armed, quiet watch.
 #
 # The token is read from $TOWN_CRIER_TOKEN, else from $TOWN_CRIER_ENV_FILE
 # (default ~/Code/crit/.env). It is never printed, and no line this script emits
 # contains it. No token means no bus surface — not an error.
 set -uo pipefail
 
-command -v gh   >/dev/null || { echo "error: gh CLI required" >&2; exit 3; }
-command -v jq   >/dev/null || { echo "error: jq required" >&2; exit 3; }
-command -v curl >/dev/null || { echo "error: curl required" >&2; exit 3; }
+# Setup failures speak on stdout. Monitor surfaces only stdout, so a stderr-only exit
+# here would read as an armed, quiet watch rather than one that never started.
+die() { echo "[end] setup failed: $1 — watch never started"; exit 3; }
+
+command -v gh   >/dev/null || die "gh CLI required"
+command -v jq   >/dev/null || die "jq required"
+command -v curl >/dev/null || die "curl required"
 
 INTERVAL=30
 HEARTBEAT_MIN=30
@@ -50,7 +55,7 @@ while [[ $# -gt 0 ]]; do
     --heartbeat) HEARTBEAT_MIN="${2:?--heartbeat needs minutes}"; shift ;;
     --source)    SOURCE="${2:?--source needs gh|bus|auto}"; shift ;;
     --once)      ONCE=1 ;;
-    -*)          echo "error: unknown flag '$1'" >&2; exit 3 ;;
+    -*)          die "unknown flag '$1'" ;;
     *)           TARGET="$1" ;;
   esac
   shift
@@ -60,7 +65,7 @@ done
 
 if [[ -z "$TARGET" ]]; then
   TARGET=$(git branch --show-current 2>/dev/null) || true
-  [[ -z "$TARGET" ]] && { echo "error: no PR/branch argument and not on a branch" >&2; exit 3; }
+  [[ -z "$TARGET" ]] && die "no PR/branch argument and not on a branch"
 fi
 
 if [[ "$TARGET" =~ ^[0-9]+$ ]]; then
@@ -68,7 +73,7 @@ if [[ "$TARGET" =~ ^[0-9]+$ ]]; then
 else
   pr_json=$(gh pr list --head "$TARGET" --json number,url,title --jq '.[0]' 2>/dev/null)
 fi
-[[ -z "${pr_json:-}" || "$pr_json" == "null" ]] && { echo "error: no PR found for '$TARGET'" >&2; exit 3; }
+[[ -z "${pr_json:-}" || "$pr_json" == "null" ]] && die "no PR found for '$TARGET'"
 
 PR_NUMBER=$(jq -r .number <<<"$pr_json")
 PR_URL=$(jq -r .url <<<"$pr_json")
@@ -114,22 +119,33 @@ bus_resolve_id() {
 
 # One compact JSON object per surface. Keys are stable; a missing surface
 # contributes nothing, so a bus outage cannot look like a bus change.
+#
+# `gh`'s stderr is kept so a --once run can say *why* GitHub was unreadable
+# instead of exiting 3 with an empty stdout.
+GH_ERR=$(mktemp)
+
 gh_snapshot() {
   local raw
-  raw=$(gh pr view "$PR_NUMBER" --json state,headRefOid,statusCheckRollup,reviews,comments,reviewDecision 2>/dev/null) || return 1
+  raw=$(gh pr view "$PR_NUMBER" --json state,headRefOid,statusCheckRollup,reviews,comments,reviewDecision 2>"$GH_ERR") || return 1
   [[ -z "$raw" ]] && return 1
   jq -c '
-    ([.statusCheckRollup[]? | {n: (.name // .context // "?"), c: (.conclusion // .state // "PENDING")}]) as $checks
+    ([.statusCheckRollup[]?
+      | {n: (.name // .context // "?"), c: (.conclusion // .state // ""), s: (.status // "COMPLETED")}
+      # A CheckRun in flight carries its state in .status and serialises conclusion
+      # as "", which `//` does not fall through — bucket on status first so a
+      # re-running red job counts as pending, never as nothing.
+      | .c = (if .s != "COMPLETED" or .c == "" then "PENDING" else .c end)]) as $checks
     | {
         pr_state:   (.state // "?"),
         head:       ((.headRefOid // "") | .[0:8]),
         decision:   (if ((.reviewDecision // "") == "") then "NONE" else .reviewDecision end),
         reviews:    ((.reviews // []) | length),
         comments:   ((.comments // []) | length),
-        ci_fail:    ([$checks[] | select(.c == "FAILURE" or .c == "TIMED_OUT" or .c == "CANCELLED" or .c == "ERROR") | .n] | sort | join(",")),
+        ci_fail:    ([$checks[] | select(.c == "FAILURE" or .c == "TIMED_OUT" or .c == "CANCELLED" or .c == "ERROR" or .c == "ACTION_REQUIRED" or .c == "STARTUP_FAILURE") | .n] | sort | join(",")),
         ci_pending: ([$checks[] | select(.c == "PENDING" or .c == "IN_PROGRESS" or .c == "QUEUED" or .c == "EXPECTED")] | length),
         ci_pass:    ([$checks[] | select(.c == "SUCCESS")] | length)
-      }' <<<"$raw" 2>/dev/null
+      }
+    | .ci_state = (if .ci_fail != "" then "RED" elif .ci_pending > 0 then "PENDING" elif .ci_pass > 0 then "GREEN" else "NONE" end)' <<<"$raw" 2>/dev/null
 }
 
 bus_snapshot() {
@@ -198,13 +214,17 @@ emit_changes() {
     changed conflict   && [[ "${cur[conflict]-}" != "clean" ]] && echo "[bus] merge conflict: $(now conflict)"
   fi
 
-  changed ci_fail && {
-    if [[ -n "${cur[ci_fail]-}" ]]; then
-      echo "[ci]  FAILING: ${cur[ci_fail]}  (pass ${cur[ci_pass]-?} · pending ${cur[ci_pending]-?})"
-    else
-      echo "[ci]  all red checks cleared (pass ${cur[ci_pass]-?} · pending ${cur[ci_pending]-?})"
-    fi
-  }
+  # One line per CI state change, not per job: a red set that changes, a red job sent
+  # back to the queue, and the whole rollup going green. Jobs finishing one by one inside
+  # PENDING say nothing. Bucketing an in-flight check as PENDING empties ci_fail while the
+  # job is still red, so an emptied ci_fail alone must never print "cleared".
+  if changed ci_fail || changed ci_state; then
+    case "${cur[ci_state]-}" in
+      RED)     echo "[ci]  FAILING: ${cur[ci_fail]}  (pass ${cur[ci_pass]-?} · pending ${cur[ci_pending]-?})" ;;
+      PENDING) [[ -n "${prev[ci_fail]-}" ]] && echo "[ci]  red checks re-running, not green yet (pass ${cur[ci_pass]-?} · pending ${cur[ci_pending]-?})" ;;
+      GREEN)   echo "[ci]  all checks green (pass ${cur[ci_pass]-?})" ;;
+    esac
+  fi
   # The PR head is GitHub's alone and always reported: `bus_head` is the head the reviewer
   # READ, and the STALE note above is the comparison of the two.
   changed head     && [[ -n "${prev[head]-}" ]] && echo "[pr]  head moved $(was head) -> $(now head)"
@@ -232,6 +252,7 @@ last_heartbeat=$SECONDS
 ended=""
 
 on_exit() {
+  rm -f "$GH_ERR"
   # Silence must never be the only report. Any end — killed, crashed, terminal —
   # says so on stdout, so a dead watch is distinguishable from a quiet PR.
   [[ -n "$ended" ]] && return
@@ -247,8 +268,7 @@ if [[ "$SOURCE" != "gh" && -n "$BUS_TOKEN" ]]; then
   BUS_ID=$(bus_resolve_id) || BUS_ID=""
 fi
 if [[ "$SOURCE" == "bus" && -z "$BUS_TOKEN" ]]; then
-  echo "error: --source bus, but no town-crier token is readable" >&2
-  ended=setup; exit 3
+  ended=setup; die "--source bus, but no town-crier token is readable"
 fi
 
 if [[ -n "$BUS_ID" ]]; then
@@ -278,7 +298,6 @@ while true; do
         # degradation: 20 ticks (10 min at the default interval) is past any dispatch
         # delay, so a row still missing means this PR is not on the bus.
         if [[ "$SOURCE" == "bus" ]]; then
-          echo "error: --source bus, but no open town-crier request for PR #${PR_NUMBER} after ${attach_ticks} ticks" >&2
           echo "[end] --source bus: no open town-crier request for PR #${PR_NUMBER} after ${attach_ticks} ticks — not a PR outcome"
           ended=setup; exit 3
         fi
@@ -293,12 +312,18 @@ while true; do
 
   if [[ -z "$gh_json" ]]; then
     fail_streak=$((fail_streak + 1))
+    gh_why=$(tail -n 1 "$GH_ERR" 2>/dev/null)
+    # --once has no later tick to speak on, so it says why here rather than exiting
+    # 3 with nothing on stdout.
+    if [[ $ONCE -eq 1 ]]; then
+      echo "[warn] GitHub unreadable — nothing to report${gh_why:+ (${gh_why})}"
+      ended=once; exit 3
+    fi
     # 3 in a row is roughly a minute and a half at the default interval — past
     # any single flaky call, and worth a line before the quiet is mistaken for calm.
     if [[ $fail_streak -eq 3 || $((fail_streak % 20)) -eq 0 ]]; then
-      echo "[warn] GitHub unreadable for ${fail_streak} ticks — still retrying, treat this watch as blind"
+      echo "[warn] GitHub unreadable for ${fail_streak} ticks — still retrying, treat this watch as blind${gh_why:+ (${gh_why})}"
     fi
-    [[ $ONCE -eq 1 ]] && { ended=once; exit 3; }
     sleep "$INTERVAL"; continue
   fi
 
