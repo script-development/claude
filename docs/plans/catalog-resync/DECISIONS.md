@@ -52,6 +52,14 @@ with only the CI half (ignores the review-findings half kendo merged in).
 
 **Rejected.** Keeping the glob for a hypothetical second runner.
 
+**Amended 2026-09-07 — the `REVIEW_CLAUDE.md` half is superseded.** Kendo deleted the handoff
+file on 2026-09-05: `/review-branch` now reports in chat, and `/pr` gates on a report **in the
+same session** whose `Reviewed against commit:` sha matches HEAD. The catalog followed in
+[`../kendo-realign/DECISIONS.md`](../kendo-realign/DECISIONS.md) § D1, which carries the
+reasoning. Nothing in this repo reads `REVIEW_CLAUDE.md` any more. **The other half of D4 still
+holds**: the `REVIEW_<RUNNER>.md` glob and the cross-runner staleness check stay removed, and
+the bug-branch gate on BUG.md's `## Verification` verdict is unchanged.
+
 ## D5 — `startup`: lift the four generic patterns only
 
 **Chosen.** Docker Compose for redis/minio, the pre-resolved `!` context block, the confirmation
