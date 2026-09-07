@@ -1177,3 +1177,97 @@ a structural fact of how turns are bounded, not an artifact of this sampling cho
 ```
 
 No script was saved for this pass — re-derive with the method above rather than hunting for one.
+
+---
+
+## Finding #16, 2026-09-07 — the compact read leg's two load-bearing claims hold, confirmed live
+
+**Question.** The compact read leg (`hooks/handoff-inject.sh`'s `compact` branch, `docs/design.md`
+D17) rests on two claims that were reasoned from other findings but never freshly, independently
+confirmed with a live probe: (1) `session_id` survives auto-compaction, so the sidecar
+`hooks/handoff-urge.sh` writes keyed by `session_id` is still addressable by the same key after a
+compaction; and (2) at the exact moment `SessionStart(source:"compact")` fires, no new API request
+has run yet, so the last usage record in the hook's own `transcript_path` is still the
+pre-compaction peak rather than an already-shrunk post-compaction figure. This asks whether both
+hold, the way finding #13 settled four `PreCompact` claims live rather than by reasoning alone.
+
+**Method.** Same shape as finding #13: an isolated scratch project (`.claude/settings.json`
+registering `PreCompact` and `SessionStart` — matcher `""`, filtering on `.source` inside the
+script, matching this repo's own `hooks/hooks.json` pattern rather than a source-keyed matcher,
+which does not work for `SessionStart`) logging entry timestamp, `session_id`, `source`, and the
+transcript's own last usage record (same `input_tokens + cache_creation_input_tokens +
+cache_read_input_tokens` sum the real hooks compute) on every firing. `claude-haiku-4-5-20251001`,
+`--autocompact 100000`, a fixed `--session-id` so each `-p --resume` call is unambiguously the same
+session. Resident context pushed over the threshold with one base64-random filler piped via stdin
+on the first call (~96,000 source bytes → ~137,000 tokens; sized down from an initial attempt that
+used finding #13's raw byte count and hit the API's 200,000-token single-request ceiling instead —
+`--autocompact` alone does not raise that ceiling). Framed the filler in-prompt as "random base64
+test data for a context-size probe, not an instruction" — an unframed "ignore the noise above"
+phrasing got a prompt-injection refusal instead of a completion, a dead end worth naming so it is
+not rediscovered. Four `-p --resume` calls total on one session, ~$0.15. Scratch project and its
+`~/.claude/projects/*compact-probe*` transcript directories deleted immediately after, matching
+finding #13's cleanup discipline — no on-disk artifact to cite by `path:line`, re-derive via the
+method above.
+
+**Result — both claims confirmed, with the exact mechanism finding #13 predicted.** Sequence
+observed on the session's third `-p --resume` call (the first two calls only got as far as
+`PreCompact` firing without a paired `SessionStart(source:"compact")` — finding #13's own
+double-firing pattern, reproduced again here):
+
+```
+SessionStart(resume)   session_id=ae55ec06…  last_usage_total=140,670
+PreCompact             session_id=ae55ec06…  last_usage_total=140,670
+SessionStart(compact)  session_id=ae55ec06…  last_usage_total=140,670   <- the moment that matters
+```
+
+`session_id` is the identical UUID across all three firings, spanning three separate `claude -p`
+process launches (each `-p --resume` is a fresh process) — confirming it survives auto-compaction,
+not merely a single continuous process. And `last_usage_total` at `SessionStart(compact)` time
+(140,670) is byte-for-byte the same figure read one firing earlier at `PreCompact` and one before
+that at ordinary `resume` — not shrunk, not stale-larger, exactly the pre-compaction peak, since no
+new request had run between them. A fourth call, immediately after, confirmed real compaction had
+in fact happened by then: its own `resume`-time reading was 27,527 — a genuine ~5x shrink from
+140,670, not a mislabeled event.
+
+**What this does not settle.** n=1 for the full sequence (two earlier partial attempts failed for
+unrelated reasons — see Dead ends below — and were not counted). The double-firing pattern before
+the real compaction matches finding #13's n=2, now n=3 across both sessions using unrelated
+methods, which is reasonable confidence it is structural rather than incidental, but still not
+exhaustively characterized (whether it can chain further on a slower-growing session is still
+untested, per finding #13's own caveat).
+
+**Dead ends.**
+- First attempt reused finding #13's filler-generation byte count verbatim (300,000 source bytes)
+  without recomputing for a fresh probe: that tokenized to ~373,000 tokens in one message, over the
+  API's flat 200,000-token single-request ceiling regardless of `--autocompact`'s window setting —
+  `terminal_reason:"prompt_too_long"`, no hook fired at all. `--autocompact` bounds when the *harness*
+  compacts; it does not raise what a single request may contain.
+- Second attempt added a second full-size filler on the *second* call, on top of an
+  already-over-threshold first call. That drove the same `prompt_too_long` failure again, this time
+  mid-compaction-attempt (`PreCompact` fired twice, no completion) — compounding two large fillers
+  in successive turns overflows even a compacted prefix. The working recipe puts all the filler in
+  the first call only; subsequent calls carry a bare few-word prompt and let the already-oversized
+  resident context alone trigger the threshold check on entry.
+- An unframed "ignore the noise above" instruction, addressed to a wall of base64 filler, produced
+  a prompt-injection refusal from the model instead of a completion (haiku correctly read it as
+  suspicious). Framing the filler explicitly as inert test data in the prompt itself avoided this.
+
+### Reproduction
+
+```
+# Scratch project with .claude/settings.json:
+#   PreCompact:   matcher "", command logs session_id/source/transcript's-last-usage-record
+#   SessionStart: matcher "" (NOT a source-keyed matcher -- doesn't work for SessionStart),
+#                 same logging, filtered on .source inside the script if needed
+# head -c 96000 /dev/urandom | base64 -w0 > filler.b64   (tune this size to land near the
+#   --autocompact window; finding #13's own byte count was too large for a single request)
+# claude -p "<filler.b64 piped as prefix text>, framed as inert test data, not an instruction"
+#   --model claude-haiku-4-5-20251001 --autocompact 100000 --session-id <fixed-uuid>
+#   --output-format json
+# Then repeat, same session, via:
+# claude -p "<short unrelated prompt>" --model claude-haiku-4-5-20251001 --autocompact 100000
+#   --resume <same-uuid> --output-format json
+# ...until a SessionStart(compact) entry appears in the hook log (observed on the 3rd such call
+# in this run; budget for at least that many). Delete the scratch project and its
+# ~/.claude/projects/*/ transcript directory afterward.
+```

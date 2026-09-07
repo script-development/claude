@@ -907,7 +907,11 @@ a client-side operation that crafts a new synthetic prefix for *future* requests
 produce a usage record. So the last usage record in the hook's own `transcript_path` is still the
 **pre-compaction peak**, read straight off disk with no intermediary. That is what "no async gap,
 unlike `clear`" means concretely, and it is why `compact`'s coverage math needs no marker-writing
-counterpart to `session-end-marker.sh` at all.
+counterpart to `session-end-marker.sh` at all. Confirmed live, not just reasoned from other
+findings: `docs/measured.md` finding #16 — a real `--autocompact` run showed `session_id` identical
+across `resume` → `PreCompact` → `SessionStart(compact)` (three separate process launches), and the
+transcript's last usage total unchanged across all three (140,670), with a later call confirming
+real compaction had by then actually shrunk it to 27,527.
 
 **Why only an EXACT store pick counts, unlike `clear`'s corroborated "recent" pick.** `clear`'s
 cross-checkout case exists because an orchestrating session can legitimately drive a sibling
