@@ -5,6 +5,18 @@ incrementally — see `RELEASING.md` for why. Format follows [Keep a Changelog](
 versioning follows [Semantic Versioning](https://semver.org/), scoped to this plugin's own
 convention in `RELEASING.md`.
 
+## [0.2.1] - 2026-09-09
+
+### Fixed
+
+- **`skills/handoff/SKILL.md` probed the wrong paths for the verify gate and handoff store,
+  missing a plugin-installed checkout.** The probe order is now a plugin-cache glob
+  (`~/.claude/plugins/cache/*/context-economy/*/lib/`, newest version wins — the same pattern
+  `statusline.sh` already used) first, then the target checkout's own `lib/`, then
+  `~/.claude/lib/` for a pre-plugin symlink install, then the retired vendored path as a last
+  resort. Previously the probe never checked the plugin cache, so a plugin install fell through
+  to `gate=NONE` and wrote unverified handoffs even when a real gate was installed.
+
 ## [0.2.0] - 2026-09-09
 
 ### Changed
