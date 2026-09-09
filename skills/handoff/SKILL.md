@@ -183,16 +183,31 @@ here=$(git -C "$TARGET" rev-parse --show-toplevel)
 ref=$(git -C "$TARGET" rev-parse --abbrev-ref HEAD)
 [ "$ref" = HEAD ] && ref=$(git -C "$TARGET" rev-parse --short HEAD)
 slug=$(printf '%s' "$ref" | tr '/' '-')
+# Plugin-cache glob first, last match wins (newest version) -- the same pattern
+# statusline.sh already uses for context-thresholds.sh, so a plugin bump (a new cache
+# directory) can never dangle this the way a version-embedding path would.
 gate=
-for g in "$HOME/.claude/lib/verify-handoff.sh" \
-         "$PWD/plugins/context-economy/lib/verify-handoff.sh"; do
-    [ -x "$g" ] && gate=$g && break
+for g in "$HOME"/.claude/plugins/cache/*/context-economy/*/lib/verify-handoff.sh; do
+    [ -x "$g" ] && gate=$g
 done
+if [ -z "$gate" ]; then
+    for g in "$here/lib/verify-handoff.sh" \
+             "$HOME/.claude/lib/verify-handoff.sh" \
+             "$PWD/plugins/context-economy/lib/verify-handoff.sh"; do
+        [ -x "$g" ] && gate=$g && break
+    done
+fi
 store=
-for s in "$HOME/.claude/lib/handoff-store.sh" \
-         "$PWD/plugins/context-economy/lib/handoff-store.sh"; do
-    [ -r "$s" ] && store=$s && break
+for s in "$HOME"/.claude/plugins/cache/*/context-economy/*/lib/handoff-store.sh; do
+    [ -r "$s" ] && store=$s
 done
+if [ -z "$store" ]; then
+    for s in "$here/lib/handoff-store.sh" \
+             "$HOME/.claude/lib/handoff-store.sh" \
+             "$PWD/plugins/context-economy/lib/handoff-store.sh"; do
+        [ -r "$s" ] && store=$s && break
+    done
+fi
 if [ -n "$store" ]; then
     . "$store"
     mkdir -p "$(handoff_store_dir)"
@@ -214,10 +229,12 @@ name that differs by one character is not a broken filename, it is a handoff not
 normalises the path (and on Windows returns a different notation than the shell does); the gate
 compares against git's form.
 
-The gate is found by probing `~/.claude/lib/` first, then the in-repo path for a session already
-inside mission_control. Not through a sibling path like `<project-root>/../mission_control/tools/`,
-which is layout config of exactly the kind this repo refuses to make configurable; and not by asking
-the model where its own skill file lives, which it cannot reliably know.
+The gate is found by probing, in order: the plugin-cache glob (newest installed version wins),
+then the target checkout's own `lib/` (a session already inside this repo), then `~/.claude/lib/`
+(a pre-plugin symlink install), then the retired vendored path as a last-resort fallback. Not
+through a sibling path like `<project-root>/../mission_control/tools/`, which is layout config of
+exactly the kind this repo refuses to make configurable; and not by asking the model where its own
+skill file lives, which it cannot reliably know.
 
 If `gate=NONE`, **write the handoff anyway** and mark it unverified in `status:`. Degrade capability,
 never execution — an unverified handoff is worth far more than no handoff.
