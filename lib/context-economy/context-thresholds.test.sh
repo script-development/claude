@@ -17,7 +17,7 @@
 #       arming. A feature would revert with every test still green and no symptom until someone
 #       noticed handoffs had quietly stopped happening.
 #
-#   t2  every variable a consumer reads must be non-empty and numeric. `handoff-urge.sh` requires
+#   t2  every variable a consumer reads must be non-empty and numeric. `handoff-write.sh` requires
 #       four of them and goes SILENT if any is missing, which is the correct degradation but an
 #       invisible one — a typo in a name here disables the hook and reports nothing.
 #
@@ -130,7 +130,7 @@ target=$(get HANDOFF_TARGET_TOKENS); ceiling=$(get HANDOFF_CEILING_TOKENS)
 fat=$(get CTX_FAT_TURN_TOKENS); auth=$(get CTX_AUTHORING_TURN_TOKENS)
 trigger=$(( declared - 2 * fat - auth ))
 
-# The floor, which is also what hooks/handoff-urge.sh enforces at runtime. Under the declared
+# The floor, which is also what hooks/handoff-write.sh enforces at runtime. Under the declared
 # ceiling the trigger must land at a depth where a handoff has something to record; if it does not,
 # the automatic path is off for every session on this machine and that should fail here rather than
 # be discovered by its silence months later.

@@ -417,14 +417,14 @@ recorded in `docs/calibration.md`.
   says what that does and does not do to this inference.
 - **All three fired at ~1.0M `preTokens`**, confirming these sessions run the `[1m]` beta and that
   the ceiling is not ~150k or ~200k. This confirms the `[1m]`-suffix detection path at
-  `hooks/handoff-urge.sh:144`; it is not a new constraint.
+  `hooks/handoff-write.sh:144`; it is not a new constraint.
 
 ### Reproduction
 
 Not covered by `tools/context-audit.js`. Filter the transcript store for records with
 `subtype == "compact_boundary"`, then take the nearest `message.usage` before and after by index —
 and parse the JSON structure rather than grepping for field names, per the trap already recorded at
-`hooks/handoff-urge.sh:105`.
+`hooks/handoff-write.sh:105`.
 
 ---
 
@@ -506,7 +506,7 @@ node tools/toolsearch-cache-probe.js --verbose  # every pair, so an outlier can 
 
 Figures above are from a 286-transcript corpus as of 2026-08-31, of which 100 carried the string
 `ToolSearch` and were parsed structurally — the string match is a speed pre-filter only, per the
-trap at `hooks/handoff-urge.sh:105`.
+trap at `hooks/handoff-write.sh:105`.
 
 ---
 
@@ -1185,7 +1185,7 @@ No script was saved for this pass — re-derive with the method above rather tha
 **Question.** The compact read leg (`hooks/handoff-inject.sh`'s `compact` branch, `docs/design.md`
 D17) rests on two claims that were reasoned from other findings but never freshly, independently
 confirmed with a live probe: (1) `session_id` survives auto-compaction, so the sidecar
-`hooks/handoff-urge.sh` writes keyed by `session_id` is still addressable by the same key after a
+`hooks/handoff-write.sh` writes keyed by `session_id` is still addressable by the same key after a
 compaction; and (2) at the exact moment `SessionStart(source:"compact")` fires, no new API request
 has run yet, so the last usage record in the hook's own `transcript_path` is still the
 pre-compaction peak rather than an already-shrunk post-compaction figure. This asks whether both

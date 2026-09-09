@@ -17,7 +17,7 @@
 #   m2  the handoff MTIME, captured at clear time, is the whole basis of the one judgement the
 #       surface makes: does the handoff on disk describe the session just thrown away, or an
 #       older one? Without it a stale handoff gets injected as though it were coverage.
-#   m3  `urge_fired` distinguishes two different mistakes — the clear beat the threshold (trigger
+#   m3  `trigger_fired` distinguishes two different mistakes — the clear beat the threshold (trigger
 #       never armed) versus the human cleared past a handoff that had been asked for. Recording
 #       only "no handoff" would conflate them.
 #   m4  the key is the MAIN worktree, not the cwd. A clear inside a linked worktree must file
@@ -227,8 +227,8 @@ reset_state
 # Act
 run "$(payload clear "$repo" sess-noarm)" >/dev/null
 # Assert
-assert_field 'a clear that beat the trigger records urge_fired false' \
-    "$(marker_for "$repo" main)" '.urge_fired' 'false'
+assert_field 'a clear that beat the trigger records trigger_fired false' \
+    "$(marker_for "$repo" main)" '.trigger_fired' 'false'
 
 # Arrange
 mkdir -p "$home/.claude/state/handoff-trigger"
@@ -237,8 +237,8 @@ reset_state
 # Act
 run "$(payload clear "$repo" sess-armed)" >/dev/null
 # Assert
-assert_field 'a clear after the trigger fired records urge_fired true' \
-    "$(marker_for "$repo" main)" '.urge_fired' 'true'
+assert_field 'a clear after the trigger fired records trigger_fired true' \
+    "$(marker_for "$repo" main)" '.trigger_fired' 'true'
 
 # --- Branch slugging and separation ---------------------------------------
 

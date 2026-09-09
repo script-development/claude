@@ -3,7 +3,7 @@
 # SessionStart hook: the READ leg of the automated handoff cycle, plus the surface for the
 # /clear marker (build-order item 4, pieces 2 and 4).
 #
-# Pairs with handoff-urge.sh (the write leg) and session-end-marker.sh (which records a /clear).
+# Pairs with handoff-write.sh (the write leg) and session-end-marker.sh (which records a /clear).
 # This one hands the document back, already verified, to the session that comes after the reset --
 # and says what the previous session was doing if it was cleared without handing off.
 #
@@ -171,7 +171,7 @@ fi
 gate_checkout=${handoff_checkout:-$here}
 
 marker_present=false
-urge_ever_fired=false
+trigger_ever_fired=false
 sidecar_present=false
 sc_expected_gap=""
 gap=""
@@ -194,7 +194,18 @@ if [ "$source_kind" = clear ]; then
         m_ended=$(jq -r '.ended_at // empty' "$marker" 2>/dev/null | tr -d '\r')
         m_ended_epoch=$(jq -r '.ended_at_epoch // empty' "$marker" 2>/dev/null | tr -d '\r')
         m_handoff_mtime=$(jq -r '.handoff.mtime // empty' "$marker" 2>/dev/null | tr -d '\r')
-        m_urge=$(jq -r '.urge_fired // false' "$marker" 2>/dev/null | tr -d '\r')
+        # `trigger_fired` was `urge_fired` until the 2026-09-09 rename, and the marker is written
+        # by whichever install is on disk -- an older plugin copy keeps emitting the old key until it
+        # is updated, so the legacy name has to stay readable, or every clear in that window reports
+        # "never armed" when the trigger did fire. Drop the fallback once no install still writing
+        # `urge_fired` is plausibly in service.
+        #
+        # `has` rather than `//`, because jq's alternative operator treats `false` as empty: a marker
+        # legitimately carrying `trigger_fired: false` would fall through to the legacy key and, on an
+        # old marker that had it true, silently invert the verdict.
+        m_trigger=$(jq -r 'if has("trigger_fired") then .trigger_fired
+                           elif has("urge_fired") then .urge_fired
+                           else false end' "$marker" 2>/dev/null | tr -d '\r')
     fi
 
     # ── A GUESSED PICK NEEDS EVIDENCE ────────────────────────────────────────────────────
@@ -233,7 +244,7 @@ elif [ "$source_kind" = compact ]; then
     # ── COMPACT: the written_at_tokens sidecar, and a token-distance coverage check ─────────
     #
     # No async gap here, unlike `clear`: `session_id` survives a compaction (the same session
-    # continues, it is not a fresh one with a blank transcript), so `hooks/handoff-urge.sh`'s
+    # continues, it is not a fresh one with a blank transcript), so `hooks/handoff-write.sh`'s
     # own per-session latch and sidecar -- keyed by THIS session's session_id, written to
     # `$HOME/.claude/state/handoff-trigger/` -- are readable directly, with no separate
     # marker-writing hook needed the way `SessionEnd` is for `clear`.
@@ -253,7 +264,7 @@ elif [ "$source_kind" = compact ]; then
         latch_dir="${HOME}/.claude/state/handoff-trigger"
         latch="$latch_dir/$session_id"
         sidecar="$latch_dir/$session_id.written"
-        [ -e "$latch" ] && urge_ever_fired=true
+        [ -e "$latch" ] && trigger_ever_fired=true
 
         if [ -e "$sidecar" ] && jq -e . "$sidecar" >/dev/null 2>&1; then
             r=$(jq -r '.written_at_tokens // empty' "$sidecar" 2>/dev/null | tr -d '\r')
@@ -270,7 +281,7 @@ elif [ "$source_kind" = compact ]; then
     fi
 
     # Read THIS session's own last usage record, from THIS payload's own transcript_path --
-    # the same technique `handoff-urge.sh` uses, and safe to read synchronously here for the
+    # the same technique `handoff-write.sh` uses, and safe to read synchronously here for the
     # reason above: no new request has run since compaction, so the last record in the file is
     # still the PRE-compaction peak, which is exactly the figure the gap needs on this side.
     ct_transcript=$(printf '%s' "$input" | jq -r '.transcript_path // empty' 2>/dev/null | tr -d '\r')
@@ -296,7 +307,7 @@ fi
 # Nothing to say. On `clear`, this is the ordinary case: nobody handed off, nobody cleared
 # mid-work. On `compact`, it means the write trigger never even asked for a handoff this
 # session AND none exists for this branch -- also nothing new to report.
-if [ "$handoff_present" = false ] && [ "$marker_present" = false ] && [ "$urge_ever_fired" = false ]; then
+if [ "$handoff_present" = false ] && [ "$marker_present" = false ] && [ "$trigger_ever_fired" = false ]; then
     exit 0
 fi
 
@@ -387,7 +398,7 @@ compose() {
     if [ "$source_kind" = compact ]; then
         printf -- '## This session just auto-compacted\n\n'
 
-        if [ "$urge_ever_fired" = false ]; then
+        if [ "$trigger_ever_fired" = false ]; then
             printf 'The write trigger never armed this session before compaction hit — nothing asked for a\nhandoff, so there may be nothing below that covers the work just summarised.\n\n'
         elif [ "$sidecar_present" = false ]; then
             printf 'The write trigger DID ask for a handoff this session, but there is no record of the write\never completing before this compaction. If one exists below, treat its coverage as unknown.\n\n'
@@ -441,7 +452,7 @@ compose() {
         fi
         printf '.\n\n'
 
-        if [ "${m_urge:-false}" = "true" ]; then
+        if [ "${m_trigger:-false}" = "true" ]; then
             printf 'The write trigger HAD already fired for that session, so a handoff was asked for.\n'
         else
             printf 'The write trigger never armed for that session — the `/clear` came first, so nothing\nasked for a handoff.\n'

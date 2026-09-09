@@ -34,7 +34,7 @@
 #       SHA. Both are how the writer names the file, so a mismatch here means the reader silently
 #       finds nothing on exactly the branches most likely to be mid-task.
 #
-# No framework, matching handoff-urge.test.sh. Run it as:
+# No framework, matching handoff-write.test.sh. Run it as:
 #
 #   bash hooks/handoff-inject.test.sh
 
@@ -218,9 +218,9 @@ assert_field 'source: compact injects, tagged as a SessionStart result' \
 
 # --- COMPACT: the token-distance coverage check -----------------------------
 #
-# `hooks/handoff-urge.sh`'s own latch/sidecar files are the contract this branch reads. Written
+# `hooks/handoff-write.sh`'s own latch/sidecar files are the contract this branch reads. Written
 # by hand here rather than by running that hook first -- this suite tests handoff-inject.sh's
-# READ of the contract, not handoff-urge.sh's WRITE of it, which has its own suite.
+# READ of the contract, not handoff-write.sh's WRITE of it, which has its own suite.
 
 usage_transcript() {  # usage_transcript <name> <resident-total>
     local path="$fixture/$1.jsonl"
@@ -552,13 +552,13 @@ state="$fixture/last-clear"
 # read as "the feature does not work" rather than "the test computed the wrong key".
 marker_key=$(printf '%s' "$(git -C "$repo" worktree list | head -1 | awk '{print $1}')" | md5sum | cut -c1-32)
 
-write_marker() {  # write_marker <slug> <resident> <handoff_mtime> <ended_epoch> <urge_fired>
+write_marker() {  # write_marker <slug> <resident> <handoff_mtime> <ended_epoch> <trigger_fired>
     mkdir -p "$state"
     jq -n --argjson r "$2" --argjson hm "$3" --argjson ee "$4" --argjson uf "$5" \
         --arg tp 'C:/Users/Bart/.claude/projects/x/prev.jsonl' \
         '{ended_at:"2026-08-26T10:00:00Z", ended_at_epoch:$ee, reason:"clear",
           session_id:"prev-sess", transcript_path:$tp, branch:"main",
-          resident_tokens:$r, handoff:{present:true,path:"x",mtime:$hm}, urge_fired:$uf}' \
+          resident_tokens:$r, handoff:{present:true,path:"x",mtime:$hm}, trigger_fired:$uf}' \
         > "$state/$marker_key-$1.json"
 }
 
@@ -606,6 +606,24 @@ write_marker main 250000 "$now_epoch" "$now_epoch" true
 assert_context_has 'a clear after the trigger fired says a handoff had been asked for' \
     'HAD already fired' "$(payload clear)" VERIFY_HANDOFF_GATE="$gate" LAST_CLEAR_STATE_DIR="$state"
 
+# THE LEGACY KEY. `trigger_fired` was `urge_fired` until the 2026-09-09 rename, and the marker on
+# disk is written by whichever install is installed -- an older plugin copy keeps emitting the old
+# name until it is updated, while this hook is already reading the new one. Both directions are
+# asserted on purpose: `true` proves the fallback is reached at all, and `false` proves it is
+# reached by `has` and not by jq's `//`, which treats `false` as empty and would fall through.
+write_legacy_marker() {  # write_legacy_marker <urge_fired>
+    mkdir -p "$state"
+    jq -n --argjson uf "$1" --argjson ee "$now_epoch"         '{ended_at:"2026-08-26T10:00:00Z", ended_at_epoch:$ee, reason:"clear",
+          session_id:"prev-sess", transcript_path:"C:/x/prev.jsonl", branch:"main",
+          resident_tokens:250000, handoff:{present:true,path:"x",mtime:$ee}, urge_fired:$uf}'         > "$state/$marker_key-main.json"
+}
+
+write_legacy_marker true
+assert_context_has 'a pre-rename marker saying the trigger fired is still read as fired'     'HAD already fired' "$(payload clear)" VERIFY_HANDOFF_GATE="$gate" LAST_CLEAR_STATE_DIR="$state"
+
+write_legacy_marker false
+assert_context_has 'a pre-rename marker saying the trigger did not fire is not inverted'     'never armed' "$(payload clear)" VERIFY_HANDOFF_GATE="$gate" LAST_CLEAR_STATE_DIR="$state"
+
 # --- The marker must fire even with no handoff at all ----------------------
 #
 # This is the case the whole hook exists for: cleared mid-work, nothing written down. Before the
@@ -618,7 +636,7 @@ mkdir -p "$state"
 jq -n --argjson ee "$now_epoch" \
     '{ended_at:"2026-08-26T10:00:00Z", ended_at_epoch:$ee, reason:"clear", session_id:"prev",
       transcript_path:"C:/x/prev.jsonl", branch:"orphan", resident_tokens:310000,
-      handoff:{present:false,path:"x",mtime:null}, urge_fired:false}' \
+      handoff:{present:false,path:"x",mtime:null}, trigger_fired:false}' \
     > "$state/$orphan_key-orphan.json"
 
 # Act & Assert
@@ -698,7 +716,7 @@ write_cross_marker() {  # write_cross_marker <handoff_mtime> <ended_epoch>
     jq -n --argjson hm "$1" --argjson ee "$2" \
         '{ended_at:"2026-08-26T10:00:00Z", ended_at_epoch:$ee, reason:"clear",
           session_id:"prev-sess", transcript_path:"C:/x/prev.jsonl", branch:"driving",
-          resident_tokens:300000, handoff:{present:true,path:"x",mtime:$hm}, urge_fired:true}' \
+          resident_tokens:300000, handoff:{present:true,path:"x",mtime:$hm}, trigger_fired:true}' \
         > "$state/$driving_key-driving.json"
 }
 h_mtime=$(stat -c %Y "$store/$(store_name "$other_main" other-work)")

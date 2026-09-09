@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}\"/hooks/handoff-urge.sh"
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}\"/hooks/handoff-write.sh"
           }
         ]
       }

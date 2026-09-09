@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Tests for handoff-urge.sh.
+# Tests for handoff-write.sh.
 #
 # The suite is lopsided on purpose: most cases assert that the hook stays SILENT. That is the
 # correct bias for this subject. A hook that fails to fire costs one handoff the human writes by
@@ -31,16 +31,16 @@
 #
 # No framework, matching the sibling verify-*.test.sh suites. Run it as:
 #
-#   bash hooks/handoff-urge.test.sh
+#   bash hooks/handoff-write.test.sh
 
 set -uo pipefail
 
 # Arrange
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-subject="$script_dir/handoff-urge.sh"
+subject="$script_dir/handoff-write.sh"
 
 if [ ! -r "$subject" ]; then
-    echo "handoff-urge.sh not found at $subject" >&2
+    echo "handoff-write.sh not found at $subject" >&2
     exit 2
 fi
 

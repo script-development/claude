@@ -1,7 +1,7 @@
 #!/bin/bash
 # Context-reset thresholds, in resident input tokens.
 #
-# SINGLE SOURCE OF TRUTH. lib/context-gauge.sh renders against these; hooks/handoff-urge.sh
+# SINGLE SOURCE OF TRUTH. lib/context-gauge.sh renders against these; hooks/handoff-write.sh
 # decides its one-shot advisory for unattended runs against the same numbers. Two copies
 # would drift silently — and worse, drift in
 # different units (one in tokens, one in percent) — with nothing failing to announce it.
@@ -168,7 +168,7 @@ CTX_URGE_TOKENS=200000
 # expressing a compaction-relative decision as a window-independent constant.
 #
 # The automatic trigger is therefore derived from the ceiling, at the LATEST point that is still
-# safe. Three expressions, all in resident tokens, all consumed by hooks/handoff-urge.sh:
+# safe. Three expressions, all in resident tokens, all consumed by hooks/handoff-write.sh:
 #
 #     trigger  =  compact_threshold - 2*fat_turn - authoring_turn        fire at or above this
 #     gate     =  resident + fat_turn + authoring_turn  <  compact_threshold
@@ -310,12 +310,15 @@ CTX_1M_COMPACT_THRESHOLD_TOKENS=887000
 # One number, one definition, one place carrying its justification.
 #
 # WHY THE 1M BOUND IS THE RIGHT DECLARATION HERE, and why it is safe despite being checked in and
-# shared: it is a conservative LOWER bound, and `CTX_URGE_TOKENS` gates every consumer at 200k. A
-# 200k-window session auto-compacts near 187k and so never reaches that gate at all, which means
-# this declaration cannot mislead there -- it is unreachable, not merely harmless. The one case it
-# could get wrong is an INTERMEDIATE window (say 500k), where a real ceiling near 425k would decline
-# a case this bound waves through. If such a session becomes normal here, declare that ceiling
-# instead of widening the 1M constant above.
+# shared: it is a conservative LOWER bound, and nothing reachable on a smaller window consumes it.
+# `CTX_URGE_TOKENS` is NOT what makes that true -- since D18 it gates nothing, it urges, exactly as
+# its name says: the statusline renders it and a human decides. What makes this declaration safe is
+# the derived trigger itself. At this bound the automatic write arms at `887000 - 2*60000 - 65000 =
+# 702,000`, and a 200k-window session auto-compacts near 187k, so it never comes close -- the
+# declaration is unreachable there, not merely harmless. The one case it could get wrong is an
+# INTERMEDIATE window (say 500k), where a real ceiling near 425k would decline a case this bound
+# waves through. If such a session becomes normal here, declare that ceiling instead of widening
+# the 1M constant above.
 #
 # TO OVERRIDE PER MACHINE without touching this shared file, export CTX_COMPACT_THRESHOLD_TOKENS in
 # the environment: the hook captures it BEFORE sourcing, precisely so this assignment cannot clobber
@@ -385,7 +388,7 @@ CTX_CHARS_PER_TOKEN_X100=268
 # not a staleness finding but a category error: the gap is nominal, and the verdict would be
 # reporting the design as a defect.
 #
-# So the automatic path carries its OWN expected gap instead. `handoff-urge.sh` records
+# So the automatic path carries its OWN expected gap instead. `handoff-write.sh` records
 # `expected_gap_tokens` into the sidecar when the handoff lands, and `handoff-inject.sh` judges
 # against whichever is larger. A sidecar without the field (written before D18) falls back to this
 # constant, which is the pre-D18 behaviour and errs toward flagging -- the safe direction for a

@@ -497,7 +497,7 @@ list produces for its own test citations, with no configuration.
 
 _Scoped 2026-09-09 by [D18](#d18):_ everything below still stands, and the statusline is now the
 **only** consumer of `CTX_URGE_TOKENS`. What D18 removed is the assumption — never stated here, but
-inherited by `hooks/handoff-urge.sh` when it was built — that the number this advisory *displays* is
+inherited by `hooks/handoff-write.sh` when it was built — that the number this advisory *displays* is
 also the right number to *arm* an automatic write on. It is not: 200k is a cost judgement a human
 acts on, while beating compaction is a continuity constraint relative to a window this decision
 never had to know about. The two-stage passive advisory is unchanged.
@@ -895,7 +895,7 @@ part of the envelope from the start, is now literally true rather than aspiratio
 
 Built 2026-09-07 (Route 1, sized in the `T + fat_turn + authoring_turn` build item above). Extends
 `hooks/handoff-inject.sh`'s `source` dispatch — `clear|compact) ;;` — and adds one thing to
-`hooks/handoff-urge.sh` that has nothing to do with arming: once its own per-session latch exists,
+`hooks/handoff-write.sh` that has nothing to do with arming: once its own per-session latch exists,
 it watches for the handoff it demanded actually landing on disk and records the resident size AT
 THAT MOMENT into a sidecar (`$HOME/.claude/state/handoff-trigger/$session_id.written`) beside the
 latch. That is the whole write side — no `PreCompact`, no `PostCompact`, no compaction corpus
@@ -956,7 +956,7 @@ to pay than Route 1's, and unneeded unless Route 1 proves unacceptably stale in 
 ### D18 — The automatic trigger is derived from the compaction ceiling; 200k is advisory only
 
 Decided 2026-09-09. Rewrites the arming block in `lib/context-economy/context-thresholds.sh`,
-`hooks/handoff-urge.sh`'s trigger, and one branch of `hooks/handoff-inject.sh`'s coverage verdict.
+`hooks/handoff-write.sh`'s trigger, and one branch of `hooks/handoff-inject.sh`'s coverage verdict.
 Supersedes the absolute-threshold half of [D10](#d10) for the **automatic** path; D10's passive
 statusline advisory is untouched and is now the sole consumer of `CTX_URGE_TOKENS`.
 
@@ -1027,7 +1027,7 @@ times `CTX_HANDOFF_ACCEPTABLE_GAP_TOKENS` (10,350). Judged against that constant
 handoff would be flagged `likely-undocumented` for doing exactly what it was designed to do: not a
 staleness finding but a category error, and one no test caught because the coherence checks only
 covered `NOTICE < URGE` and the old `URGE + fat + auth < declared`. Even at the *median* turn (6,707)
-the reserved gap exceeds the constant. So `handoff-urge.sh` now records `expected_gap_tokens` into
+the reserved gap exceeds the constant. So `handoff-write.sh` now records `expected_gap_tokens` into
 the sidecar when the handoff lands, and `handoff-inject.sh` judges against **whichever bound is
 larger**. Larger, not "the writer's if present": a writer that reserved less must not be able to
 tighten a verdict that is the constant's judgement to make. A sidecar without the field is pre-D18
@@ -1238,7 +1238,7 @@ SymbolicLink` fails with `Administrator privilege required`, where git-bash's `l
    `reports/2026-08-24-harness-automation-surface.md`. Four hooks in `claude-dotfiles`, all
    registered in **user** settings, all with suites alongside as with items 1–3:
 
-   - `hooks/handoff-urge.sh` (`Stop`) — the write leg. Measures resident context out of
+   - `hooks/handoff-write.sh` (`Stop`) — the write leg. Measures resident context out of
      `transcript_path` (F5), compares against `CTX_URGE_TOKENS`, and blocks once with the
      instruction to run `/handoff` (F4). 30 assertions. _Amended 2026-09-09 by [D18](#d18):_ the
      comparison is no longer against `CTX_URGE_TOKENS` but against a trigger derived from the
@@ -1349,7 +1349,7 @@ SymbolicLink` fails with `Administrator privilege required`, where git-bash's `l
      autonomous `Bash`/`Edit`/`Write` stretch (22–259 tool calls), not the single wide `Read`/grep
      F4b's illustration described.
    - **Recomputed against the real check, not the abstract invariant — no percentile trade-off
-     turned out to be needed.** `hooks/handoff-urge.sh` never evaluates the invariant against
+     turned out to be needed.** `hooks/handoff-write.sh` never evaluates the invariant against
      `effective_window` directly; it evaluates `resident + fat_turn + authoring_turn < ceiling`,
      where `ceiling` is either `CTX_COMPACT_THRESHOLD_TOKENS` if a machine declared one, or the
      hard-coded `CTX_1M_COMPACT_THRESHOLD_TOKENS = 887,000` if the `[1m]` suffix was detected, or
@@ -1375,8 +1375,8 @@ SymbolicLink` fails with `Administrator privilege required`, where git-bash's `l
        bound must cover a turn that really happened, not just a clean one; the excluded turn was
        smaller than the max regardless, so this changes nothing about which value is the ceiling).
        Tests
-       (`context-thresholds.test.sh`, `handoff-urge.test.sh`) pass unchanged — the coherence check
-       `urge + fat + authoring < declared` still holds (590,000 < 887,000), and `handoff-urge.test.sh`
+       (`context-thresholds.test.sh`, `handoff-write.test.sh`) pass unchanged — the coherence check
+       `urge + fat + authoring < declared` still holds (590,000 < 887,000), and `handoff-write.test.sh`
        fixtures its own thresholds, so retuning the real file cannot break it.
      - **What would make the percentile question live:** a future ceiling declared for an
        intermediate window (the exact gap `CTX_1M_COMPACT_THRESHOLD_TOKENS`'s own comment already

@@ -2,7 +2,7 @@
 #
 # SessionEnd hook: record that a /clear happened (build-order item 4, piece 4).
 #
-# This closes the one hole in the write leg. `handoff-urge.sh` fires on `Stop`, at a turn boundary,
+# This closes the one hole in the write leg. `handoff-write.sh` fires on `Stop`, at a turn boundary,
 # once resident context reaches the threshold. But `/clear` does NOT fire `Stop` (F9 -- the
 # binary's own hook table says otherwise and is wrong), so a clear typed at 180k, below the
 # threshold, or before the trigger's turn boundary arrives, discards the session with no handoff
@@ -170,8 +170,8 @@ fi
 # Did the write trigger ever arm for this session? The latch is the only evidence, and its absence
 # is informative in its own right: it means the clear beat the threshold rather than overrode a
 # demand for a handoff. Those are different mistakes and deserve different wording downstream.
-urge_fired=false
-[ -n "$session_id" ] && [ -e "$HOME/.claude/state/handoff-trigger/$session_id" ] && urge_fired=true
+trigger_fired=false
+[ -n "$session_id" ] && [ -e "$HOME/.claude/state/handoff-trigger/$session_id" ] && trigger_fired=true
 
 # ── Write ──────────────────────────────────────────────────────────────────────────────────
 #
@@ -202,7 +202,7 @@ if [ "$have_jq" = true ]; then
         --arg handoff_path "$handoff_path" \
         --argjson handoff_present "$handoff_present" \
         --argjson handoff_mtime "$handoff_mtime" \
-        --argjson urge_fired "$urge_fired" \
+        --argjson trigger_fired "$trigger_fired" \
         '{
             ended_at: $ended_at,
             ended_at_epoch: $ended_at_epoch,
@@ -218,7 +218,7 @@ if [ "$have_jq" = true ]; then
                 path: $handoff_path,
                 mtime: $handoff_mtime
             },
-            urge_fired: $urge_fired
+            trigger_fired: $trigger_fired
         }' > "$marker" 2>/dev/null
 else
     # No jq to build the object, so escape by hand: backslash first (a Windows path is the
@@ -245,7 +245,7 @@ else
     "path": "$(json_str "$handoff_path")",
     "mtime": $handoff_mtime
   },
-  "urge_fired": $urge_fired,
+  "trigger_fired": $trigger_fired,
   "degraded_no_jq": true
 }
 EOF
