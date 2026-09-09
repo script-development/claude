@@ -173,6 +173,7 @@ gate_checkout=${handoff_checkout:-$here}
 marker_present=false
 urge_ever_fired=false
 sidecar_present=false
+sc_expected_gap=""
 gap=""
 if [ "$source_kind" = clear ]; then
     # ── The /clear marker ────────────────────────────────────────────────────────────────
@@ -257,6 +258,14 @@ elif [ "$source_kind" = compact ]; then
         if [ -e "$sidecar" ] && jq -e . "$sidecar" >/dev/null 2>&1; then
             r=$(jq -r '.written_at_tokens // empty' "$sidecar" 2>/dev/null | tr -d '\r')
             case "${r:-}" in ''|*[!0-9]*) ;; *) sidecar_present=true; sc_written_at_tokens=$r ;; esac
+            # The gap the WRITER deliberately reserved, when it recorded one (D18). An
+            # automatically written handoff lands ~2*fat_turn below the ceiling by construction,
+            # so judging it against CTX_HANDOFF_ACCEPTABLE_GAP_TOKENS alone would flag it as
+            # stale every time for doing exactly what it was designed to do. Absent -- a sidecar
+            # written before D18 -- leaves the constant in sole charge, which is the old
+            # behaviour and errs toward flagging: the safe direction for a verdict.
+            e=$(jq -r '.expected_gap_tokens // empty' "$sidecar" 2>/dev/null | tr -d '\r')
+            case "${e:-}" in ''|*[!0-9]*) ;; *) sc_expected_gap=$e ;; esac
         fi
     fi
 
@@ -383,18 +392,34 @@ compose() {
         elif [ "$sidecar_present" = false ]; then
             printf 'The write trigger DID ask for a handoff this session, but there is no record of the write\never completing before this compaction. If one exists below, treat its coverage as unknown.\n\n'
         elif [ -n "$gap" ]; then
-            case "${CTX_HANDOFF_ACCEPTABLE_GAP_TOKENS:-}" in
+            # The threshold this gap is judged against is the LARGER of the configured constant
+            # and whatever gap the writer reserved on purpose (D18). Taking the larger rather than
+            # preferring one outright keeps both readings honest: a manual handoff has no reserved
+            # gap and falls through to the constant, while an automatic one cannot be called stale
+            # for landing exactly where the trigger aimed it. A writer that reserved LESS than the
+            # constant does not get to tighten the verdict either.
+            gap_limit="${CTX_HANDOFF_ACCEPTABLE_GAP_TOKENS:-}"
+            case "${sc_expected_gap:-}" in
+                ''|*[!0-9]*) ;;
+                *)
+                    case "${gap_limit:-}" in
+                        ''|*[!0-9]*) gap_limit="$sc_expected_gap" ;;
+                        *) [ "$sc_expected_gap" -gt "$gap_limit" ] && gap_limit="$sc_expected_gap" ;;
+                    esac
+                    ;;
+            esac
+            case "${gap_limit:-}" in
                 ''|*[!0-9]*)
                     printf 'The handoff below was written at %sk of resident context, %sk of context ago. No\nacceptable-gap threshold is configured, so judge for yourself whether that gap is small\nenough to trust its coverage.\n\n' \
                         "$(( sc_written_at_tokens / 1000 ))" "$(( gap / 1000 ))"
                     ;;
                 *)
-                    if [ "$gap" -le "$CTX_HANDOFF_ACCEPTABLE_GAP_TOKENS" ]; then
+                    if [ "$gap" -le "$gap_limit" ]; then
                         printf 'The handoff below was written %sk of context ago, at %sk of resident context. That is\nclose enough to this compaction that it likely covers what just got summarised.\n\n' \
                             "$(( gap / 1000 ))" "$(( sc_written_at_tokens / 1000 ))"
                     else
-                        printf -- '**%sk of context accumulated between the handoff below (written at %sk) and this\ncompaction.** That is enough that recent work may not be covered — treat the gap as\nlikely-undocumented until checked.\n\n' \
-                            "$(( gap / 1000 ))" "$(( sc_written_at_tokens / 1000 ))"
+                        printf -- '**%sk of context accumulated between the handoff below (written at %sk) and this\ncompaction.** That is more than the %sk this write allowed for, so recent work may not be\ncovered — treat the gap as likely-undocumented until checked.\n\n' \
+                            "$(( gap / 1000 ))" "$(( sc_written_at_tokens / 1000 ))" "$(( gap_limit / 1000 ))"
                     fi
                     ;;
             esac

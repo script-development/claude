@@ -27,11 +27,33 @@
 # taking our threshold with it. Never consume it, not even as a cross-check: a cross-check
 # against a field we do not control is still a dependency on it.
 #
-# WHERE THE NUMBERS COME FROM: docs/measured.md finding #7 —
-# simulated against each context's own measured growth rate, resetting at 120k would have
-# saved 77% and at 200k 66%. Two stages because the evidence supports two: 120k is where the
-# saving becomes large, 200k is where it is still large and the session is unambiguously deep.
-# NOTICE is informational; URGE is actionable.
+# WHERE THE NUMBERS COME FROM: docs/measured.md finding #7 — simulated against each context's
+# own measured growth rate, a reset discipline would have saved 77% at 120k, 66% at 200k, 55% at
+# 300k and 45% at 400k. Two stages because the evidence supports two: 120k is where the saving
+# becomes large, 200k is where it is still large and the session is unambiguously deep.
+#
+# BUT THAT GRID IS A BOUND, NOT AN OPTIMUM -- 200k IS A JUDGEMENT CALL, NOT A DERIVED NUMBER.
+# Labelled 2026-09-09 ([D18](../../docs/design.md#d18)) after the wording here was read as though
+# finding #7 had derived it. It samples four points and is monotonic (lower always looks cheaper)
+# because it explicitly prices none of the costs that would create an optimum: the authoring turn,
+# the re-reading a fresh session must do, or work lost to a bad handoff. Its own words: "the size
+# of the prize, not a forecast".
+#
+# Nor does adding the one such term this file already has rescue it. Extending the handoff-budget
+# model further down (mean cost per turn of work = (T+H)/2) with the authoring turn A gives
+# (T+H)/2 + A*g/(T-H), whose optimum is T = H + sqrt(2*A*g) ~= 14k: a reset every five turns. That
+# is absurd as advice, and the absurdity is the useful part -- it localises the single missing term
+# as RE-DERIVATION COST after a reset, which nothing in the corpus prices. Until that is measured
+# this threshold can be BOUNDED but not DERIVED, and saying so is cheaper than implying otherwise.
+# The same discipline CTX_HANDOFF_ACCEPTABLE_GAP_TOKENS applies to its own floated constant.
+#
+# CONSEQUENCE: BOTH OF THESE ARE ADVISORY ONLY. They feed the statusline gauge, and URGE is where a
+# HUMAN is invited to run /handoff by hand -- a judgement the cost model provably cannot make and a
+# person can. NEITHER IS AN AUTOMATIC TRIGGER. D18 moved the automatic write onto a relative, late
+# trigger derived from the compaction ceiling, because 200k was never reasoned as an automatic point
+# on a 1M window: it fires at 20% of the window and then lets the session run to 887k regardless.
+# CTX_NOTICE_TOKENS keeps one non-display job, described at the arming block below -- it is also the
+# floor beneath the automatic trigger, the depth below which a handoff is not worth writing.
 CTX_NOTICE_TOKENS=120000
 CTX_URGE_TOKENS=200000
 
@@ -136,31 +158,50 @@ CTX_URGE_TOKENS=200000
 # this repo's own statusline.sh being read into context. Match on parsed JSON structure, never on a
 # substring of the raw line.
 #
-# CTX_URGE_TOKENS is absolute (see WHY TOKENS AND NOT PERCENT above) and that decision stands --
-# but its cost is here. On the 1M default, compaction fires ~987k and 200k leaves ~787k of slack:
-# a fat turn is noise. On a 200k-window session compaction fires ~187k, which is BELOW 200k, so a
-# consumer gated on CTX_URGE_TOKENS never fires at all. Not a race, not thin headroom: dead code.
+# ── THE AUTOMATIC TRIGGER IS RELATIVE AND LATE, NOT ABSOLUTE ───────────────────────────────
 #
-# So any consumer that ACTS on this threshold (as opposed to merely displaying it) owes a headroom
-# check at the moment it runs, where the real window is known:
+# Rewritten 2026-09-09 by [D18](../../docs/design.md#d18); the absolute-trigger design this
+# block used to describe is recorded there as what it replaced. The failure it fixes: an absolute
+# 200k trigger fires at 20% of a 1M window and then lets the session run on to 887k regardless,
+# while on a 200k-window session compaction fires ~187k -- BELOW 200k -- so the same trigger never
+# fires at all. Neither is thin headroom. One is early, one is dead code, and both come from
+# expressing a compaction-relative decision as a window-independent constant.
 #
-#     T + one_fat_turn + one_authoring_turn  <  compact_threshold
+# The automatic trigger is therefore derived from the ceiling, at the LATEST point that is still
+# safe. Three expressions, all in resident tokens, all consumed by hooks/handoff-urge.sh:
 #
-# Three terms, because a bare `T < ceiling` undercounts twice. The check's resolution is one turn
-# (the Stop event fires once per turn, never at the intermediate requests where context actually
-# grows), and one turn that reads widely adds a MEASURED 325,000 at the corpus max (finding #15,
-# below). And the handoff-authoring turn is itself wide by construction -- writing citations means
-# reading the files being cited -- MEASURED 65,000 at its own corpus max (finding #14, below).
+#     trigger  =  compact_threshold - 2*fat_turn - authoring_turn        fire at or above this
+#     gate     =  resident + fat_turn + authoring_turn  <  compact_threshold
+#     floor    =  trigger  >=  CTX_NOTICE_TOKENS                         else the window is too small
 #
-# WHEN THE CHECK FAILS, DECLINE TO ARM AND SAY SO -- do not lower T silently and do not warn and
+# WHY TWO FAT TURNS IN THE TRIGGER AND ONE IN THE GATE -- they are the same inequality in opposite
+# senses, and getting this wrong makes the trigger unsatisfiable. The gate is the real constraint:
+# once fired, the NEXT turn is the authoring turn, and it must complete before compaction. The
+# trigger has to sit strictly BELOW the gate or firing would fail its own check on arrival. It sits
+# exactly one fat turn below, which makes [trigger, gate) a band of width fat_turn -- and since the
+# Stop event only observes at turn boundaries, a turn no larger than fat_turn cannot leap the band
+# unobserved. That is the whole role of the second term: the resolution of the check, not a second
+# safety margin.
+#
+# WHEN THE GATE FAILS, DECLINE AND SAY SO -- do not lower the trigger silently and do not warn and
 # proceed. An armed trigger with negative slack loses the race to compaction every time, and the
 # handoff it produces is authored from a summary: exactly the `compacted: yes` degradation the
 # format exists to record, manufactured on purpose. An unarmed trigger is merely the status quo.
 # Degrade capability, never execution -- the same rule the statusline follows when this file is
-# missing entirely.
+# missing entirely. Reaching the gate now means a turn leapt the band, which is what taking
+# fat_turn off the corpus max and onto p95 (below) makes possible; the failure is one loud message
+# and a manual /handoff, not a bad handoff.
 #
-# The statusline is exempt: it only DISPLAYS, and it is a hot path that must stay pure. Install
-# time is exempt because it cannot know the runtime window. The check belongs in the hook.
+# WHEN THE FLOOR FAILS, THE WINDOW CANNOT BE SERVED BY PREDICTION AT ALL, and the hook says that
+# rather than firing uselessly early. The margin (2*fat_turn + authoring_turn = 185,000) is fixed
+# while the ceiling is not, so below a ceiling of ~305k the trigger lands under CTX_NOTICE_TOKENS
+# and the handoff would be written on a near-empty context that has nothing to hand off. A
+# 200k-window session (ceiling ~187k) is such a case: it gets the statusline advisory and the
+# manual path, and an explicit message saying why, instead of the silence it used to get.
+#
+# The statusline is exempt from all of this: it only DISPLAYS CTX_NOTICE_TOKENS/CTX_URGE_TOKENS,
+# and it is a hot path that must stay pure. Install time is exempt because it cannot know the
+# runtime window. The arming decision belongs in the hook, where the ceiling is resolvable.
 
 # The compact threshold in RESIDENT TOKENS -- quantity (c) above, NOT a window. This is the value the
 # `T + fat_turn + authoring_turn < compact_threshold` comparison uses, so it is the only form a
@@ -168,9 +209,16 @@ CTX_URGE_TOKENS=200000
 # output reserve subtracted first.
 #
 # EMPTY IS A MEANINGFUL ANSWER: it means "this machine has not declared a ceiling", and a consumer
-# that acts on CTX_URGE_TOKENS must then fall back to detection (step 1) or decline (step 3). Set it
-# only where the real ceiling is known and stable -- and then it wins over detection, because a human
-# who measured beats a heuristic that inferred.
+# must then fall back to detection (step 1) or decline (step 3). Set it only where the real ceiling
+# is known and stable -- and then it wins over detection, because a human who measured beats a
+# heuristic that inferred.
+#
+# SINCE [D18](../../docs/design.md#d18) THIS VALUE IS LOAD-BEARING IN A SECOND WAY: the automatic
+# trigger is DERIVED from it (`ceiling - 2*fat_turn - authoring_turn`), where before it only vetoed
+# a trigger fixed elsewhere. A wrong declaration no longer merely waves through a race it should
+# have declined -- it aims the trigger itself at the wrong point. The direction of the error is
+# unchanged (too large is unsafe) but its consequence is larger, so the "declare only what you
+# measured" instruction above is now the stronger of the two reasons to read this block.
 #
 # It is assigned empty HERE and declared (or left empty) at the END of this file, after the constant
 # a declaration would reference. Ordering, not indecision: `CTX_1M_COMPACT_THRESHOLD_TOKENS` is
@@ -182,25 +230,46 @@ CTX_URGE_TOKENS=200000
 # CTX_URGE_TOKENS. Empty must mean "no opinion", never "zero".
 CTX_COMPACT_THRESHOLD_TOKENS=
 
-# ── Headroom terms for the arming check ────────────────────────────────────
+# ── Terms for the trigger, the gate and the floor ──────────────────────────
 #
-# The `T + fat_turn + authoring_turn < compact_threshold` check above needs both addends, and
-# they live here for the same reason every other number does: a consumer that restated them
-# would be the second copy this file exists to prevent. BOTH ARE BOUNDS, NOT MEASUREMENTS, and
-# are labelled as such -- the safe direction for a term inside a fail-CLOSED check is too
-# LARGE, which is the opposite of the safe direction for a displayed figure.
+# All three expressions in the arming block above are built from these two addends, and they live
+# here for the same reason every other number does: a consumer that restated them would be the
+# second copy this file exists to prevent.
+#
+# NEITHER IS A MEASUREMENT, AND SINCE [D18](../../docs/design.md#d18) THEY ARE NO LONGER THE SAME
+# KIND OF BOUND. The authoring turn is still a worst-case bound (corpus max) because it is still
+# only ever a safety margin: too large costs nothing. The fat turn is now a CALIBRATED bound (p95),
+# because D18 made it set the trigger's position as well as the gate's, where too large is not
+# conservative but self-defeating. Each carries its own justification below; do not assume the
+# rule that governs one governs the other.
 #
 # FAT TURN: MEASURED 2026-09-07 (docs/measured.md finding #15), superseding mission_control's
 # F4b(1), which was qualitative ("can add 50k+") and turned out not to be conservative. Mined 724
 # mid-session turns across 48 sessions (this repo, kendo, kendo-2, mission-control): median 6,707,
 # p90 34,897, p95 59,367, p99 158,290, MAX 323,673. "50k+" sat between p90 and p95; the real tail
-# runs 3-6x higher. Taken at the corpus MAX rather than a percentile, because a mean or a
-# percentile is precisely the wrong statistic for a worst-case margin, and at the declared 1M
-# ceiling (887,000 below) the corpus max still leaves ample headroom (see the coherence check in
-# context-thresholds.test.sh) -- there is no cost to using the safest available bound here.
-# Revise DOWNWARD only against a wider measurement; a single new session exceeding this value
-# would just mean the corpus was too small, not that the bound was wrong to set this way.
-CTX_FAT_TURN_TOKENS=325000
+# runs 3-6x higher.
+#
+# TAKEN AT p95, ROUNDED UP TO 60,000. Changed from the corpus MAX (325,000) 2026-09-09 by
+# [D18](../../docs/design.md#d18). The max was the right statistic while this term was ONLY a veto
+# margin -- an over-large bound then cost nothing, because the trigger it guarded was fixed at 200k
+# and had 787k of slack under the 1M ceiling. D18 made the trigger itself a function of this term
+# (`ceiling - 2*fat_turn - authoring_turn`), and at the max that expression evaluates to 174,654:
+# BELOW the 200k advisory point it is supposed to sit far above. The worst-case bound had become
+# self-defeating -- not conservative, just wrong, because the quantity it feeds changed underneath
+# it. This is the specific hazard of a shared constant, and the reason it is worth writing down.
+#
+# WHY p95 RATHER THAN p90 OR p99. What this term now buys is BAND WIDTH: [trigger, gate) is one
+# fat_turn wide (see the arming block above), so a turn LARGER than this value can leap the band
+# between two Stop events and land in the declined region. p95 accepts that for ~5% of turns; p90
+# would widen the covered window by 49k of coverage at twice the leap risk, p99 (158,290) costs
+# 197k of coverage to buy 4 points. And the failure is bounded and loud: a leap produces one
+# decline message plus a manual /handoff, never a handoff authored from a summary. That asymmetry
+# is what makes a percentile defensible here where it was not before.
+#
+# Revise against a wider measurement, in either direction -- this is a CALIBRATED bound now, not a
+# worst-case one, so a single new session exceeding it is expected roughly 5% of the time and is
+# not evidence the number is wrong.
+CTX_FAT_TURN_TOKENS=60000
 
 # AUTHORING TURN: MEASURED 2026-09-07 (docs/measured.md finding #14), superseding the earlier
 # 30,000 estimate (which turned out close: measured mean was 30,024). 20 initial handoff-authoring
@@ -217,9 +286,14 @@ CTX_AUTHORING_TURN_TOKENS=65000
 # not a computation of it: detection establishes that the beta was GRANTED, never the model's
 # reserved_output_tokens, so the exact threshold stays unknown and a lower bound is the only
 # honest form. 1_000_000 - 13_000 (the measured offset) - 100_000 (a reserve chosen generously
-# larger than any current model's max_output_tokens). Precision is neither available nor needed:
-# the case this decides is T~200k against a bound near 887k, where being wrong by 50k changes
-# nothing. If that ever stops being true, declare the real ceiling instead of widening this.
+# larger than any current model's max_output_tokens).
+#
+# PRECISION MATTERS MORE SINCE [D18](../../docs/design.md#d18) THAN IT DID BEFORE, though still not
+# much. This used to decide a fixed T~200k against a bound near 887k, where being wrong by 50k
+# changed nothing. Now the trigger is derived from the bound, so a 50k error moves the trigger by
+# 50k -- from ~702k to ~752k. Both are comfortably inside the safe band and neither risks the
+# gate, so the lower bound stands; but the error no longer cancels out, and if a session ever needs
+# the trigger placed precisely, declare the real ceiling rather than widening this.
 CTX_1M_COMPACT_THRESHOLD_TOKENS=887000
 
 # ── THE DECLARED CEILING FOR THIS CHECKOUT ─────────────────────────────────
@@ -302,4 +376,19 @@ CTX_CHARS_PER_TOKEN_X100=268
 # "recent enough" for a reader to reconstruct from context alone, not a quantity anything in
 # this repo has measured directly -- revisit this constant, specifically, before trusting it the
 # way the corpus-derived figures above are trusted.
+#
+# THIS VALUE IS FOR A HANDOFF A HUMAN WROTE, NOT ONE THE TRIGGER WROTE. Scoped 2026-09-09 by
+# [D18](../../docs/design.md#d18), which found the two jointly incoherent: an automatically written
+# handoff lands exactly 2*fat_turn below the ceiling BY CONSTRUCTION (that is the band the trigger
+# deliberately reserves), so its gap at compaction is ~120,000 -- twelve times this number. Judged
+# against this constant every auto-written handoff would be flagged "likely-undocumented", which is
+# not a staleness finding but a category error: the gap is nominal, and the verdict would be
+# reporting the design as a defect.
+#
+# So the automatic path carries its OWN expected gap instead. `handoff-urge.sh` records
+# `expected_gap_tokens` into the sidecar when the handoff lands, and `handoff-inject.sh` judges
+# against whichever is larger. A sidecar without the field (written before D18) falls back to this
+# constant, which is the pre-D18 behaviour and errs toward flagging -- the safe direction for a
+# verdict a reader acts on. THIS NUMBER THEREFORE GOVERNS THE MANUAL PATH, where a person ran
+# /handoff at a moment of their own choosing and the gap really is a free variable worth judging.
 CTX_HANDOFF_ACCEPTABLE_GAP_TOKENS=10350

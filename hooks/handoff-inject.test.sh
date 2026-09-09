@@ -233,10 +233,18 @@ usage_transcript() {  # usage_transcript <name> <resident-total>
 
 latch_dir="$fixture/home/.claude/state/handoff-trigger"
 write_latch() { mkdir -p "$latch_dir"; : > "$latch_dir/$1"; }
-write_sidecar() {  # write_sidecar <session-id> <written-at-tokens>
+write_sidecar() {  # write_sidecar <session-id> <written-at-tokens> [expected-gap-tokens]
     mkdir -p "$latch_dir"
-    jq -nc --argjson w "$2" '{written_at_tokens: $w, written_at_epoch: 0, handoff_path: "x"}' \
-        > "$latch_dir/$1.written"
+    # No `expected_gap_tokens` unless a case asks for one: a sidecar written before D18 has no
+    # such field, and the default here keeps that the suite's baseline rather than an exotic case.
+    if [ -n "${3:-}" ]; then
+        jq -nc --argjson w "$2" --argjson g "$3" \
+            '{written_at_tokens: $w, written_at_epoch: 0, handoff_path: "x", expected_gap_tokens: $g}' \
+            > "$latch_dir/$1.written"
+    else
+        jq -nc --argjson w "$2" '{written_at_tokens: $w, written_at_epoch: 0, handoff_path: "x"}' \
+            > "$latch_dir/$1.written"
+    fi
 }
 some_tr=$(usage_transcript compact-some 210000)
 
@@ -266,6 +274,42 @@ write_sidecar sess-ct-4 205000
 stale_tr=$(usage_transcript compact-stale 260000)   # gap = 55,000
 assert_context_has 'compact: a large gap is flagged as likely-undocumented' \
     'likely-undocumented' "$(payload compact "$repo" sess-ct-4 "$stale_tr")" VERIFY_HANDOFF_GATE="$gate"
+
+# --- D18: the gap the WRITER reserved beats the manual-path constant --------
+#
+# The automatic trigger fires 2*fat_turn below the ceiling by construction, so an auto-written
+# handoff arrives at compaction ~120k behind — twelve times CTX_HANDOFF_ACCEPTABLE_GAP_TOKENS.
+# Judged against that constant alone it would be flagged every single time, for landing exactly
+# where it was aimed. So the writer records the gap it reserved and this branch judges against
+# whichever bound is larger. The same 55,000 gap as sess-ct-4 above, which that case flags.
+rm -rf "$latch_dir"
+write_latch sess-ct-4b
+write_sidecar sess-ct-4b 205000 100000
+assert_context_has 'compact: a gap inside the reserved band reads as covering, not stale' \
+    'likely covers' "$(payload compact "$repo" sess-ct-4b "$stale_tr")" VERIFY_HANDOFF_GATE="$gate"
+
+# Past the reserved band as well: flagged, and the verdict names the bound it actually used so a
+# reader can tell which of the two paths' expectations were exceeded.
+rm -rf "$latch_dir"
+write_latch sess-ct-4c
+write_sidecar sess-ct-4c 205000 100000
+very_stale_tr=$(usage_transcript compact-very-stale 350000)   # gap = 145,000
+assert_context_has 'compact: a gap past the reserved band is still flagged' \
+    'likely-undocumented' "$(payload compact "$repo" sess-ct-4c "$very_stale_tr")" VERIFY_HANDOFF_GATE="$gate"
+
+assert_context_has 'compact: the flag names the reserved band it exceeded' \
+    'more than the 100k this write allowed for' \
+    "$(payload compact "$repo" sess-ct-4c "$very_stale_tr")" VERIFY_HANDOFF_GATE="$gate"
+
+# LARGER of the two, not "the writer's if present". A writer that reserved less than the constant
+# must not be able to TIGHTEN the verdict -- otherwise a small recorded band would make an
+# ordinarily-acceptable gap read as stale, which is the constant's judgement to make, not the
+# trigger's. Gap 5,000: inside the constant's 10,350, outside a reserved 1,000.
+rm -rf "$latch_dir"
+write_latch sess-ct-4d
+write_sidecar sess-ct-4d 205000 1000
+assert_context_has 'compact: a reserved band below the constant does not tighten the verdict' \
+    'likely covers' "$(payload compact "$repo" sess-ct-4d "$covered_tr")" VERIFY_HANDOFF_GATE="$gate"
 
 # Armed, but no handoff exists for THIS branch at all -- must still surface (the early "nothing
 # to say" exit must not fire just because the store's only handoff belongs to a different repo).

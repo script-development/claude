@@ -175,12 +175,29 @@ assert_contains() {  # assert_contains <label> <jq-filter> <needle> <payload> [e
 
 reset_latches() { rm -rf "$fixture/home/.claude/state"; }
 
-# --- Below the threshold ---------------------------------------------------
-
+# --- Below the trigger -----------------------------------------------------
+#
+# THE ARITHMETIC EVERY CASE BELOW DEPENDS ON (D18). The trigger is derived, so a fixture's ceiling
+# and its resident size are no longer independent knobs — picking one constrains the other, and a
+# case that looks like it should fire will silently not if the pair is wrong. Against the fixture
+# thresholds (fat 50,000, authoring 30,000, notice 120,000):
+#
+#     trigger = ceiling - 2*50000 - 30000 = ceiling - 130000      fire at or above
+#     gate    = resident + 50000 + 30000  <  ceiling              else decline
+#     floor   = trigger >= 120000                                 else "window too small"
+#
+# 380,000 IS THE SUITE'S "CEILING WITH ROOM", chosen so that the 250,000 `deep` transcript lands
+# exactly on the trigger (380000 - 130000 = 250000) while clearing the gate (250000 + 80000 =
+# 330000 < 380000). It replaced a flat 900,000, which under D18 puts the trigger at 770,000 and
+# would have made every fire-path case here silently pass as "not due yet".
+#
 # Arrange — four transcripts, reused by the cases below
 shallow=$(make_transcript shallow 90000)
 deep=$(make_transcript deep 250000)
-deep_1m=$(make_transcript deep1m 250000 'claude-opus-5[1m]')
+# Deep enough to reach the trigger DERIVED from the detected 1M ceiling, not the declared one:
+# 887000 - 130000 = 757000, with the gate at 807000. 250,000 (what this was pre-D18) sits a long
+# way below that and would have tested nothing but the "not due yet" path.
+deep_1m=$(make_transcript deep1m 780000 'claude-opus-5[1m]')
 deep_no1m=$(make_transcript deepno1m 250000 'claude-opus-5')
 
 # Arrange & Act & Assert — the shape of every case below: reset_latches arranges, and the
@@ -188,27 +205,27 @@ deep_no1m=$(make_transcript deepno1m 250000 'claude-opus-5')
 # arrange is its payload and env assignments. Sections that add a fixture label it.
 reset_latches
 assert_silent 'a shallow session is left alone' "$(payload "$shallow")" \
-    CTX_COMPACT_THRESHOLD_TOKENS=900000
+    CTX_COMPACT_THRESHOLD_TOKENS=380000
 
 # h1 — the raw-grep trap: the prose 999999 must not be mistaken for a usage record, and the
 # LAST usage record must win rather than the first or the largest.
 reset_latches
 assert_contains 'resident size is parsed, not grepped, and taken from the last record' \
-    '.reason' 'reached 250k' "$(payload "$deep")" CTX_COMPACT_THRESHOLD_TOKENS=900000
+    '.reason' 'reached 250k' "$(payload "$deep")" CTX_COMPACT_THRESHOLD_TOKENS=380000
 
 # --- The fire path ---------------------------------------------------------
 
 reset_latches
 assert_field 'a deep session with a declared ceiling and room is blocked' \
-    '.decision' 'block' "$(payload "$deep")" CTX_COMPACT_THRESHOLD_TOKENS=900000
+    '.decision' 'block' "$(payload "$deep")" CTX_COMPACT_THRESHOLD_TOKENS=380000
 
 reset_latches
 assert_contains 'the block instruction names the skill to run' \
-    '.reason' '/handoff' "$(payload "$deep")" CTX_COMPACT_THRESHOLD_TOKENS=900000
+    '.reason' '/handoff' "$(payload "$deep")" CTX_COMPACT_THRESHOLD_TOKENS=380000
 
 reset_latches
 assert_contains 'the block instruction carries the no-reading rule' \
-    '.reason' 'do not read, grep or list' "$(payload "$deep")" CTX_COMPACT_THRESHOLD_TOKENS=900000
+    '.reason' 'do not read, grep or list' "$(payload "$deep")" CTX_COMPACT_THRESHOLD_TOKENS=380000
 
 # h2 — modelUsage keeps the [1m] suffix that message.model drops. Both are present in the
 # fixture and they disagree; detecting on the wrong one under-reads the window.
@@ -230,24 +247,73 @@ reset_latches
 assert_contains 'the decline names the signal that was missing' \
     '.systemMessage' 'ceiling is unknown' "$(payload "$deep_no1m")"
 
-# A 200k-window session: compaction fires ~187k, below the 200k threshold, so the trigger is
-# dead code there. It must say so rather than arm into a race it loses every time.
+# --- The floor: a window prediction cannot serve at all --------------------
+#
+# A 200k-window session, whose ceiling is ~187k. The margin (130,000 here) leaves a trigger at
+# 57,000 — under the 120,000 floor — so a handoff would be demanded from a context with almost
+# nothing in it. PRE-D18 THIS CASE WAS SILENT, because the absolute 200k trigger simply never
+# fired below a 187k ceiling; the point of the floor is that the same outcome is now stated. The
+# needle is deliberately the arithmetic and the alternative, not just "declined": a reader who
+# gets this message needs to know their window is the reason and that /handoff still works.
 reset_latches
-assert_contains 'a ceiling below the threshold declines on headroom' \
-    '.systemMessage' 'declined to arm' "$(payload "$deep")" CTX_COMPACT_THRESHOLD_TOKENS=187000
+assert_contains 'a ceiling too small for the margin declines on the floor' \
+    '.systemMessage' 'cannot be served automatically' "$(payload "$deep")" CTX_COMPACT_THRESHOLD_TOKENS=187000
 
 reset_latches
-assert_field 'a headroom decline never blocks' \
+assert_contains 'the floor decline names the trigger point it would have used' \
+    '.systemMessage' '57k' "$(payload "$deep")" CTX_COMPACT_THRESHOLD_TOKENS=187000
+
+reset_latches
+assert_field 'a floor decline never blocks' \
     '.decision' 'null' "$(payload "$deep")" CTX_COMPACT_THRESHOLD_TOKENS=187000
 
-# The boundary: need = 250000 + 50000 + 30000 = 330000. Equal must decline, not arm.
+# --- The gate: a turn that leapt the band ----------------------------------
+#
+# need = 250000 + 50000 + 30000 = 330000. These two ceilings both put the trigger BELOW the
+# resident size (330000-130000 = 200000, and 200001), so the trigger is satisfied and the gate is
+# what decides — which is the only way to reach the gate at all now that the trigger sits one fat
+# turn beneath it. Reaching it means a single turn jumped the whole band.
 reset_latches
 assert_field 'headroom exactly equal to the ceiling declines' \
     '.decision' 'null' "$(payload "$deep")" CTX_COMPACT_THRESHOLD_TOKENS=330000
 
 reset_latches
+assert_contains 'the gate decline says a turn jumped the trigger point' \
+    '.systemMessage' 'jumped past the 200k trigger point' "$(payload "$deep")" CTX_COMPACT_THRESHOLD_TOKENS=330000
+
+reset_latches
 assert_field 'one token of headroom above the ceiling arms' \
     '.decision' 'block' "$(payload "$deep")" CTX_COMPACT_THRESHOLD_TOKENS=330001
+
+# --- The trigger boundary --------------------------------------------------
+#
+# One token of ceiling above the fire case puts the trigger at 250,001, one above the resident
+# size. That must be SILENT AND UNLATCHED: "not due yet" is the common state for most of a
+# session's life, and latching it would spend the session's single shot on a turn that did
+# nothing. The latch assertion is the load-bearing half — silence alone would also be produced by
+# a hook that had quietly given up.
+reset_latches
+assert_silent 'one token below the trigger is not yet due' \
+    "$(payload "$deep" sess-notdue)" CTX_COMPACT_THRESHOLD_TOKENS=380001
+if [ ! -e "$fixture/home/.claude/state/handoff-trigger/sess-notdue" ]; then
+    passed=$((passed + 1)); echo "ok   a not-yet-due Stop leaves the session's one shot unspent"
+else
+    failed=$((failed + 1)); echo "FAIL a not-yet-due Stop leaves the session's one shot unspent — it latched"
+fi
+
+# And the same session at the same size fires once the ceiling brings the trigger down to it.
+reset_latches
+assert_field 'exactly on the trigger fires' \
+    '.decision' 'block' "$(payload "$deep")" CTX_COMPACT_THRESHOLD_TOKENS=380000
+
+# --- The pre-filter's second job -------------------------------------------
+#
+# Below NOTICE the hook must exit before resolving the ceiling at all. Without that, a session
+# with no declared ceiling and no [1m] evidence would emit the "ceiling is unknown" decline at its
+# first Stop — a nag about a threshold nothing was approaching, and it would burn the latch.
+reset_latches
+assert_silent 'a shallow session with no ceiling is not told the ceiling is unknown' \
+    "$(payload "$shallow")"
 
 # --- The env override ------------------------------------------------------
 #
@@ -256,12 +322,12 @@ assert_field 'one token of headroom above the ceiling arms' \
 
 reset_latches
 assert_field 'an environment ceiling survives sourcing the file that blanks it' \
-    '.decision' 'block' "$(payload "$deep_no1m")" CTX_COMPACT_THRESHOLD_TOKENS=900000
+    '.decision' 'block' "$(payload "$deep_no1m")" CTX_COMPACT_THRESHOLD_TOKENS=380000
 
 # And the file wins when the environment says nothing.
 # Arrange
 declared="$fixture/thresholds-declared.sh"
-write_thresholds "$declared" 900000
+write_thresholds "$declared" 380000
 reset_latches
 assert_field 'a ceiling declared in the file alone is honoured' \
     '.decision' 'block' "$(payload "$deep_no1m")" CTX_THRESHOLDS_FILE="$declared"
@@ -272,13 +338,13 @@ assert_field 'a ceiling declared in the file alone is honoured' \
 # Arrange
 reset_latches
 # Act — fire once, so the latch is set
-run "$(payload "$deep" sess-latch)" CTX_COMPACT_THRESHOLD_TOKENS=900000 >/dev/null
+run "$(payload "$deep" sess-latch)" CTX_COMPACT_THRESHOLD_TOKENS=380000 >/dev/null
 # Act & Assert
 assert_silent 'a second Stop in the same session does not fire again' \
-    "$(payload "$deep" sess-latch)" CTX_COMPACT_THRESHOLD_TOKENS=900000
+    "$(payload "$deep" sess-latch)" CTX_COMPACT_THRESHOLD_TOKENS=380000
 
 assert_field 'a different session is unaffected by that latch' \
-    '.decision' 'block' "$(payload "$deep" sess-other)" CTX_COMPACT_THRESHOLD_TOKENS=900000
+    '.decision' 'block' "$(payload "$deep" sess-other)" CTX_COMPACT_THRESHOLD_TOKENS=380000
 
 # h5 — a decline latches too, or its message repeats at every turn boundary thereafter.
 # Arrange
@@ -292,7 +358,7 @@ assert_silent 'a decline is said once, not at every subsequent turn' \
 # The harness's own re-entry flag: we are already inside the continuation this hook caused.
 reset_latches
 assert_silent 'stop_hook_active falls through rather than blocking again' \
-    "$(payload "$deep" sess-1 true)" CTX_COMPACT_THRESHOLD_TOKENS=900000
+    "$(payload "$deep" sess-1 true)" CTX_COMPACT_THRESHOLD_TOKENS=380000
 
 # --- Background work -------------------------------------------------------
 #
@@ -302,16 +368,16 @@ assert_silent 'stop_hook_active falls through rather than blocking again' \
 reset_latches
 assert_contains 'in-flight background tasks are named in the instruction' \
     '.reason' 'phpstan sweep' "$(payload "$deep" sess-bg false '{background_tasks:[{id:"t1",type:"shell",status:"running",description:"phpstan sweep"}]}')" \
-    CTX_COMPACT_THRESHOLD_TOKENS=900000
+    CTX_COMPACT_THRESHOLD_TOKENS=380000
 
 reset_latches
 assert_contains 'session crons are read as well as background tasks' \
     '.reason' 'scheduled: check CI' "$(payload "$deep" sess-cron false '{session_crons:[{schedule:"*/5 * * * *",recurring:true,prompt:"check CI"}]}')" \
-    CTX_COMPACT_THRESHOLD_TOKENS=900000
+    CTX_COMPACT_THRESHOLD_TOKENS=380000
 
 reset_latches
 assert_contains 'with nothing in flight the instruction says nothing about it' \
-    '.reason' 'once per session' "$(payload "$deep" sess-nobg)" CTX_COMPACT_THRESHOLD_TOKENS=900000
+    '.reason' 'once per session' "$(payload "$deep" sess-nobg)" CTX_COMPACT_THRESHOLD_TOKENS=380000
 
 # --- The written_at_tokens sidecar ------------------------------------------
 #
@@ -347,12 +413,12 @@ sidecar_file() { printf '%s/.claude/state/handoff-trigger/%s.written' "$fixture/
 
 # Arrange — arm, so the latch exists for the rest of this section.
 reset_latches
-run "$(sidecar_payload sess-sc-1)" CTX_COMPACT_THRESHOLD_TOKENS=900000 HANDOFF_STORE_DIR="$sidecar_store" >/dev/null
+run "$(sidecar_payload sess-sc-1)" CTX_COMPACT_THRESHOLD_TOKENS=380000 HANDOFF_STORE_DIR="$sidecar_store" >/dev/null
 
 # Act & Assert — nothing has been written to the store yet, so the next Stop must stay silent
 # AND must not manufacture a sidecar out of no evidence.
 assert_silent 'the Stop right after arming is itself silent' \
-    "$(sidecar_payload sess-sc-1 true)" CTX_COMPACT_THRESHOLD_TOKENS=900000 HANDOFF_STORE_DIR="$sidecar_store"
+    "$(sidecar_payload sess-sc-1 true)" CTX_COMPACT_THRESHOLD_TOKENS=380000 HANDOFF_STORE_DIR="$sidecar_store"
 if [ ! -e "$(sidecar_file sess-sc-1)" ]; then
     passed=$((passed + 1)); echo "ok   no sidecar is written before the handoff exists"
 else
@@ -364,7 +430,7 @@ mkdir -p "$(dirname "$sidecar_handoff")"
 printf -- '---\nbranch: main\ncheckout: %s\n---\n\nbody\n' "$sidecar_repo" > "$sidecar_handoff"
 
 # Act
-run "$(sidecar_payload sess-sc-1 true)" CTX_COMPACT_THRESHOLD_TOKENS=900000 HANDOFF_STORE_DIR="$sidecar_store" >/dev/null
+run "$(sidecar_payload sess-sc-1 true)" CTX_COMPACT_THRESHOLD_TOKENS=380000 HANDOFF_STORE_DIR="$sidecar_store" >/dev/null
 
 # Assert
 if [ -e "$(sidecar_file sess-sc-1)" ]; then
@@ -374,6 +440,15 @@ if [ -e "$(sidecar_file sess-sc-1)" ]; then
         passed=$((passed + 1)); echo "ok   written_at_tokens is the resident size at that Stop"
     else
         failed=$((failed + 1)); echo "FAIL written_at_tokens is the resident size at that Stop — got [$got]"
+    fi
+    # D18 — the gap the trigger reserved on purpose, so the read leg can tell nominal distance
+    # from real staleness. 2 * the fixture's fat turn (50,000), and it must be the WRITER's number
+    # rather than something the reader recomputes: only this side knows which trigger fired.
+    got=$(jq -r '.expected_gap_tokens' "$(sidecar_file sess-sc-1)" 2>/dev/null)
+    if [ "$got" = "100000" ]; then
+        passed=$((passed + 1)); echo "ok   expected_gap_tokens records the band the trigger reserved"
+    else
+        failed=$((failed + 1)); echo "FAIL expected_gap_tokens records the band the trigger reserved — got [$got]"
     fi
 else
     failed=$((failed + 1)); echo "FAIL the sidecar appears once the handoff's mtime moves past the latch — none written"
@@ -389,9 +464,9 @@ mkdir -p "$other_repo"
 git -C "$other_repo" init -q -b main
 git -C "$other_repo" -c user.email=t@example.com -c user.name=t commit -q --allow-empty -m init
 run "$(sidecar_payload sess-sc-2 false "$other_repo")" \
-    CTX_COMPACT_THRESHOLD_TOKENS=900000 HANDOFF_STORE_DIR="$sidecar_store" >/dev/null
+    CTX_COMPACT_THRESHOLD_TOKENS=380000 HANDOFF_STORE_DIR="$sidecar_store" >/dev/null
 run "$(sidecar_payload sess-sc-2 true "$other_repo")" \
-    CTX_COMPACT_THRESHOLD_TOKENS=900000 HANDOFF_STORE_DIR="$sidecar_store" >/dev/null
+    CTX_COMPACT_THRESHOLD_TOKENS=380000 HANDOFF_STORE_DIR="$sidecar_store" >/dev/null
 if [ ! -e "$(sidecar_file sess-sc-2)" ]; then
     passed=$((passed + 1)); echo "ok   a recent (not exact) pick never populates the sidecar"
 else
@@ -405,7 +480,7 @@ fi
 
 reset_latches
 assert_silent 'a missing thresholds file disables the hook entirely' \
-    "$(payload "$deep")" CTX_THRESHOLDS_FILE="$fixture/nonexistent.sh" CTX_COMPACT_THRESHOLD_TOKENS=900000
+    "$(payload "$deep")" CTX_THRESHOLDS_FILE="$fixture/nonexistent.sh" CTX_COMPACT_THRESHOLD_TOKENS=380000
 
 # h3 — a thresholds file older than this hook.
 # Arrange
@@ -417,33 +492,33 @@ assert_silent 'a thresholds file predating the headroom terms stays silent, not 
 
 reset_latches
 assert_silent 'an unreadable transcript disables the hook' \
-    "$(payload "$fixture/no-such-transcript.jsonl")" CTX_COMPACT_THRESHOLD_TOKENS=900000
+    "$(payload "$fixture/no-such-transcript.jsonl")" CTX_COMPACT_THRESHOLD_TOKENS=380000
 
 # Arrange
 empty="$fixture/empty.jsonl"
 : > "$empty"
 reset_latches
 assert_silent 'a transcript with no usage record disables the hook' \
-    "$(payload "$empty")" CTX_COMPACT_THRESHOLD_TOKENS=900000
+    "$(payload "$empty")" CTX_COMPACT_THRESHOLD_TOKENS=380000
 
 # Arrange
 garbage="$fixture/garbage.jsonl"
 printf 'not json at all\n{"partial":\n' > "$garbage"
 reset_latches
 assert_silent 'a malformed transcript disables the hook rather than erroring' \
-    "$(payload "$garbage")" CTX_COMPACT_THRESHOLD_TOKENS=900000
+    "$(payload "$garbage")" CTX_COMPACT_THRESHOLD_TOKENS=380000
 
 reset_latches
 assert_silent 'a payload with no session_id disables the hook' \
     "$(jq -nc --arg t "$deep" '{transcript_path: $t, hook_event_name: "Stop"}')" \
-    CTX_COMPACT_THRESHOLD_TOKENS=900000
+    CTX_COMPACT_THRESHOLD_TOKENS=380000
 
 reset_latches
 assert_silent 'a payload with no transcript_path disables the hook' \
-    '{"session_id":"s","hook_event_name":"Stop"}' CTX_COMPACT_THRESHOLD_TOKENS=900000
+    '{"session_id":"s","hook_event_name":"Stop"}' CTX_COMPACT_THRESHOLD_TOKENS=380000
 
 reset_latches
-assert_silent 'empty stdin disables the hook' '' CTX_COMPACT_THRESHOLD_TOKENS=900000
+assert_silent 'empty stdin disables the hook' '' CTX_COMPACT_THRESHOLD_TOKENS=380000
 
 echo
 if [ "$failed" -gt 0 ]; then

@@ -495,6 +495,13 @@ list produces for its own test citations, with no configuration.
 
 ### D10 — The threshold advisory is passive, two-stage, and costs zero tokens
 
+_Scoped 2026-09-09 by [D18](#d18):_ everything below still stands, and the statusline is now the
+**only** consumer of `CTX_URGE_TOKENS`. What D18 removed is the assumption — never stated here, but
+inherited by `hooks/handoff-urge.sh` when it was built — that the number this advisory *displays* is
+also the right number to *arm* an automatic write on. It is not: 200k is a cost judgement a human
+acts on, while beating compaction is a continuity constraint relative to a window this decision
+never had to know about. The two-stage passive advisory is unchanged.
+
 Built, 2026-08-21. `statusline.sh` compares resident context against 120k / 200k and renders
 yellow / bold-red `handoff?` (`reset?` until item 3 landed the skill that word names, 2026-08-24 —
 see [D11](#d11)). Below 120k it shows the bare token count with no colour and no
@@ -946,6 +953,105 @@ to pay than Route 1's, and unneeded unless Route 1 proves unacceptably stale in 
 
 ---
 
+### D18 — The automatic trigger is derived from the compaction ceiling; 200k is advisory only
+
+Decided 2026-09-09. Rewrites the arming block in `lib/context-economy/context-thresholds.sh`,
+`hooks/handoff-urge.sh`'s trigger, and one branch of `hooks/handoff-inject.sh`'s coverage verdict.
+Supersedes the absolute-threshold half of [D10](#d10) for the **automatic** path; D10's passive
+statusline advisory is untouched and is now the sole consumer of `CTX_URGE_TOKENS`.
+
+**The trigger and the threshold were the same number, and they should never have been.** `CTX_URGE_TOKENS`
+= 200k served two goals at once: *cost* (reset early, because a deep context is expensive to replay)
+and *continuity* (get a handoff written before compaction destroys the context it describes). Those
+have different right answers, and 200k is a bad answer to the second one on every window:
+
+| window | ceiling | what the absolute 200k trigger did |
+|---|---|---|
+| 1M | ~887k | Fired at 20% of the window, then let the session run on to 887k regardless. What compaction actually met was a handoff up to ~687k stale. |
+| 200k | ~187k | Never fired. The threshold sits *above* the ceiling, so the trigger was unreachable — silently, with no message. |
+
+Neither is thin headroom or a tuning error. Both follow from expressing a compaction-relative
+decision as a window-independent constant.
+
+**200k is a judgement call, not a derived number — and it cannot currently be derived.** Worth
+stating plainly because the comment in `context-thresholds.sh` cited finding #7 in a way that read
+as derivation. Finding #7 samples four points (120k/200k/300k/400k), is monotonic, and says of
+itself *"the size of the prize, not a forecast"* — it explicitly prices none of the authoring turn,
+the re-reading a fresh session must do, or work lost to a bad handoff. Extending this document's own
+budget model (`(T + H)/2`, [D13](#d13)) with the one such term the repo has measured gives
+`(T+H)/2 + A·g/(T−H)`, optimal at `T = H + √(2Ag) ≈ 14k` — a reset every five turns, which is absurd
+as advice. The absurdity is the useful part: it localises the single missing term as **re-derivation
+cost after a reset**, which nothing in the corpus prices. So the manual threshold is *bounded* by
+finding #7 and not *derived* from it, and the constant now says so.
+
+**What replaced it.** Three expressions, all in resident tokens, all in the thresholds file:
+
+```
+trigger  =  compact_threshold - 2*fat_turn - authoring_turn      fire at or above this
+gate     =  resident + fat_turn + authoring_turn  <  compact_threshold
+floor    =  trigger  >=  CTX_NOTICE_TOKENS                       else the window cannot be served
+```
+
+**Why two fat turns in the trigger and one in the gate.** They are the same inequality in opposite
+senses, and conflating them makes the trigger unsatisfiable — the first draft of this decision fired
+at `ceiling − fat − auth`, which is *exactly* where the gate starts declining, so every firing would
+have failed its own check on arrival. The gate is the real constraint: once fired, the next turn is
+the authoring turn and it must finish before compaction. The trigger sits one fat turn beneath it,
+which makes `[trigger, gate)` a band one fat turn wide — and since `Stop` only observes at turn
+boundaries, a turn no larger than `fat_turn` cannot leap the band unseen. The second term is the
+*resolution* of the check, not a second safety margin.
+
+**`CTX_FAT_TURN_TOKENS` moves off the corpus max onto p95 (325,000 → 60,000).** Forced by the above,
+and the most consequential constant change here. At the max, `ceiling − 2·fat − auth` evaluates to
+174,654 — *below* the 200k advisory point it is supposed to sit far above. The max was the right
+statistic while this term was only ever a veto margin (too large cost nothing, with 787k of slack
+under the 1M ceiling); once the term sets the trigger's position, too large is not conservative but
+self-defeating. This is the specific hazard of a shared constant: the quantity it feeds changed
+underneath it. p95 rather than p90 or p99 because what the term now buys is band width — a turn
+above it can leap the band — and the failure when that happens is bounded and loud: one decline
+message plus a manual `/handoff`, never a handoff authored from a summary. p90 would buy 49k of
+coverage at twice the leap risk; p99 costs 197k of coverage for four points.
+
+**The floor, and an honest scope limit.** The margin (`2·fat + auth` = 185,000) is fixed while the
+ceiling is not, so below a ceiling of ~305k the trigger lands under `CTX_NOTICE_TOKENS` and a
+handoff would be demanded from a context with nothing in it. **Prediction cannot serve those windows
+at all** — not a gap to close later, a property of needing to reserve a worst-case authoring turn
+plus a wide turn inside a window barely larger than their sum. A 200k-window session therefore gets
+the statusline advisory and the manual path, plus one message naming the arithmetic. That is a
+deliberate narrowing of who the automation serves, and it is strictly better than the pre-D18
+behaviour on the same windows, which was silence.
+
+**A read-side incoherence this exposed, and fixed.** An automatically written handoff lands
+`2·fat_turn` below the ceiling **by construction**, so its gap at compaction is ~120,000 — twelve
+times `CTX_HANDOFF_ACCEPTABLE_GAP_TOKENS` (10,350). Judged against that constant every auto-written
+handoff would be flagged `likely-undocumented` for doing exactly what it was designed to do: not a
+staleness finding but a category error, and one no test caught because the coherence checks only
+covered `NOTICE < URGE` and the old `URGE + fat + auth < declared`. Even at the *median* turn (6,707)
+the reserved gap exceeds the constant. So `handoff-urge.sh` now records `expected_gap_tokens` into
+the sidecar when the handoff lands, and `handoff-inject.sh` judges against **whichever bound is
+larger**. Larger, not "the writer's if present": a writer that reserved less must not be able to
+tighten a verdict that is the constant's judgement to make. A sidecar without the field is pre-D18
+and falls back to the constant, which errs toward flagging — the safe direction for a verdict a
+reader acts on. `CTX_HANDOFF_ACCEPTABLE_GAP_TOKENS` is now explicitly the **manual** path's number,
+where the gap really is a free variable worth judging.
+
+**Rejected along the way.** `min(absolute, relative)` as a single trigger — correct in shape, and
+where this decision started, but a no-op in every configuration that ships: the declared ceiling is
+887k for everyone who has not overridden it, so `min(200k, 887k − margin)` is always 200k. Its only
+effect appears once a user has correctly declared a *small* ceiling, i.e. after doing the
+configuration the ideal was supposed to remove. Also rejected: two triggers with two latches (cost
+*and* continuity, each firing once) — it preserves finding #7's saving inside the automation, but it
+partly reverses [D17](#d17)'s one-shot rule and bundles a staleness fix into a windowing fix. The
+staleness question ("should a stale handoff be refreshed before compaction?") is orthogonal, D17 has
+a reasoned position on it already, and it deserves its own argument rather than arriving as a side
+effect of this one.
+
+**Deferred, and named so it is not mistaken for settled:** measuring re-derivation cost after a
+reset is the one thing that would let the manual threshold be derived rather than bounded. Nothing
+above depends on it.
+
+---
+
 ## Open questions
 
 Genuinely unresolved. Recorded so that "was more design interrogation worthwhile" is answered by
@@ -1134,7 +1240,10 @@ SymbolicLink` fails with `Administrator privilege required`, where git-bash's `l
 
    - `hooks/handoff-urge.sh` (`Stop`) — the write leg. Measures resident context out of
      `transcript_path` (F5), compares against `CTX_URGE_TOKENS`, and blocks once with the
-     instruction to run `/handoff` (F4). 30 assertions.
+     instruction to run `/handoff` (F4). 30 assertions. _Amended 2026-09-09 by [D18](#d18):_ the
+     comparison is no longer against `CTX_URGE_TOKENS` but against a trigger derived from the
+     compaction ceiling, with `CTX_NOTICE_TOKENS` as a floor. Assertion counts in this item are
+     left as the 2026-08-26 record rather than maintained; the suites are the live count.
    - `hooks/handoff-inject.sh` (`SessionStart`, `source: "clear"`) — the read leg. Runs
      `tools/verify-handoff.sh` and injects document-with-verdicts (F2, [D14](#d14)), and surfaces
      the `/clear` marker below. 54 assertions.

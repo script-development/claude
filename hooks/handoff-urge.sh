@@ -2,30 +2,40 @@
 #
 # Stop hook: the WRITE leg of the automated handoff cycle (build-order item 4).
 #
-# At the first turn boundary where resident context has reached CTX_URGE_TOKENS, this returns
-# control to the model with an instruction to run /handoff. `decision: "block"` on a Stop hook
-# is not a veto -- `reason` becomes the model's next instruction -- so this is what turns the
-# statusline's passive `handoff?` advisory into something that happens without the human having
-# to notice the number and act on it.
+# At the LAST turn boundary where the session can still finish writing a handoff before
+# auto-compaction takes it, this returns control to the model with an instruction to run
+# /handoff. `decision: "block"` on a Stop hook is not a veto -- `reason` becomes the model's next
+# instruction -- so this is what makes a handoff survive a compaction without the human having to
+# watch a number and act on it.
 #
-# It fires AT MOST ONCE PER SESSION, and it DECLINES ENTIRELY unless it can establish that the
-# session has room to write the handoff before auto-compaction takes it. The decline is the
-# important half; see "WHY THE HEADROOM CHECK IS HERE" below.
+# It fires AT MOST ONCE PER SESSION, and it DECLINES ENTIRELY unless it can establish where
+# compaction will fire. The decline is the important half; see "THE TRIGGER IS DERIVED" below.
 #
 # Thresholds are SOURCED from this bundle's lib/context-economy/context-thresholds.sh, never
 # restated. If that file is missing this hook does nothing at all -- degrade capability, never
 # execution, the same rule the gauge follows when its thresholds are absent.
 #
-# ── WHY THE HEADROOM CHECK IS HERE, AND WHY IT DECLINES RATHER THAN WARNS ──────────────────
+# ── THE TRIGGER IS DERIVED FROM THE CEILING, NOT FIXED AT CTX_URGE_TOKENS ──────────────────
 #
-# CTX_URGE_TOKENS is absolute (200k) while auto-compaction fires at a fixed offset below the
-# *window*, which is dynamic. On the 1M default that leaves ~787k of slack and a fat turn is
-# noise. On a 200k-window session compaction fires around 187k -- BELOW the threshold -- so this
-# hook can never fire there and is simply dead code. In between lies the case that matters: an
-# armed trigger with negative slack loses the race to compaction every time, and the handoff it
-# then produces is authored from a compaction summary. That is the `compacted: yes` degradation
-# the handoff format exists to RECORD, manufactured on purpose. An unarmed trigger is merely the
-# status quo, so declining is strictly the cheaper failure.
+# Changed 2026-09-09 by [D18](../docs/design.md#d18); this hook used to fire at an absolute
+# CTX_URGE_TOKENS (200k) and treat the compaction ceiling only as a veto. Two failures, opposite
+# in direction and both traceable to expressing a compaction-relative decision as a constant:
+#
+#   On a 1M window it fired at 20% of the window and then let the session run on to ~887k
+#   regardless, so what compaction actually met was a handoff hundreds of thousands of tokens
+#   stale. On a 200k-window session compaction fires ~187k -- BELOW 200k -- so it never fired at
+#   all, silently, and could not have: the old worst-case margin alone exceeded the whole window.
+#
+# So the trigger is now `ceiling - 2*fat_turn - authoring_turn`, the latest point that is still
+# safe, with the gate one fat turn above it and CTX_NOTICE_TOKENS as a floor beneath it. 200k
+# remains what it always usefully was -- the statusline's passive advisory, and the point at which
+# a HUMAN may choose to run /handoff. This hook no longer reads it.
+#
+# WHY IT DECLINES RATHER THAN WARNS, unchanged from the original design: an armed trigger with
+# negative slack loses the race to compaction every time, and the handoff it then produces is
+# authored from a compaction summary. That is the `compacted: yes` degradation the handoff format
+# exists to RECORD, manufactured on purpose. An unarmed trigger is merely the status quo, so
+# declining is strictly the cheaper failure.
 #
 # Rejected alternatives, all of which look cheaper: an install-time check (cannot know the
 # runtime window -- it varies per model, per org, per session); a statusline warning (hot path,
@@ -70,7 +80,10 @@ CTX_THRESHOLDS_FILE="${CTX_THRESHOLDS_FILE:-$hook_dir/../lib/context-economy/con
 # loaded but is older than this hook, which is indistinguishable from "no opinion" -- and `-n`
 # rather than `${VAR:-0}` for the reason the file states at length: a :-0 default would read as
 # a real threshold of zero, which fails OPEN in a check that must fail closed.
-for v in CTX_URGE_TOKENS CTX_FAT_TURN_TOKENS CTX_AUTHORING_TURN_TOKENS CTX_1M_COMPACT_THRESHOLD_TOKENS; do
+# CTX_NOTICE_TOKENS rather than CTX_URGE_TOKENS since D18: URGE is advisory-only now (the
+# statusline renders it, a human acts on it) and this hook no longer reads it at all, while NOTICE
+# gained a second job here as both the cheap pre-filter and the floor beneath the derived trigger.
+for v in CTX_NOTICE_TOKENS CTX_FAT_TURN_TOKENS CTX_AUTHORING_TURN_TOKENS CTX_1M_COMPACT_THRESHOLD_TOKENS; do
     [ -n "${!v:-}" ] || exit 0
 done
 
@@ -140,9 +153,19 @@ if [ -e "$latch" ]; then
                     case "${written_resident:-}" in
                         ''|*[!0-9]*) ;;
                         *)
+                            # `expected_gap_tokens` is what makes the read leg's verdict
+                            # meaningful for an automatically written handoff (D18). The trigger
+                            # deliberately fires 2*fat_turn below the ceiling, so a gap of about
+                            # that size at compaction is NOMINAL, not staleness -- judged against
+                            # CTX_HANDOFF_ACCEPTABLE_GAP_TOKENS (10,350) it would be flagged every
+                            # single time. Recorded here rather than recomputed there because only
+                            # the writing side knows which trigger wrote this handoff; a sidecar
+                            # lacking the field is pre-D18 and the reader falls back to the
+                            # constant.
                             jq -n --argjson w "$written_resident" --argjson t "$(date +%s)" \
+                                --argjson g "$(( 2 * CTX_FAT_TURN_TOKENS ))" \
                                 --arg h "$HANDOFF_FILE" \
-                                '{written_at_tokens: $w, written_at_epoch: $t, handoff_path: $h}' \
+                                '{written_at_tokens: $w, written_at_epoch: $t, handoff_path: $h, expected_gap_tokens: $g}' \
                                 > "$sidecar" 2>/dev/null
                             ;;
                     esac
@@ -175,7 +198,18 @@ resident=$(jq -r 'select(.message.usage != null)
                     + (.cache_read_input_tokens // 0)' "$transcript" 2>/dev/null | tail -1)
 
 case "${resident:-}" in ''|*[!0-9]*) exit 0 ;; esac
-[ "$resident" -ge "$CTX_URGE_TOKENS" ] || exit 0
+
+# ── The cheap pre-filter, BEFORE the ceiling is resolved ───────────────────────────────────
+# The real trigger is derived from the ceiling and cannot be evaluated yet, but it can never sit
+# below CTX_NOTICE_TOKENS -- the floor below enforces exactly that -- so this is a sound necessary
+# condition and it costs one integer comparison.
+#
+# It is here for two reasons beyond speed. Resolving the ceiling can mean a second `jq` pass over a
+# transcript that reaches tens of MB, at every turn boundary of every session; and the "ceiling
+# unknown" decline below would otherwise be emitted at the FIRST Stop of a five-thousand-token
+# session, which is a nag about a threshold nothing was approaching. Shallow sessions must be left
+# alone by every path through this hook, not merely by the arming one.
+[ "$resident" -ge "$CTX_NOTICE_TOKENS" ] || exit 0
 
 # ── The ceiling: declared, else detected, else decline ─────────────────────────────────────
 ceiling=""
@@ -208,8 +242,6 @@ else
     fi
 fi
 
-need=$((resident + CTX_FAT_TURN_TOKENS + CTX_AUTHORING_TURN_TOKENS))
-
 mkdir -p "$latch_dir" 2>/dev/null
 
 if [ -z "$ceiling" ]; then
@@ -222,9 +254,40 @@ if [ -z "$ceiling" ]; then
     exit 0
 fi
 
-if [ "$need" -ge "$ceiling" ]; then
+# ── The derived trigger, its floor, and the gate ───────────────────────────────────────────
+# All three come from context-thresholds.sh's arming block; see there for why the trigger carries
+# two fat turns and the gate one. In short: the gate is the real constraint (the authoring turn
+# must finish before compaction), the trigger sits exactly one fat turn below it so that firing
+# cannot fail its own check on arrival, and the fat turn between them is the band a single turn
+# would have to exceed to leap past unobserved.
+trigger=$((ceiling - 2 * CTX_FAT_TURN_TOKENS - CTX_AUTHORING_TURN_TOKENS))
+need=$((resident + CTX_FAT_TURN_TOKENS + CTX_AUTHORING_TURN_TOKENS))
+
+if [ "$trigger" -lt "$CTX_NOTICE_TOKENS" ]; then
+    # THE WINDOW IS TOO SMALL FOR PREDICTION AT ALL, and this is the honest thing to say. The
+    # margin is fixed while the ceiling is not, so under a ceiling of ~305k the trigger lands
+    # below the depth at which a handoff has anything to record. Firing anyway would write one
+    # from a near-empty context; staying silent (the pre-D18 behaviour on these windows) leaves a
+    # human wondering why the automation never ran. So: say it once, name the arithmetic, and
+    # point at the path that does work here.
     : > "$latch" 2>/dev/null
-    jq -n --arg m "handoff trigger declined to arm at $((resident / 1000))k: writing a handoff needs ~$((need / 1000))k of headroom but compaction fires at ~$((ceiling / 1000))k ($ceiling_basis). Arming here would lose the race and produce a handoff authored from a compaction summary, which is worse than none." \
+    jq -n --arg m "handoff trigger declined to arm: compaction fires at ~$((ceiling / 1000))k ($ceiling_basis), and writing a handoff safely needs ~$(( (2 * CTX_FAT_TURN_TOKENS + CTX_AUTHORING_TURN_TOKENS) / 1000 ))k of that, which would put the trigger at $((trigger / 1000))k — below the $((CTX_NOTICE_TOKENS / 1000))k depth where a handoff has anything to record. This window cannot be served automatically; run /handoff by hand at a point of your choosing." \
+        '{systemMessage: $m}'
+    exit 0
+fi
+
+# Not due yet. Deliberately NOT latched: this is the common outcome for most of a session's life,
+# and the next turn re-evaluates it. The ceiling resolution above is free on the declared path
+# (a variable read), so re-reaching this line costs nothing on the default configuration.
+[ "$resident" -ge "$trigger" ] || exit 0
+
+if [ "$need" -ge "$ceiling" ]; then
+    # Past the band. Since the trigger sits one fat turn below the gate, arriving here means a
+    # single turn leapt the whole band between two Stop events -- expected for roughly the 5% of
+    # turns above p95 (see CTX_FAT_TURN_TOKENS). One loud message and a manual /handoff is the
+    # designed cost of that, and it is strictly cheaper than a handoff authored from a summary.
+    : > "$latch" 2>/dev/null
+    jq -n --arg m "handoff trigger declined to arm at $((resident / 1000))k: writing a handoff needs ~$((need / 1000))k of headroom but compaction fires at ~$((ceiling / 1000))k ($ceiling_basis). A single turn appears to have jumped past the $((trigger / 1000))k trigger point. Arming here would lose the race and produce a handoff authored from a compaction summary, which is worse than none." \
         '{systemMessage: $m}'
     exit 0
 fi
@@ -250,7 +313,9 @@ pending=$(printf '%s' "$input" | jq -r '
            + ". Record each one in the handoff by disposition — blocks a Next step, feeds one without blocking, or feeds nothing."
       end' 2>/dev/null | tr -d '\r')
 
-jq -n --arg r "Context has reached $((resident / 1000))k, at or past the $((CTX_URGE_TOKENS / 1000))k reset threshold, and there is room to hand off before auto-compaction (~$((ceiling / 1000))k, $ceiling_basis).
+jq -n --arg r "Context has reached $((resident / 1000))k, at or past the $((trigger / 1000))k point where this session must hand off to beat auto-compaction (~$((ceiling / 1000))k, $ceiling_basis) — and there is still room to do it.
+
+This is the last safe turn boundary, not an early advisory: the margin below the ceiling is reserved for one wide turn plus the authoring turn itself, so deferring risks the write landing after compaction instead of before it.
 
 Run the /handoff skill now, before anything else. Write it from what is already in context — do not read, grep or list anything in order to author it; anything you would have to re-open is by definition re-derivable and belongs in ## Pointers as a citation instead.${pending}
 

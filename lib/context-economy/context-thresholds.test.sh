@@ -121,15 +121,56 @@ target=$(get HANDOFF_TARGET_TOKENS); ceiling=$(get HANDOFF_CEILING_TOKENS)
 [ "$target" -lt "$ceiling" ] && pass 'the handoff target is below its ceiling' \
                              || fail 'the handoff target is below its ceiling' "target=$target ceiling=$ceiling"
 
-# The headroom check is `T + fat + authoring < ceiling`. If that sum can never clear URGE, the
-# trigger is dead on arrival for every session — worth catching here rather than by wondering
-# months later why no handoff has ever been written.
+# --- D18: the derived trigger has to land somewhere usable -----------------
+#
+# These replace a single pre-D18 check ('a session at exactly URGE has room to hand off under the
+# declared ceiling'), which asserted an invariant the design no longer has: URGE is not the trigger
+# any more, so its headroom under the ceiling says nothing about whether anything can arm.
+
 fat=$(get CTX_FAT_TURN_TOKENS); auth=$(get CTX_AUTHORING_TURN_TOKENS)
-if [ "$(( urge + fat + auth ))" -lt "$declared" ]; then
-    pass 'a session at exactly URGE has room to hand off under the declared ceiling'
+trigger=$(( declared - 2 * fat - auth ))
+
+# The floor, which is also what hooks/handoff-urge.sh enforces at runtime. Under the declared
+# ceiling the trigger must land at a depth where a handoff has something to record; if it does not,
+# the automatic path is off for every session on this machine and that should fail here rather than
+# be discovered by its silence months later.
+if [ "$trigger" -ge "$notice" ]; then
+    pass 'the derived trigger lands at or above NOTICE under the declared ceiling'
 else
-    fail 'a session at exactly URGE has room to hand off under the declared ceiling' \
-         "urge+fat+authoring=$(( urge + fat + auth )) is not below $declared — the trigger can never arm"
+    fail 'the derived trigger lands at or above NOTICE under the declared ceiling' \
+         "ceiling-2*fat-authoring=$trigger is below notice=$notice — nothing can ever arm here"
+fi
+
+# The trigger must sit strictly BELOW the gate, or firing fails its own headroom check on arrival
+# and the hook declines every time it fires. The margin between them is exactly one fat turn by
+# construction; asserting it catches an edit that changes one expression without the other.
+gate=$(( declared - fat - auth ))
+if [ "$trigger" -lt "$gate" ] && [ "$(( gate - trigger ))" -eq "$fat" ]; then
+    pass 'the trigger sits exactly one fat turn below the gate, so firing can pass it'
+else
+    fail 'the trigger sits exactly one fat turn below the gate, so firing can pass it' \
+         "trigger=$trigger gate=$gate band=$(( gate - trigger )) fat=$fat"
+fi
+
+# D18's own finding, asserted so it cannot regress into an accident: an automatically written
+# handoff lands ~2*fat below the ceiling, which is FAR above the acceptable-gap constant. That is
+# expected, not a defect — but it is exactly why the writer records `expected_gap_tokens` and the
+# reader takes the larger of the two. If these two ever became comparable, that plumbing would be
+# dead weight and this check is where to notice.
+okgap=$(get CTX_HANDOFF_ACCEPTABLE_GAP_TOKENS)
+if [ "$(( 2 * fat ))" -gt "$okgap" ]; then
+    pass "an auto-written handoff's reserved gap exceeds the manual-path acceptable gap, as D18 found"
+else
+    fail "an auto-written handoff's reserved gap exceeds the manual-path acceptable gap, as D18 found" \
+         "2*fat=$(( 2 * fat )) no longer exceeds $okgap — the expected_gap_tokens plumbing may be redundant"
+fi
+
+# And URGE, now advisory-only, must still be reachable as a *display* threshold on the window this
+# machine declares — a gauge that can never render its second stage is a broken gauge.
+if [ "$urge" -lt "$declared" ]; then
+    pass 'URGE is reachable under the declared ceiling, so the gauge can render its second stage'
+else
+    fail 'URGE is reachable under the declared ceiling' "urge=$urge declared=$declared"
 fi
 
 echo

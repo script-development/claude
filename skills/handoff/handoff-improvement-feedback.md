@@ -101,3 +101,26 @@ That workaround is version-pinned to `…/cache/mission-control/context-economy/
 lines) — fully diverged. Since `SKILL.md:192` probes `$HOME/.claude/lib/` *first*, the stale copy
 would have won for the skill while the hook used the current one. Two copies of the store, disagreeing,
 in one session. Reordering the probe fixes this half too.
+
+### 2026-09-09 — the probe is still unfixed, and the 2026-09-02 workaround is gone
+
+Recurrence, not a new finding. Recorded because the entry above proposed the fix ("The probe order is
+the real fix") and it has not landed: `SKILL.md:187-193` still probes exactly two candidates, and on
+this machine **neither exists**.
+
+What changed since 2026-09-02 is that the workaround has silently evaporated: `~/.claude/lib/` does
+not exist at all any more, so candidate one no longer hits for either library. Nothing announced
+that — the previous entry predicted `claude plugin update` would re-dangle the links, and the
+directory going away entirely is the same failure one step further along. A session that trusted the
+probe would now write an unverified handoff and say so in `status:`, which is the designed
+degradation but not the right outcome when the gate is sitting in the plugin's own `lib/`.
+
+Both libraries were found this run only by extending the list with two more candidates: the target
+checkout's own `lib/` (this session's work was in context-economy itself) and a glob over
+`~/.claude/plugins/cache/*/context-economy/*/lib/`. The second is what `statusline.sh` already does
+for `context-thresholds.sh`, and it is version-agnostic by construction — a plugin bump changes the
+cache directory and the glob keeps working, which is precisely what the pinned symlink could not do.
+
+**Suggested probe order**, unchanged in spirit from the entry above but now with a working reference
+implementation to copy: plugin-cache glob first (newest match wins, as the statusline does it), then
+the target checkout's `lib/`, then the two existing candidates last as pre-plugin fallbacks.
