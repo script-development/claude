@@ -1271,3 +1271,135 @@ untested, per finding #13's own caveat).
 # in this run; budget for at least that many). Delete the scratch project and its
 # ~/.claude/projects/*/ transcript directory afterward.
 ```
+
+---
+
+## Finding #17, 2026-09-09 — `compact_threshold` for `claude-sonnet-5` is ≈window − 35,500 across three forced windows (100k/110k/120k), each bracketed to under ±1,400
+
+**Question.** `CTX_COMPACT_THRESHOLD_TOKENS` is the one declaration this repo's own escape hatch
+(`lib/context-economy/context-thresholds.sh:323-326`) exists for, but computing it by hand needs
+`reserved_output_tokens` — "the model's own `max_output_tokens`" (line 72), which the file is
+explicit is dynamic per binary and not readable from a hook (lines 67-75, 110-116). Rather than
+guess at that input, this asks the question the file's own escape hatch actually cares about
+directly: for `claude-sonnet-5` with a window forced down via `--autocompact`, at what resident size
+does auto-compaction actually fire — and does that relationship stay linear with the window as the
+window is nudged up, the way the `compact_threshold = effective_window - 13,000` model predicts?
+
+**Method.** Same probe shape as findings #13/#16 (isolated scratch project, `PreCompact` +
+`SessionStart` hooks logging `session_id`/`source`/the transcript's last usage record), but
+bisecting resident size across separate cold-start sessions rather than growing one session
+incrementally — each session's first `-p` call is sized with base64-random stdin filler (framed as
+inert test data, per finding #13's dead-end note) to land at a target resident total, then a bare
+one-line `-p --resume` call checks whether the pre-request resident already crossed the threshold
+(`PreCompact` firing, or not, before the new call's own content is added). Repeated at
+`--autocompact 100000`, `110000`, and `120000` — deliberately close together (not e.g. 100k vs.
+1M) so that if the threshold moves by anything other than very close to the window delta itself,
+that shows up clearly against each bracket's own width rather than getting lost in a wide gap.
+`claude-sonnet-5` on every call, CLI 2.1.266 (newer than the 2.1.246 build the `13,000`/`3,000`
+offset constants in `docs/design.md` D10 were traced against). ~19 `claude -p` calls total across
+13 sessions, ≈$3–4. Scratch project and its `~/.claude/projects/*compact-probe-sonnet5*` transcript
+directories deleted immediately after each window's runs, matching #13/#16's cleanup discipline —
+no on-disk artifact to cite by `path:line`, re-derive via the method above.
+
+**Result.**
+
+```
+window_source=100,000
+resident (tokens)   fired?
+37,035               no
+53,722               no
+59,545               no
+61,388               no
+63,084               no
+65,863               yes
+71,461               yes
+91,987               yes
+-> compact_threshold bracketed (63,084, 65,863], midpoint ≈64,474, width 2,779
+
+window_source=110,000
+resident (tokens)   fired?
+70,922               no
+74,572               no
+78,957               yes
+77,098               yes
+75,438               yes
+-> compact_threshold bracketed (74,572, 75,438], midpoint ≈75,005, width 866
+
+window_source=120,000
+resident (tokens)   fired?
+80,516               no
+82,048               no
+82,968               no
+83,865               yes
+-> compact_threshold bracketed (82,968, 83,865], midpoint ≈83,417, width 897
+```
+
+`compact_threshold` for `claude-sonnet-5` is bracketed to **(63,084, 65,863]** at a 100k window,
+**(74,572, 75,438]** at 110k, and **(82,968, 83,865]** at 120k. These three brackets are the
+headline result and stand on their own: each is a direct observation of the quantity
+`CTX_COMPACT_THRESHOLD_TOKENS` declares, not a computation that depends on any constant this repo
+measured elsewhere.
+
+**Roughly linear across this range, but not exactly 1:1.** Midpoint deltas: 100k→110k is +10,531
+against a +10,000 window step (slope 1.05); 110k→120k is +8,412 against the same +10,000 step
+(slope 0.84). Both are within the combined bracket widths of a true 1:1 slope (uncertainty ≈±0.37
+and ≈±0.18 respectively), so this does not contradict the `effective_window - 13,000` fixed-offset
+model — but the second gap's slope sits close enough to that uncertainty's edge that a fourth window
+point (e.g. 130k or 150k) would be worth taking before treating "one token of window buys one token
+of headroom" as settled over a wider range than 100k-120k.
+
+**Secondary, more fragile: back-solving `reserved_output_tokens` at each window.** Using
+`compact_threshold = min(window_source, model_window) - reserved_output_tokens - 13,000`:
+`≈22,526` at 100k, `≈21,995` at 110k, `≈23,583` at 120k — a tighter spread (21,995-23,583) than the
+raw bracket widths alone would demand, which is a second, independent piece of evidence the
+underlying `reserved_output_tokens` really is roughly constant around **~22,000-23,600** across this
+range. Still, this figure does NOT match any of the three candidate numbers reachable elsewhere: not
+the `64,000` reported by `modelUsage.maxOutputTokens` in the CLI's own `-p --output-format json`
+result for this model (see side finding below), not the generic `default:32000` fragment quoted in
+`docs/design.md:584`'s binary-table excerpt, and not the API's advertised `128,000` `max_tokens` cap
+for this model. And unlike the headline `compact_threshold` brackets, this figure inherits whatever
+uncertainty the `13,000` offset carries on 2.1.266 vs. the 2.1.246 build it was traced against —
+untested here. Useful as a data point, not to be treated as more solid than the direct measurements
+it's derived from.
+
+**Side finding: `modelUsage.contextWindow`/`.maxOutputTokens` are in the print-mode result, not the
+transcript.** Every `-p --output-format json` call in this probe returned
+`modelUsage.claude-sonnet-5.contextWindow: 1000000` and `.maxOutputTokens: 64000`, stable across all
+13 sessions and all three `--autocompact` values. But `grep -c modelUsage` against the underlying
+transcript `.jsonl` for one of these sessions returned `0` — the field is on the CLI's own print
+summary (stdout), never written into the transcript itself. This confirms `docs/design.md`'s
+existing finding that a real `PreCompact`/`Stop` hook (which only receives `transcript_path`, never
+the print-mode stdout) still cannot reach this field — it does not open a new channel for a hook to
+read `reserved_output_tokens` from, whatever `maxOutputTokens` itself turns out to mean.
+
+**What this does not settle.** Each bracket is under ±1,400 tokens, not exact — a few more
+bisection steps per window would tighten further at proportionally small additional cost. Only three
+close-together `window_source` values (100k/110k/120k) were probed; nothing here establishes whether
+the near-linear relationship holds at a much larger window (e.g. the 1M default this repo actually
+declares in `context-thresholds.sh`) or whether `autoCompactWindow_source` snaps to internal buckets
+somewhere between here and there. And only `claude-sonnet-5` was probed — none of this transfers to
+any other model.
+
+### Reproduction
+
+```
+# Scratch project, same hook shape as findings #13/#16 (PreCompact + SessionStart, matcher "",
+# logging session_id/source/transcript's-last-usage-record).
+# For each --autocompact window W being probed (100000, 110000, 120000, ...), for each candidate
+# resident target R:
+#   head -c <N> /dev/urandom | base64 -w0 > filler.b64   (tune N; empirically ~1.0-1.4 tokens per
+#     byte of already-base64-encoded submitted content, including a short inert-test-data framing
+#     line -- recalibrate from the previous session's actual resulting resident, don't assume a
+#     fixed ratio)
+#   (printf '<inert-test-data framing>\n\n'; cat filler.b64) |
+#     claude -p --session-id <fresh-uuid> --model claude-sonnet-5 --autocompact <W>
+#       --output-format json                                    # sets resident to ~R
+#   claude -p "<short unrelated prompt>" --resume <same-uuid> --model claude-sonnet-5
+#     --autocompact <W> --output-format json                    # triggers the entry-point check
+#   # check the hook log: did PreCompact fire at this R or not?
+# Bisect R between the largest "no" and smallest "yes" until the bracket is tight enough (a few
+# hundred tokens is reachable in 4-5 sessions once the byte/token ratio is calibrated from the
+# first probe at that window). Repeat for the next W using the previous window's bracket midpoint
+# plus the window delta as the starting guess, rather than re-bisecting from scratch.
+# Delete the scratch project and its ~/.claude/projects/*/ transcript directory afterward.
+```
