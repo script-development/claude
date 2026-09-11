@@ -250,8 +250,29 @@ Only the FIX rows, and only after step 3 is agreed. Mirror the repo's own preced
 neighbouring code already demonstrates beats the shape you would invent. The repo's `CLAUDE.md` and
 the reference file carry its rules.
 
-**Make the minimal fix.** Do not refactor unrelated code on the way past — every extra line enters
-the diff the reviewer is judging, which is the same reason FOLLOW-UP exists.
+**Leave the code simpler, not the diff smaller.** The quickest way to close a finding in a
+few lines is to add something: a flag, a guard, a lock, a retry key, a mode. Each addition is
+new state with failure cases of its own, and the next round finds one of them. In 13 long
+review chains audited across four repos, about half the findings filed in round 2 or later
+sat inside the previous fix. The fixes that ended those chains deleted something instead: one
+owner for a piece of state where there had been two, a field taken out of a payload, a
+construct replaced. Their diffs were often larger; the code after them was simpler. So when a
+fix adds a flag, guard, lock or mode, stop and look for the version that does not need it.
+That is no licence to refactor on the way past: code the finding does not reach stays out of
+the diff, for the same reason FOLLOW-UP exists.
+
+**Think the fix through before you push it.** A fix gets less scrutiny than the code it
+repairs, and the reviewer then checks it one round at a time. Before the push, answer three
+questions about the fix itself, not about the finding:
+
+- What new states or values does it introduce?
+- What happens when the call it touches fails, overlaps, retries or runs twice?
+- Who else reads what it changed?
+
+Pin the failure path with a test that fails without the fix. This costs minutes. On one
+team's measured PRs a fix landed a median 26 minutes after the failing review, and the next
+review came a median 84 minutes after the push, so a fix pushed without these answers costs a
+whole round.
 
 Auto-fixable CI rows run their tool, then verify locally. Formatters, linters with a `--fix` mode,
 and codemod tools all land here; the repo reference file names them. Rows needing a real change get
@@ -276,6 +297,10 @@ Every DESIGN CALL goes through `AskUserQuestion`, under three rules, in dependen
 
 Use `preview` when two fix shapes are easier to compare side by side than to describe. When step 1
 fired a chain signal, one option is always **replace the construct**, and it is the recommended one.
+
+**Between fix shapes, recommend the one that leaves less state.** Step 4's first rule applies
+to the menu too. In the audited chains, rounds kept coming after design calls that added a
+lock, a request mode or a flag, and stopped after the ones that deleted something.
 
 Then fix what the answers settled, same bar as step 4.
 
