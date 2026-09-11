@@ -1052,6 +1052,49 @@ above depends on it.
 
 ---
 
+### D19 — Step 4 branches on *why* the write happened, not on who is watching
+
+Decided 2026-09-11. Rewrites `skills/handoff/SKILL.md`'s write-mode Step 4. Closes [O3](#o3) in
+full; O3's own 2026-08-24 amendment had already closed the attended half.
+
+**The existing text asked the wrong question.** It branched on attended vs. unattended, and inside
+each branch treated every write the same way regardless of why it happened — but [D18](#d18) already
+answered, for the automatic path, what an attended session should do with one: an auto-written
+handoff lands `2·fat_turn` below the ceiling *by construction*, with a ~120,000-token gap at
+compaction that D18 calls "doing exactly what it was designed to do." A gap that size is only
+defensible if the session is expected to keep running toward the real ceiling after the write, not
+stop for a human to `/clear`. So the variable that actually governs Step 4 was never attendance — it
+is whether *anyone asked for a pause*, and the Stop hook, by design, never does.
+
+**Trigger, not attendance, is the outer branch.**
+
+- **Fired by the Stop hook.** Nobody asked for a reset, only for insurance against one — per D18,
+  this path is supposed to stay as invisible as real auto-compaction. Report the write in one line
+  and keep going; no `/clear` instruction, on any turn, regardless of who — if anyone — is attending.
+- **Invoked directly.** A human typed `/handoff`, or an orchestrator watching this session's growth
+  from outside (`monitor-agent-runs`, a driver script, anything holding this session's task id) sent
+  the instruction. Either way the ask itself *is* the request for a controlled pause — bypassing the
+  automatic path has no other reason — so this branch always stops. Attendance only changes what the
+  stop message says, because it changes who has to act on it next: a human present is told what to
+  run (`Run /clear, then /handoff --read` — unchanged from the prior text); nobody present gets a bare
+  confirmation ("ready for reset") instead, since there is nothing to instruct and no self-reset tool
+  to fall back on either. The actor performing the reset is external either way — O3's own resolution
+  below: a human, or `monitor-agent-runs` killing and relaunching the run against the handoff it just
+  wrote — and the confirmation is what tells that actor it is safe to do so.
+
+**Closes O3 in full.** The unattended half was left open pending "the one-shot injected advisory"
+landing; it has, and what was actually missing was never the advisory but this same conflation of
+attendance with intent-to-pause. Once trigger is the branch, unattended stops needing a separate rule
+of its own — it is the wording variant of whichever branch the trigger already put it in, not a third
+case.
+
+_Rejected: a full trigger × attendance 2×2._ Correct in shape, wrong in size — hook-triggered
+attended and hook-triggered unattended behave identically (keep going), and the two manual cells
+differ only in message wording, never in whether they stop. Three leaf behaviors, one real branch
+plus a wording fork inside it, not four.
+
+---
+
 ## Open questions
 
 Genuinely unresolved. Recorded so that "was more design interrogation worthwhile" is answered by
@@ -1113,6 +1156,11 @@ this list rather than by recollection.
   `ExitPlanMode`'s "clear conversation and start with only the plan" (F7) — which is a precedent worth
   copying the shape of, and the wrong artifact to reuse: a plan carries `## Next` well and Decisions /
   Dead ends / Traps not at all, i.e. exactly the half [D6](#d6) exists to protect.
+
+  **Closed in full by [D19](#d19), 2026-09-11.** The unattended half was left open on the theory that
+  it still needed its own rule; it needed the outer branch changed instead, from attended/unattended
+  to trigger/no-trigger, at which point unattended stopped being a separate case and became a wording
+  variant of whichever branch the trigger already selected.
 
 - **O4 — When is a handoff verified?** ~~On write (the producing session proves its own citations), on
   read (the consuming session checks before trusting), or both. Both is safest and pays twice.~~

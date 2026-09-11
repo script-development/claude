@@ -291,18 +291,39 @@ the cheapest way to pass, inverting the entire design. **When over budget, the l
 Pointer** — pointers re-derive from the tree; a decision does not re-derive at all. If it genuinely
 had to be long, say why in the handoff.
 
-## Write mode — Step 4: hand back to the human
+## Write mode — Step 4: hand back — or don't
 
 Print `>> STEP: handoff — 4 (write)` before doing anything else in this step.
 
-No tool call. Report the path, the exit status, and any warning worth acting on — then **tell the
-human what to run**. A model cannot reset its own context: there is no tool for it, and `/clear` and
-`/compact` are user commands. So this step ends in an instruction, not an action:
+No tool call. Report the path, the exit status, and any warning worth acting on. What happens next is
+decided by **why this write is happening, not by who is watching**:
 
-> Handoff written to `<path>` (gate: OK). Run `/clear`, then `/handoff --read` in the fresh session.
+**Fired by the Stop hook itself** — this turn opens with `Stop hook feedback:` and tells you to run
+this skill "now, before anything else." This path exists to be as invisible as real auto-compaction:
+nobody asked for a pause, only for insurance against one. Report the write in one line and **keep
+going with whatever was in flight.** Do not tell anyone to `/clear`. The handoff may be stale by the
+time anything reads it back — that is the accepted cost of the margin `CTX_COMPACT_THRESHOLD_TOKENS`
+keeps against racing real auto-compaction, not a defect in this step to correct for.
 
-Unattended there is no one to tell, so the honest output is narrower — *"a handoff has been written;
-this run should stop here"*. It cannot claim a reset that never happened.
+**Invoked directly** — a human asked for one, or an orchestrator watching this session's growth from
+outside sent the instruction. Either way, someone chose the manual path *because* they want the pause,
+so give it to them. A model cannot reset its own context — there is no tool for it, `/clear` and
+`/compact` are user commands — so this step ends in an instruction or a confirmation, never an action,
+and which one depends on who is there to receive it:
+
+- **A human is attending:**
+
+  > Handoff written to `<path>` (gate: OK). Run `/clear`, then `/handoff --read` in the fresh session.
+
+- **Nobody is attending** (the ask came from an orchestrator, a driver script, anything that is not a
+  live human at the keyboard): there is no one to instruct and no self-reset tool either, so say only
+  that it is safe to act on:
+
+  > Handoff written to `<path>` (gate: OK). Ready for reset.
+
+  That confirmation is what lets whatever asked for the write kill and relaunch this run against the
+  handoff it just produced — the same clear-then-read cycle, performed from outside the process
+  instead of inside it.
 
 ## Read mode — Step 1: locate and verify, before reading
 
