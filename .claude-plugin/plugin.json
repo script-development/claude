@@ -1,7 +1,7 @@
 {
   "name": "context-economy",
   "displayName": "Context Economy",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Handoffs that survive a context reset: a /handoff skill that writes and verifies them, plus hooks that write one automatically before compaction takes the session and inject the right one into the next.",
   "keywords": [
     "handoff",

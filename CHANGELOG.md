@@ -5,6 +5,28 @@ incrementally — see `RELEASING.md` for why. Format follows [Keep a Changelog](
 versioning follows [Semantic Versioning](https://semver.org/), scoped to this plugin's own
 convention in `RELEASING.md`.
 
+## [0.3.0] - 2026-09-11
+
+### Changed
+
+- **The handoff skill's write-mode Step 4 branches on why the write happened, not on who is
+  attending** (`docs/design.md` D19). A Stop-hook-fired write now reports in one line and lets the
+  session keep working, matching D18's own assumption that an automatic handoff is insurance
+  against real auto-compaction, not a checkpoint to pause at — its ~120k-token gap at compaction
+  was already "doing exactly what it was designed to do." A directly-invoked write (a human, or an
+  orchestrator instructing a subagent it's watching from outside) still stops, since asking for one
+  manually is itself the request for a pause; attendance now only changes whether the stop message
+  tells a human what to run or confirms to an absent one that it's safe to reset externally. Closes
+  O3 in full.
+
+### Added
+
+- `README.md`: a user-facing overview of the plugin — goal, `/handoff`'s manual and automatic
+  triggers, handoff structure, and how to set the auto-compact window.
+- `docs/measured.md` finding #17: `CTX_COMPACT_THRESHOLD_TOKENS`'s relationship to the real
+  `--autocompact` ceiling, measured directly (`compact_threshold` ≈ window − 35,500 tokens for
+  `claude-sonnet-5`, bracketed under ±1,400) across three forced windows rather than assumed.
+
 ## [0.2.1] - 2026-09-09
 
 ### Fixed
