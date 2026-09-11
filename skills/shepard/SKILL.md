@@ -70,7 +70,7 @@ product; the severity does not.
 | Disposition | When it applies | What it produces |
 |---|---|---|
 | **FIX** | The reviewer is right (or the job is genuinely broken by this branch), the code is in this diff, and the fix has one defensible shape | An edit here in chat → checks → push |
-| **DESIGN CALL** | Real, but more than one fix shape is defensible, or the fix moves a boundary | A grounded `AskUserQuestion` round (step 5), THEN a fix |
+| **DESIGN CALL** | Real, but more than one fix shape is defensible, the fix moves a boundary, or its bug class already turned up at an earlier site on this branch (step 1) | A grounded `AskUserQuestion` round (step 5), THEN a fix |
 | **FOLLOW-UP** | Real, but the code predates this PR — fixing it widens the diff the reviewer is judging | A ticket on the board that owns the code, plus whatever THIS reviewer actually accepts (step 6), thread left OPEN |
 | **ACCEPTED** | Real, but the failure needs conditions that will not occur here — including a CI job already red on the integration branch | A reply stating the grounds + a durable record, thread left OPEN |
 | **WRONG** | Out of diff, wrong provenance, contradicts a ruling the reviewer cannot see, or a flake that fails differently each run | A reply refuting it with `file:line`, no code change |
@@ -118,13 +118,42 @@ git fetch && git rev-list --left-right --count origin/<integration>...HEAD
 contract this PR was built and reviewed against; a finding that collides with it is a DESIGN CALL,
 never a silent win for the reviewer. No issue exists → say so and treat the PR body as the contract.
 
-**Then read the review history, if there is any.** Where an automated reviewer posts a verdict per
-round, read the chain before the findings — it decides whether this is a patching cycle at all:
+**Then read the review history, if there is any.** Read the earlier rounds before the findings —
+they decide whether this is a patching cycle at all. Two terms carry the rest of this skill:
 
-- **Same seam, three-or-more rounds** — every gating finding in ONE file, different line, a new
-  defect each round. The fix strategy is regenerating its own defect class.
-- **Score falling across rounds** — the patches are trading one defect for another; the seam absorbs
-  each patch and emits a fresh one. Same conclusion as the same-seam rule, one round earlier.
+- A **bug class** is one mechanism that produces defects at more than one site: a failure state
+  never reset, a late response overwriting a newer one, a guard skipped on the retry path. Name it
+  by the mechanism, never by the file or the symptom.
+- The **construct** is the code that produces the bug class: the flag, the guard, the shared
+  component, the copied block. A patch at one site leaves the construct in place, so the class
+  comes back at the next site.
+
+List the bug classes this branch has already fixed. Step 7 writes each one into its commit, so the
+list outlives the session that made it:
+
+```bash
+git log --format=%B origin/<integration>..HEAD | grep '^Class:'
+```
+
+Then check the chain signals. The first three are checked against something written down — that
+list, `git blame`, a round count — not judged from memory. The judged version of this rule
+("three rounds on the same seam") was measured on one team's corpus of 446 review findings and
+never fired while PRs ran eight, nine and twelve rounds, because the agent judging it saw every
+finding as new.
+
+- **A bug class at its second site** — a finding this round shares its mechanism with a `Class:`
+  line, at a new line or in a sibling file. The earlier fix treated an instance and left the
+  construct. This is the primary signal, and it needs no automated reviewer.
+- **A site an earlier fix wrote** — `git blame -L <line>,<line> -- <file>` names a commit on this
+  branch that carries a `Review:` line. The fix added state, and this round found a transition in
+  it nobody walked. On the same corpus, over half the findings filed in round 2 or later sat on a
+  file that already carried a finding.
+- **Two earlier rounds on one file** — the backstop for a class nobody named: the third round on a
+  file is a DESIGN CALL, not a patch. Where the repo ships a round counter — a script that counts,
+  per file, the review rounds that landed a blocking finding there — run it instead of counting by
+  eye.
+- **Score falling across rounds** — the patches are trading one defect for another. Same
+  conclusion as the three above.
 - **A PASS reverting to a failing verdict** — the cause is usually not in this PR. Check its base
   and the PR it stacks on before triaging a single finding.
 - **Latest verdict at a stale head** — the verdict names a commit that is no longer `headRefOid`.
@@ -136,8 +165,8 @@ mid-review **does** strand that review at the old head — the artefact is real,
 not prevent it. It detects it instead, off the PR alone. The cost is one discounted verdict; the
 cost of preventing it was an unbounded wait on a reviewer that may not even be running.
 
-When any of the first three fires, say so at the top of step 3 and make **"question the construct"**
-the recommended option in step 5 — the per-finding patches stay on the menu, the developer decides.
+When any of the first five fires, say so at the top of step 3 and put the construct on the menu in
+step 5 — the per-finding patch stays on it too, and the developer decides.
 
 ### 2 · Snapshot both surfaces
 
@@ -214,7 +243,7 @@ One table for both surfaces. Present, in this order:
    still stand, how many CI jobs are red, mergeable state, and — when step 1 fired a chain signal —
    that signal FIRST, before any row.
 2. **Per row**: the finding quoted (or the failing job named), whether it still holds at the current
-   head, the proposed **disposition**, and the one-line reason.
+   head, its **bug class** (findings only), the proposed **disposition**, and the one-line reason.
 
 **Every disposition is grounded, never improvised.** Both halves:
 
@@ -223,6 +252,27 @@ One table for both surfaces. Present, in this order:
   is being accused of.
 - **In the contract** — a finding that contradicts the issue's explicit intent is a DESIGN CALL.
   Never silently side with the reviewer or with the issue.
+
+**Name the bug class before the disposition, never after.** Three questions per finding, each
+answered from the code:
+
+1. **Which bug class?** The mechanism in a few words. When it matches a `Class:` line from step 1,
+   reuse that line's exact words: the next cycle matches on them.
+2. **Where else does it sit?** Sweep for twins: the same call without the guard, the same state
+   without the reset, the sibling built from the same copy. Grep this PR's diff first
+   (`git diff <integration>...HEAD`), then the sibling files it did not touch. The row names
+   every site checked, so "fixed" never means "fixed where the reviewer happened to look".
+3. **Did an earlier cycle's fix create this site?** Step 1's `git blame` answers it.
+
+A finding whose class matches a `Class:` line, or whose site an earlier fix wrote, is a DESIGN
+CALL whatever its fix shape looks like. Twins inside the diff take the finding's disposition and
+land in the same push. Twins outside the diff go on one FOLLOW-UP ticket that names every site
+(step 6).
+
+**Read the repo's hazard list when it ships one** — a mined list of the repo's known bug classes,
+each with the construct that ends it (for example `.claude/skills/*/references/hazards.md`, or a
+section of the repo reference file). A finding that matches an entry gets that construct as its
+recommended fix, not a local guard.
 
 Three bars for the dispositions that are easy to hand out cheaply:
 
@@ -250,8 +300,26 @@ Only the FIX rows, and only after step 3 is agreed. Mirror the repo's own preced
 neighbouring code already demonstrates beats the shape you would invent. The repo's `CLAUDE.md` and
 the reference file carry its rules.
 
-**Make the minimal fix.** Do not refactor unrelated code on the way past — every extra line enters
-the diff the reviewer is judging, which is the same reason FOLLOW-UP exists.
+**Fix the class, not the instance.** Every twin step 3 found inside the diff is fixed in the same
+push as the finding. A twin left for the reviewer is next round's finding, known today.
+
+**Make the minimal fix — minimal at the construct, not at the line.** Do not refactor unrelated
+code on the way past — every extra line enters the diff the reviewer is judging, which is the same
+reason FOLLOW-UP exists. But three patches at three sites are not smaller than one change where
+the class is produced. When the construct sits in this diff, weigh both; when the construct change
+is not plainly the smaller one, take it to step 5.
+
+**A fix that adds state carries its transition table.** A new flag, guard, counter, timeout or
+fallback is new state, and new state has transitions nobody walked yet. This is the commonest way a
+review chain grows, and the same corpus ranks it first: the round-1 finding asks "what if the read
+fails", the fix adds a `readFailed` flag, and round 2 finds the flag is never cleared on the next
+success. Before the push, write the table: each state the construct can be in (loading, loaded,
+failed, empty, stale) against each event that can reach it (success, failure, overlap, navigate
+away, retry), with what the user sees in each cell. Pin a test on every cell that can go wrong.
+The table rides the fix commit — in `docs/plans/<slug>/DECISIONS.md` where the repo keeps one,
+never as a docs-only push of its own — and otherwise in the step-3 row. More than a handful of rows
+means the fix is growing the construct: stop, and make it a DESIGN CALL whose recommended option
+removes a state instead of guarding it.
 
 Auto-fixable CI rows run their tool, then verify locally. Formatters, linters with a `--fix` mode,
 and codemod tools all land here; the repo reference file names them. Rows needing a real change get
@@ -274,8 +342,23 @@ Every DESIGN CALL goes through `AskUserQuestion`, under three rules, in dependen
    Ground the option's PREMISE, not just its proposal: check what each option assumes EXISTS, and
    every "A subsumes B, so drop B" claim against the states that produce A and B independently.
 
-Use `preview` when two fix shapes are easier to compare side by side than to describe. When step 1
-fired a chain signal, one option is always **replace the construct**, and it is the recommended one.
+Use `preview` when two fix shapes are easier to compare side by side than to describe.
+
+**When step 1 fired a chain signal, the menu has three options, not two.** Recommend the first one
+that applies, top down:
+
+| Option | What it is | Recommend it when |
+|---|---|---|
+| **Fix the construct in this PR** | Change the code that produces the bug class, once: make the bad state unreachable, move the check into the one place that creates the state, delete the flag instead of guarding it | The construct is in this diff, and the change removes state |
+| **Replace the construct** | New work: `/grill-me` to align on the design, then `/build-it` (see **When to hand off**) | The construct predates the diff, or changing it moves a boundary the issue set |
+| **Patch this site** | The per-finding fix, twins included (step 4) | Only with a named reason the class ends here, such as "this is the last caller" plus the grep that proves it |
+
+The first option has one bar, and it is the bar a rewrite fails most often: **it must shrink the
+state space.** Show step 4's transition table before and after; the after table is smaller, or the
+option is a bigger patch wearing a construct fix's name. The corpus's twelve-round PR is the
+measured case: at round 4 its author rightly rewrote the read path, but the rewrite added a result
+type, a three-state `status`, three in-flight counters and an abandon flag. Each drew its own
+finding in the rounds that followed.
 
 Then fix what the answers settled, same bar as step 4.
 
@@ -352,13 +435,17 @@ collection failure registers zero tests, so the count stays green while the suit
 
 Then commit and push ADDITIVELY onto the PR's own branch. One commit for the cycle where the fixes
 are related; separate commits only where they genuinely are not, but still a single push. Reference
-what drove each fix:
+what drove each fix, and name the bug class of every review fix:
 
 ```
 fix(<scope>): <what was fixed>
 
 CI: <which check failed and why>   — or —   Review: <the finding, one line>
+Class: <the bug class, in step 3's words>
 ```
+
+The `Class:` line is what step 1 reads next cycle, and in the next session, which remembers
+nothing of this one. One line per class the commit fixes; a CI-only fix carries none.
 
 **Never force** — a head that moved under you must fail loudly, not be overwritten. Verify the
 upstream before pushing; if it reads the integration branch, fix it with `git push -u origin HEAD`
@@ -433,17 +520,23 @@ PR #708: <title>
 https://github.com/<owner>/<repo>/pull/708
 Pushed: abc1234
 
-CI       FAIL  test-unit    → FIX       cast mixed return
-CI       FAIL  spellcheck   → ACCEPTED  red on main at 9f2c1ab; no docs touched here
-Finding  Foo.ts:44         → FOLLOW-UP  ABC-1151, predates this diff (thread open)
+CI       FAIL  test-unit    → FIX        cast mixed return
+CI       FAIL  spellcheck   → ACCEPTED   red on main at 9f2c1ab; no docs touched here
+Finding  Foo.ts:44          → FIX        stale in-flight response · swept 3 sites: 2 fixed, Qux.ts:8 → ABC-1152
+Finding  Bar.ts:90          → FOLLOW-UP  unchecked null · ABC-1151, predates this diff (thread open)
 
+Bug classes: failure state never reset (cycle 1) · stale in-flight response (cycle 2) · unchecked null (cycle 2)
 CI now: 1 job still red, run in progress
 ```
 
-Then, at the end: the pushed head, the disposition of every row one line each, the tickets filed
-with their keys, which threads you resolved and which you deliberately left open, the CI state,
-whether a repo reference file was found or the defaults were used, and the watch (tick interval,
-which surfaces it reached, and that it dies with this session).
+The **Bug classes** line is the running tally across cycles, the same list step 1 rebuilds from
+the `Class:` lines.
+
+Then, at the end: the pushed head, the disposition of every row one line each, each bug class with
+the sites its sweep checked, the tickets filed with their keys, which threads you resolved and
+which you deliberately left open, the CI state, whether a repo reference file was found or the
+defaults were used, and the watch (tick interval, which surfaces it reached, and that it dies with
+this session).
 
 ## Running as a loop — two counters
 
@@ -455,11 +548,13 @@ counters:
 | `reviewRounds` | **3** | Cycles that disposed at least one reviewer finding |
 | `ciOnlyCycles` | **5** | Cycles that touched only CI |
 
-Either one exhausting stops the loop. **Three** is the same-seam threshold — if three review rounds
-have not converged, the next step is questioning the construct with the developer, never a fourth
-patch round. **Five** is the CI rule: past there, a failure that keeps coming back needs a human,
-not a sixth patch. They are counted separately on purpose — a cycle that only ran a formatter is not
-evidence the construct is wrong, and three formatting pushes should not consume the review budget.
+Either one exhausting stops the loop. **Three** is the backstop, not the stop rule: the step-1
+signals normally stop the patching earlier, at a bug class's second site. If three review rounds
+have not converged anyway, the next step is questioning the construct with the developer, never a
+fourth patch round. **Five** is the CI rule: past there, a failure that keeps coming back needs a
+human, not a sixth patch. They are counted separately on purpose — a cycle that only ran a formatter
+is not evidence the construct is wrong, and three formatting pushes should not consume the review
+budget.
 
 The loop exits early, and reports, when:
 
@@ -533,7 +628,7 @@ If the arming line says `bus pending` and no `[bus] attached` follows, the revie
 not covered — say so rather than reporting the PR as watched.
 
 A notification is not a user turn. When a line lands that means new work, run the cycle — same
-counters, same same-seam stop. When it is a heartbeat or a change that raises nothing, say one
+counters, same bug-class stop. When it is a heartbeat or a change that raises nothing, say one
 line or nothing at all.
 
 Stop the watch with `TaskStop` when: the PR merges or closes (the script exits on its own), an
@@ -544,7 +639,8 @@ hand-back.
 
 - **The repo has its own PR-driving skill** → use that. It knows the repo's gates and board.
 - **The answer is "replace the construct"** → that is new work, not a fix. `/grill-me` to align on
-  the design, then `/build-it`.
+  the design, then `/build-it`. "Fix the construct in this PR" is not a hand-off: it is a FIX with
+  a transition table (steps 4 and 5).
 - **Merge conflicts** → resolve them yourself; this loop pushes fixes, it does not rebase.
 - **The user only wants to know where the PR stands** → read it back and post nothing. Do not arm a watch.
 - **The user says stop watching** → `TaskStop` the monitor for this PR and say so.
@@ -575,8 +671,14 @@ hand-back.
 - Never force-pushes, and never pushes with `--no-verify`.
 - Never pushes without the targeted checks green — but never waits on the full suite either.
 - Never counts a verdict at a stale head as a result about the current code.
-- Never treats a third same-seam round as a patching problem — at round 3 the question is whether
-  the construct should exist.
+- **Never patches a bug class at its second site.** The second site is a DESIGN CALL about the
+  construct, not another line to patch.
+- Never fixes an instance without sweeping for its twins, and never leaves a twin inside the diff
+  for the reviewer to find.
+- Never pushes a fix that adds state without its transition table, and never calls a rewrite a
+  construct fix when it adds state.
+- Never commits a review fix without its `Class:` line — the next cycle cannot count what was not
+  written down.
 
 ## Adding a repo reference file
 
@@ -588,6 +690,8 @@ hazards — write `references/<repo-name>.md` in this skill's directory:
 - **Gates** — the exact narrow-check commands for step 7, per side touched.
 - **Auto-fixers** — the tools that fix their own CI row.
 - **Board** — where a FOLLOW-UP is filed, the key format, the template.
+- **Hazards** — the repo's mined bug classes and the construct that ends each, or the path to the
+  list the repo already keeps.
 - **House rules** — hooks, formatters, testing skills to load, language.
 
 Only write down what was verified in that repo, with the reason it is true. A rule without its why

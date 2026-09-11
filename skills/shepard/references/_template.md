@@ -68,6 +68,17 @@ answering:
 - **What does the reviewer read?** If it reads plan docs, decision records or waivers, name the
   file it reads and what a record must say to count.
 
+## Hazards
+
+Only when the repo keeps a mined list of its bug classes, or has earned one. Each entry names the
+mechanism, where it bit, and the construct that ends it: a helper, a gate, a test that fails while
+the class is present. `/shepard` step 3 matches findings against it and recommends that construct
+over a local patch. Point at the repo's own list rather than copying it here; a copy goes stale
+the day the list gains a row.
+
+> *Example:* stale in-flight response — a fetch re-issued before the previous answer lands, and the
+> handler assigns whatever resolves. Ended by a latest-request wrapper, not a per-site guard.
+
 ## House rules
 
 Everything a session must know once it is working, each with the reason it is true:
