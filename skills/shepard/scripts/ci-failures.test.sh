@@ -25,9 +25,10 @@
 # that pattern-matches the filter and emits a canned TSV fixture, optionally
 # CRLF-terminated. It does not parse JSON, so it cannot drift from real jq in a
 # way that matters here — what is under test is how the script handles CRLF
-# records, not how jq produces them. Coverage is deliberately scoped to
-# `--run <id>`: the PR-resolution path reads through gh's built-in `--jq`, which
-# is Go and emits LF, which is why it was never affected.
+# records, not how jq produces them. The CRLF cases enter through `--run <id>`:
+# the PR-resolution path reads through gh's built-in `--jq`, which is Go and
+# emits LF, so CRLF never reached it. That path has its own block at the end,
+# run against real jq with a gh fake that serves JSON.
 #
 # No framework by design — the repo has no bats and no shell test harness, and
 # CI runs plain scripts with `bash <path>`. Run it the same way:
@@ -65,6 +66,7 @@ if [[ "$1" == "run" && "$2" == "view" ]]; then
         exit 0
     fi
     if [[ "$*" == *"--json jobs"* ]]; then
+        [[ -f "$FIXTURES/jobs-$3.unreadable" ]] && { echo "HTTP 502: Bad Gateway" >&2; exit 1; }
         echo "JOBS:$3"
     else
         echo "RUNS:$3"
@@ -138,6 +140,29 @@ printf '300\tCI\tcompleted\tstartup_failure\n' > "$fixtures/runs-300.tsv"
 printf '400\tCI\tin_progress\t\n' > "$fixtures/runs-400.tsv"
 printf '401\tbackend\tin_progress\t\n' > "$fixtures/jobs-400.tsv"
 
+# A path-filtered workflow completes with conclusion `skipped` and no failed job.
+# It is not a failure: two workers misread the status line on 2026-09-08 because
+# the wildcard swallowed it.
+printf '500\tPR Comment\tcompleted\tskipped\n' > "$fixtures/runs-500.tsv"
+printf '501\tannounce\tcompleted\tskipped\n' > "$fixtures/jobs-500.tsv"
+
+# gh could not read the job list. The run concluded success, but without the
+# per-job list nobody can see which lanes ran, so this must not read GREEN.
+printf '600\tCI\tcompleted\tsuccess\n' > "$fixtures/runs-600.tsv"
+: > "$fixtures/jobs-600.unreadable"
+
+# The same on a failed run: the run conclusion still makes it FAILING.
+printf '610\tCI\tcompleted\tfailure\n' > "$fixtures/runs-610.tsv"
+: > "$fixtures/jobs-610.unreadable"
+
+# A timed-out job while another job still runs: the run has no conclusion yet
+# to fall back on, so the job itself must count as failed.
+printf '700\tCI\tin_progress\t\n' > "$fixtures/runs-700.tsv"
+{
+    printf '701\tbackend\tcompleted\ttimed_out\n'
+    printf '702\tfrontend\tin_progress\t\n'
+} > "$fixtures/jobs-700.tsv"
+
 # ---------------------------------------------------------------- harness ---
 out=""
 rc=0
@@ -165,7 +190,7 @@ check() {
 
 expect_rc() {
     local want=$1 description=$2
-    [ "$rc" = "$want" ] && check 1 "$description" || check 0 "$description" "exit $rc, want $want"
+    if [ "$rc" = "$want" ]; then check 1 "$description"; else check 0 "$description" "exit $rc, want $want"; fi
 }
 
 expect_contains() {
@@ -212,6 +237,24 @@ for mode in CRLF LF; do
     expect_rc 2 "in-progress run exits 2"
     expect_contains "Status: RUNNING" "in-progress reports RUNNING"
     expect_contains "...   backend (in_progress)" "an empty conclusion is pending, not a wildcard"
+
+    invoke "$crlf" 500
+    expect_rc 0 "a skipped run is not a failure"
+    expect_contains "Status: GREEN" "a path-filtered workflow reports GREEN"
+    expect_contains "  skip  announce" "the skipped job is classified as skipped"
+
+    invoke "$crlf" 600
+    expect_rc 3 "an unreadable job list exits 3"
+    expect_contains "job list unreadable" "the unreadable job list is said out loud"
+    expect_absent "Status: GREEN" "an unreadable job list is never GREEN"
+
+    invoke "$crlf" 610
+    expect_rc 1 "a failed run with an unreadable job list is still FAILING"
+
+    invoke "$crlf" 700
+    expect_rc 1 "a timed-out job fails the run while another job still runs"
+    expect_contains "  TIME  backend" "the timed-out job is classified, not left to the wildcard"
+    expect_contains "gh run view --job 701 --log-failed" "the timed-out job's log is named"
 done
 
 # The v2 regression, pinned by behaviour rather than by grepping the source: an
@@ -230,6 +273,87 @@ expect_contains "  FAIL  backend (PHP 8.4)" "the failed job is still classified"
 
 invoke 1 100 "$broken"
 expect_rc 0 "a green run is still GREEN when tr cannot launch"
+
+# A usage error is not a failed job: exit 1 would send /shepard into a fix loop.
+echo
+echo "Arguments"
+invoke 0 ""
+expect_rc 3 "--run without an id exits 3, not the failed-job code"
+expect_contains "--run needs a run id" "the missing id is named"
+
+# ---------------------------------------------------- default PR path ---
+# Everything above enters through `--run <id>`. The normal invocation resolves
+# a PR, reads its head SHA and lists every run on that SHA, so it runs here
+# against real jq, with a gh fake that serves JSON and applies `--jq` as gh does.
+json_bin="$tmp/json-bin"
+mkdir -p "$json_bin" "$fixtures/json"
+cat > "$json_bin/gh" <<'SHIM'
+#!/usr/bin/env bash
+filter=""
+prev=""
+for arg in "$@"; do
+    [[ "$prev" == "--jq" ]] && filter="$arg"
+    prev="$arg"
+done
+case "$1 $2" in
+    "pr view")  src="$FIXTURES/json/pr.json" ;;
+    "run list")
+        [[ "$*" == *"--commit cafe1234"* ]] || { echo "fake gh: run list not scoped to the PR head: $*" >&2; exit 65; }
+        src="$FIXTURES/json/runs-$FAKE_RUNS.json" ;;
+    "run view")
+        if [[ "$3" == "--job" ]]; then
+            cat "$FIXTURES/json/joblog-$4.txt" 2>/dev/null
+            exit 0
+        fi
+        src="$FIXTURES/json/jobs-$3.json" ;;
+    *) echo "fake gh: unhandled call: $*" >&2; exit 64 ;;
+esac
+if [[ -n "$filter" ]]; then jq "$filter" "$src"; else cat "$src"; fi
+SHIM
+chmod +x "$json_bin/gh"
+
+printf '{"number":77,"title":"a title","headRefOid":"cafe1234","headRefName":"a-branch","url":"https://example.test/pull/77"}\n' \
+    > "$fixtures/json/pr.json"
+
+# A PR reopened on one SHA: `cancel-in-progress` cancelled the first run and
+# the second passed. Only the newest run per workflow and trigger counts.
+cat > "$fixtures/json/runs-reopened.json" <<'JSON'
+[{"databaseId":900,"workflowName":"CI","event":"pull_request","status":"completed","conclusion":"cancelled"},
+ {"databaseId":901,"workflowName":"CI","event":"pull_request","status":"completed","conclusion":"success"}]
+JSON
+printf '{"jobs":[{"databaseId":9001,"name":"backend","status":"completed","conclusion":"cancelled"}]}\n' \
+    > "$fixtures/json/jobs-900.json"
+printf '{"jobs":[{"databaseId":9011,"name":"backend","status":"completed","conclusion":"success"}]}\n' \
+    > "$fixtures/json/jobs-901.json"
+
+# Another trigger on the same SHA is its own result, not an older attempt.
+cat > "$fixtures/json/runs-dispatch.json" <<'JSON'
+[{"databaseId":910,"workflowName":"CI","event":"workflow_dispatch","status":"completed","conclusion":"failure"},
+ {"databaseId":911,"workflowName":"CI","event":"pull_request","status":"completed","conclusion":"success"}]
+JSON
+printf '{"jobs":[{"databaseId":9101,"name":"backend","status":"completed","conclusion":"failure"}]}\n' \
+    > "$fixtures/json/jobs-910.json"
+printf '{"jobs":[{"databaseId":9111,"name":"backend","status":"completed","conclusion":"success"}]}\n' \
+    > "$fixtures/json/jobs-911.json"
+
+# invoke_pr <runs-fixture> — run from outside any checkout, so no HEAD warning
+invoke_pr() {
+    out=$(cd "$tmp" && FAKE_RUNS="$1" PATH="$json_bin:$PATH" bash "$subject" 77 2>&1)
+    rc=$?
+}
+
+echo
+echo "Default PR path (real jq)"
+
+invoke_pr reopened
+expect_contains "PR #77 — a title" "the PR is resolved from its number"
+expect_rc 0 "a cancelled run replaced on the same SHA does not keep the PR failing"
+expect_contains "Status: GREEN" "the replacement run decides the status"
+expect_absent "(900)" "the superseded run is not reported"
+
+invoke_pr dispatch
+expect_rc 1 "a failed run from another trigger on the same SHA still fails the PR"
+expect_contains "  FAIL  backend" "the other trigger's failed job is classified"
 
 # ---------------------------------------------------------------- summary ---
 echo

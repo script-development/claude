@@ -27,18 +27,17 @@
 #
 # Exit codes:
 #   0  the PR reached a terminal state (MERGED or CLOSED) — the watch is done
-#   3  setup failure: no PR, missing dependency, unreadable repo — or `--source bus`
-#      with no town-crier row for this PR after 20 ticks. Said on stdout: Monitor
-#      surfaces only stdout, so a stderr-only exit would look like an armed, quiet watch.
+#   3  setup failure, said on stdout: no PR, missing dependency, bad flag value — or `--source bus`
+#      with no town-crier row for this PR after 20 ticks
 #
 # The token is read from $TOWN_CRIER_TOKEN, else from $TOWN_CRIER_ENV_FILE
 # (default ~/Code/crit/.env). It is never printed, and no line this script emits
 # contains it. No token means no bus surface — not an error.
 set -uo pipefail
 
-# Setup failures speak on stdout. Monitor surfaces only stdout, so a stderr-only exit
-# here would read as an armed, quiet watch rather than one that never started.
-die() { echo "[end] setup failed: $1 — watch never started"; exit 3; }
+# Setup failures speak on stdout too: Monitor surfaces only stdout, so a
+# stderr-only exit here would look like an armed, quiet watch.
+die() { ended=setup; echo "[end] setup failed: $1 — watch never started"; exit 3; }
 
 command -v gh   >/dev/null || die "gh CLI required"
 command -v jq   >/dev/null || die "jq required"
@@ -51,9 +50,14 @@ ONCE=0
 TARGET=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --interval)  INTERVAL="${2:?--interval needs seconds}"; shift ;;
-    --heartbeat) HEARTBEAT_MIN="${2:?--heartbeat needs minutes}"; shift ;;
-    --source)    SOURCE="${2:?--source needs gh|bus|auto}"; shift ;;
+    # Whole numbers only: a value `sleep` rejects makes it return at once, and the loop
+    # would then poll GitHub with no pause.
+    --interval)  [[ "${2:-}" =~ ^[0-9]+$ ]] || die "--interval needs seconds"
+                 INTERVAL="$2"; shift ;;
+    --heartbeat) [[ "${2:-}" =~ ^[0-9]+$ ]] || die "--heartbeat needs minutes"
+                 HEARTBEAT_MIN="$2"; shift ;;
+    --source)    [[ "${2:-}" =~ ^(gh|bus|auto)$ ]] || die "--source needs gh|bus|auto"
+                 SOURCE="$2"; shift ;;
     --once)      ONCE=1 ;;
     -*)          die "unknown flag '$1'" ;;
     *)           TARGET="$1" ;;
@@ -106,7 +110,7 @@ bus_resolve_id() {
   # status-bound. There is no lookup by pr_url or repo — the list route ignores both and
   # honours status, limit and offset alone, so scanning is the only way to the id.
   local body id status
-  for status in open in_review done; do
+  for status in open in_review "done"; do
     body=$(curl -sS --max-time 20 "$BUS_URL/api/review-requests?status=$status&limit=200" \
       -H "authorization: Bearer $BUS_TOKEN" -H 'accept: application/json' 2>/dev/null) || continue
     id=$(jq -r --arg url "$PR_URL" '.requests[]? | select(.pr_url == $url) | .id' <<<"$body" 2>/dev/null | head -1)
@@ -163,7 +167,7 @@ bus_snapshot() {
       reviewer:     (.last_reviewer // ""),
       bus_reviews:  (.review_count // 0),
       bus_head:     ((.head_oid // "") | .[0:8]),
-      findings:     ((.open_finding_counts // {}) | "\(.blocker // 0)/\(.major // 0)/\(.minor // 0)/\(.nit // 0)"),
+      findings:     (if (.open_finding_counts // {}) == {} then "not submitted" else ((.open_finding_counts) | "\(.issue // 0) issue/\(.nitpick // 0) nit") end),
       lock:         (.locked_by // "")
     }' <<<"$raw" 2>/dev/null
 }
@@ -204,9 +208,9 @@ emit_changes() {
   # [warn] line in the loop is the one announcement an outage gets.
   if [[ $bus_live -eq 1 ]]; then
     if changed bus_reviews && [[ "${cur[bus_reviews]-0}" -gt "${prev[bus_reviews]-0}" ]]; then
-      echo "[bus] review $(now bus_reviews) by ${cur[reviewer]:-?} — findings $(now findings) (b/m/n/nit) · gate $(now gate)$head_note"
+      echo "[bus] review $(now bus_reviews) by ${cur[reviewer]:-?} — findings $(now findings) · gate $(now gate)$head_note"
     elif changed findings; then
-      echo "[bus] findings $(was findings) -> $(now findings) (b/m/n/nit)$head_note"
+      echo "[bus] findings $(was findings) -> $(now findings)$head_note"
     fi
     changed gate       && echo "[bus] gate $(was gate) -> $(now gate)$head_note"
     changed trial      && echo "[bus] trial (ci-passed) $(was trial) -> $(now trial)"
@@ -268,7 +272,7 @@ if [[ "$SOURCE" != "gh" && -n "$BUS_TOKEN" ]]; then
   BUS_ID=$(bus_resolve_id) || BUS_ID=""
 fi
 if [[ "$SOURCE" == "bus" && -z "$BUS_TOKEN" ]]; then
-  ended=setup; die "--source bus, but no town-crier token is readable"
+  die "--source bus, but no town-crier token is readable"
 fi
 
 if [[ -n "$BUS_ID" ]]; then

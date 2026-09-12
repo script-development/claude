@@ -48,6 +48,9 @@ cat > "$bin/gh" <<'FAKE'
 # each tick can return a different fixture; the last fixture repeats forever.
 args="$*"
 case "$args" in
+  *"--head no-such-branch"*)
+    echo 'null'
+    exit 0 ;;
   *"--json number,url,title"*)
     echo '{"number":42,"url":"https://github.com/acme/widget/pull/42","title":"a title"}'
     exit 0 ;;
@@ -87,19 +90,20 @@ export PATH="$bin:$PATH"
 gh_tick() {  # gh_tick <n> <state> <head> <reviews> <comments> <ci_fail_name>
   local checks='[{"name":"ci-passed","conclusion":"SUCCESS"}]'
   [[ -n "${6:-}" ]] && checks="[{\"name\":\"$6\",\"conclusion\":\"FAILURE\"},{\"name\":\"other\",\"conclusion\":\"SUCCESS\"}]"
-  local reviews=$(seq 1 "$4" 2>/dev/null | sed 's/.*/{}/' | paste -sd, -)
-  local comments=$(seq 1 "$5" 2>/dev/null | sed 's/.*/{}/' | paste -sd, -)
+  local reviews comments
+  reviews=$(seq 1 "$4" 2>/dev/null | sed 's/.*/{}/' | paste -sd, -)
+  comments=$(seq 1 "$5" 2>/dev/null | sed 's/.*/{}/' | paste -sd, -)
   cat > "$state/gh_$1.json" <<EOF
 {"state":"$2","headRefOid":"$3","statusCheckRollup":$checks,
  "reviews":[${reviews}],"comments":[${comments}],"reviewDecision":""}
 EOF
 }
 
-bus_tick() {  # bus_tick <n> <gate> <reviews> <findings_blocker> <head>
+bus_tick() {  # bus_tick <n> <gate> <reviews> <findings_issue> <head>
   cat > "$state/bus_$1.json" <<EOF
 {"status":"open","gate_state":"$2","trial_state":"cleared","merge_conflict_state":"clean",
  "last_reviewer":"crit","review_count":$3,"head_oid":"$5",
- "open_finding_counts":{"blocker":$4,"major":0,"minor":0,"nit":0},"locked_by":null}
+ "open_finding_counts":{"issue":$4,"nitpick":0},"locked_by":null}
 EOF
 }
 
@@ -128,7 +132,7 @@ check() {  # check <name> <expected-exit> <output> <actual-exit> <grep...>
     passed=$((passed + 1)); echo "  ok    $name"
   else
     failed=$((failed + 1)); echo "  FAIL  $name — $why"
-    sed 's/^/          | /' <<<"$out"
+    while IFS= read -r line; do echo "          | $line"; done <<<"$out"
   fi
 }
 
@@ -154,7 +158,7 @@ gh_tick 2 OPEN aaaaaaaa 1 0; bus_tick 2 blocked 1 2 aaaaaaaa
 gh_tick 3 MERGED aaaaaaaa 1 0; bus_tick 3 blocked 1 2 aaaaaaaa
 out=$(run); rc=$?
 check "new bus review emits one line" 0 "$out" $rc \
-  "[bus] review 1 by crit" "findings 2/0/0/0" "[bus] gate clear -> blocked" "![pr]  +1 GitHub review(s)"
+  "[bus] review 1 by crit" "findings 2 issue/0 nit" "[bus] gate clear -> blocked" "![pr]  +1 GitHub review(s)"
 
 # A verdict at a replaced head is not a result about the code now on the branch.
 reset; bus_listed
@@ -240,6 +244,44 @@ gh_tick 2 MERGED aaaaaaaa 0 0
 out=$(TOWN_CRIER_TOKEN="" TOWN_CRIER_ENV_FILE=/nonexistent bash "$subject" 42 --interval 0 --heartbeat 0 2>&1); rc=$?
 check "no token degrades to github only" 0 "$out" $rc "[watch] github only"
 
+# Every setup failure must reach stdout — Monitor never shows stderr, so a typo'd
+# flag or PR number would otherwise look like a quiet, armed watch.
+setup_run() { TOWN_CRIER_TOKEN=fake-token TOWN_CRIER_URL=https://bus.test bash "$subject" "$@" 2>/dev/null; }
+
+reset; bus_absent
+out=$(setup_run 42 --bogus); rc=$?
+check "an unknown flag says so on stdout" 3 "$out" $rc "[end] setup failed: unknown flag '--bogus'"
+
+out=$(setup_run no-such-branch); rc=$?
+check "no PR for the target says so on stdout" 3 "$out" $rc \
+  "[end] setup failed: no PR found for 'no-such-branch' — watch never started"
+
+out=$(setup_run 42 --interval); rc=$?
+check "--interval without a value says so on stdout" 3 "$out" $rc \
+  "[end] setup failed: --interval needs seconds — watch never started"
+out=$(setup_run 42 --heartbeat); rc=$?
+check "--heartbeat without a value says so on stdout" 3 "$out" $rc \
+  "[end] setup failed: --heartbeat needs minutes — watch never started"
+out=$(setup_run 42 --source); rc=$?
+check "--source without a value says so on stdout" 3 "$out" $rc \
+  "[end] setup failed: --source needs gh|bus|auto — watch never started"
+
+# A value `sleep` rejects would make the loop poll GitHub with no pause. `--once` keeps
+# a regression from spinning forever here: it ends on the first tick instead.
+out=$(setup_run 42 --interval abc --once); rc=$?
+check "--interval that is not a whole number is refused" 3 "$out" $rc \
+  "[end] setup failed: --interval needs seconds — watch never started"
+out=$(setup_run 42 --heartbeat abc --once); rc=$?
+check "--heartbeat that is not a whole number is refused" 3 "$out" $rc \
+  "[end] setup failed: --heartbeat needs minutes — watch never started"
+out=$(setup_run 42 --source github --once); rc=$?
+check "--source with an unknown surface is refused" 3 "$out" $rc \
+  "[end] setup failed: --source needs gh|bus|auto — watch never started"
+
+out=$(TOWN_CRIER_TOKEN="" TOWN_CRIER_ENV_FILE=/nonexistent bash "$subject" 42 --source bus 2>/dev/null); rc=$?
+check "--source bus without a token says so on stdout" 3 "$out" $rc \
+  "[end] setup failed: --source bus, but no town-crier token is readable" "!stopped (signal or timeout)"
+
 # A CheckRun that GitHub has sent back to the queue serialises `conclusion` as ""
 # and carries its real state in `.status`. `.conclusion // .state` does not fall
 # through an empty string, so bucketing on conclusion alone drops the job out of
@@ -289,12 +331,6 @@ gh_tick 1 OPEN aaaaaaaa 0 0
 bash_bin=$(command -v bash)
 out=$(PATH="$tmp/emptybin" "$bash_bin" "$subject" 42 --once 2>/dev/null); rc=$?
 check "a missing dependency speaks on stdout" 3 "$out" $rc "[end] setup failed:" "watch never started"
-
-# An unknown flag is a setup failure too, and takes the same stdout path.
-reset; bus_absent
-gh_tick 1 OPEN aaaaaaaa 0 0
-out=$(run --nonsense 2>/dev/null); rc=$?
-check "an unknown flag speaks on stdout" 3 "$out" $rc "[end] setup failed: unknown flag '--nonsense'"
 
 echo
 echo "passed: $passed   failed: $failed"
