@@ -21,3 +21,4 @@ Skills are **not** consumed via symlinks. Consumers hold their own copies. When 
 - **After adding/removing skills or agents**: Update the catalog tables in `README.md`
 - **Quality checks**: Flag skills with outdated references, missing metadata, or duplicate functionality
 - **Updating a shared skill**: after merging here, propagate the change to every consumer that mirrors this skill (today: manual). Drift between catalog and consumers is a bug.
+- **A consumer PR pins the catalog sha it was cut from.** Later catalog commits reach that consumer in its next PR, not in the one already open: a push into an approved PR buys a review round, and a merged copy a few commits behind is a small, known gap that the next propagation closes.
