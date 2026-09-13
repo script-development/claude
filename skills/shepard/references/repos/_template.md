@@ -6,6 +6,9 @@
 defaults and says so — that is a supported outcome, not a gap. You never need a file here to
 use the skill.
 
+This file holds the repo. The reviewer's contract is not repeated here: it lives once in
+`../reviewers/crit.md`, and only what is specific to this repo about the reviewer goes below.
+
 Delete every section you cannot fill from something you verified. A half-remembered rule is
 worse than no rule: the skill trusts this file over its own defaults, so a wrong line here is
 followed silently.
@@ -50,23 +53,27 @@ stops a session burning a cycle on `--fix`.
 
 ## Board
 
-Where a FOLLOW-UP disposition is filed: the tracker, the tool or CLI that reaches it, the issue
-key format, and the template. If the branch name must carry the key for the tracker to auto-link
-it, say that here.
+What a finding outside the diff becomes — an issue or a report — and who decided that. A repo
+admin may say "always reports"; with no line here, `/shepard` asks the developer once per PR.
+Then the tracker, the tool or CLI that reaches it, the issue key format, and the template. If the
+branch name must carry the key for the tracker to auto-link it, say that here.
 
-Name the instance explicitly when more than one exists. A ticket filed on a staging tracker is
-invisible to whoever would fix it.
+Name the instance explicitly when more than one exists, and the tenant when one MCP server name
+can reach several. A ticket filed on a staging tracker is invisible to whoever would fix it.
 
-## Answering this repo's reviewer
+> *Example:* Outside the diff: always a report, through `create-report-tool` with
+> `project_id: 1`. File an issue only when the developer says so for that finding.
 
-Only when the repo's reviewer has a contract that changes what you do. The two questions worth
-answering:
+## Reviewer
 
-- **Who resolves a thread?** If the reviewer resolves its own, say so and say what breaks when
-  you resolve one yourself. In some setups a resolved thread is treated as settled forever, so
-  resolving it buries a live defect permanently.
-- **What does the reviewer read?** If it reads plan docs, decision records or waivers, name the
-  file it reads and what a record must say to count.
+What is specific to this repo about crit — its contract is `../reviewers/crit.md` and is not
+repeated here. Usually two lines:
+
+- **The review state crit submits here and the merge signal.** Where `crit-ai` is a code owner
+  its approval satisfies the branch rule and `reviewDecision` reads `APPROVED`; where the rule
+  also needs a human approval, or crit submits only `COMMENTED`, the merge signal is something
+  else. Say which, verified on one merged PR, and say who merges.
+- **Where a nitpick report goes** when that differs from the Board line above.
 
 ## House rules
 

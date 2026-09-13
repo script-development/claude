@@ -14,7 +14,7 @@
 #   0  all runs completed green
 #   1  at least one failed job (run may still be in progress)
 #   2  in progress, nothing failed yet
-#   3  no PR / no runs / missing dependency
+#   3  no PR / no runs / unreadable job list / bad arguments / missing dependency
 set -uo pipefail
 
 command -v gh >/dev/null || { echo "error: gh CLI required" >&2; exit 3; }
@@ -26,7 +26,8 @@ RUN_ID=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --full) FULL=1 ;;
-    --run)  RUN_ID="${2:?--run needs a run id}"; shift ;;
+    --run)  [[ -n "${2:-}" ]] || { echo "error: --run needs a run id" >&2; exit 3; }
+            RUN_ID="$2"; shift ;;
     *)      TARGET="$1" ;;
   esac
   shift
@@ -68,7 +69,10 @@ else
     echo "WARNING: local HEAD (${local_head:0:9}) differs from PR head — fixes would be diagnosed against code you don't have checked out."
   fi
 
-  runs=$(gh run list --commit "$sha" --json databaseId,workflowName,status,conclusion --limit 20)
+  # Newest run per workflow and trigger: `cancel-in-progress` leaves a cancelled run beside its
+  # replacement on the same SHA, and only the replacement is a result about this head.
+  runs=$(gh run list --commit "$sha" --json databaseId,workflowName,event,status,conclusion --limit 20 \
+    --jq 'group_by([.workflowName, .event]) | map(max_by(.databaseId))')
   if [[ $(jq length <<<"$runs") -eq 0 ]]; then
     echo "error: no workflow runs found for ${sha:0:9} (CI may not have started yet)" >&2
     exit 3
@@ -77,6 +81,7 @@ fi
 
 any_failed=0
 any_running=0
+any_unreadable=0
 failed_jobs=()   # "jobId<TAB>jobName" of every failed job across all runs
 
 # Both read loops strip a trailing \r off the last field: jq on Windows opens
@@ -98,7 +103,13 @@ while IFS=$'\t' read -r run_id workflow status conclusion; do
   echo "Run: ${workflow} (${run_id}) — ${status}${conclusion:+: ${conclusion}}"
   [[ "$status" != "completed" ]] && any_running=1
 
-  jobs=$(gh run view "$run_id" --json jobs --jq '.jobs')
+  # An unreadable job list is not "no job failed": without it nobody can see which lanes ran,
+  # so the status below will not call this run GREEN.
+  jobs=$(gh run view "$run_id" --json jobs --jq '.jobs') || jobs=""
+  if [[ -z "$jobs" ]]; then
+    echo "  ???   job list unreadable — cannot confirm which jobs ran"
+    any_unreadable=1
+  fi
   while IFS=$'\t' read -r job_id job_name job_status job_conclusion; do
     job_conclusion=${job_conclusion%$'\r'}
     case "$job_conclusion" in
@@ -106,15 +117,20 @@ while IFS=$'\t' read -r run_id workflow status conclusion; do
       failure)        echo "  FAIL  ${job_name}"
                       any_failed=1
                       failed_jobs+=("${job_id}	${job_name}") ;;
+      timed_out)      echo "  TIME  ${job_name}"
+                      any_failed=1
+                      failed_jobs+=("${job_id}"$'\t'"${job_name}") ;;
       cancelled)      echo "  CANC  ${job_name}"; any_failed=1 ;;
       skipped)        echo "  skip  ${job_name}" ;;
       "")             echo "  ...   ${job_name} (${job_status})" ;;
       *)              echo "  ${job_conclusion}  ${job_name}" ;;
     esac
-  done < <(jq -r '.[] | [.databaseId, .name, .status, .conclusion] | @tsv' <<<"$jobs")
+  done < <([[ -n "$jobs" ]] && jq -r '.[] | [.databaseId, .name, .status, .conclusion] | @tsv' <<<"$jobs")
 
-  # A run can fail with zero failed jobs (startup_failure, cancelled at run level)
-  if [[ "$conclusion" != "" && "$conclusion" != "success" && ${#failed_jobs[@]} -eq 0 ]]; then
+  # A run can fail with zero failed jobs (startup_failure, cancelled at run level).
+  # A run whose conclusion is `skipped` (a path-filtered workflow such as PR Comment)
+  # is not a failure; two workers misread the status line on 2026-09-08 because of it.
+  if [[ "$conclusion" != "" && "$conclusion" != "success" && "$conclusion" != "skipped" && ${#failed_jobs[@]} -eq 0 ]]; then
     any_failed=1
   fi
 done < <(jq -r '.[] | [.databaseId, .workflowName, .status, .conclusion] | @tsv' <<<"$runs")
@@ -188,6 +204,9 @@ if [[ $any_failed -eq 1 ]]; then
     echo "Full logs: gh run view --job <job-id> --log-failed"
   fi
   exit 1
+elif [[ $any_unreadable -eq 1 ]]; then
+  echo "Status: UNKNOWN — a job list could not be read; not GREEN, retry shortly"
+  exit 3
 elif [[ $any_running -eq 1 ]]; then
   echo "Status: RUNNING — no failures yet"
   exit 2
