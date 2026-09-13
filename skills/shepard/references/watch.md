@@ -13,11 +13,11 @@ line lands after arming, or when a line is not in the short list in SKILL.md.
 | `[bus] trial …` | the bus's view of the `ci-passed` check moved | cycle if red |
 | `[ci]  FAILING: <jobs>` | GitHub checks went red | full cycle |
 | `[ci]  red checks re-running, not green yet` | a red job went back to the queue | nothing yet; wait for the next `[ci]` line |
-| `[ci]  needs attention (skipped/neutral/stale): <lanes>` | a workflow lane finished with no verdict (SKIPPED, NEUTRAL) or its result belongs to another commit (STALE); a stale required check does not satisfy branch protection. A check an app posts with no workflow behind it (a tracker card, NEUTRAL forever) is excluded, so this names lanes only | not green: read the lane, then cycle if it raises work |
+| `[ci]  needs attention (neutral/stale): <lanes>` | a workflow lane finished with no verdict (NEUTRAL) or its result belongs to another commit (STALE); a stale required check does not satisfy branch protection. A check an app posts with no workflow behind it (a tracker card, NEUTRAL forever) is excluded, so this names lanes only. A SKIPPED lane is not here: path-filtered repos skip ten lanes per PR, and `ci-failures.sh` names each skip | not green: read the lane, then cycle if it raises work |
 | `[ci]  all checks green` | every check completed and none is red | nothing on its own; the cycle already knows |
 | `[ci]  no checks reported yet` | the rollup is empty | nothing yet |
 | `[bus] attached #N` | the review request landed; the bus surface is live from here | nothing on its own |
-| `[pr]  +N review(s)` / `+N comment(s)` | reviewer activity GitHub can see — **only emitted while no bus row is attached**, or always under `--source gh` | read it, then cycle if it raises work |
+| `[pr]  +N review(s)` / `+N comment(s)` | reviewer activity GitHub can see; fires whether or not a bus row is attached, so a round shows as one `[bus]` and one `[pr]` line | read it, then cycle if it raises work |
 | `[pr]  head moved` | someone else pushed | re-snapshot before doing anything |
 | `(STALE — bus read X, PR head Y)` | the verdict is about replaced code | **not** a result about the diff now |
 | `[warn] …` | a surface went unreadable | the watch is blind on that side — say so |
@@ -29,27 +29,22 @@ line lands after arming, or when a line is not in the short list in SKILL.md.
 The bus half is optional, and most repos will never use it. town-crier is a review ledger a repo
 can announce onto; a repo that does not is watched through GitHub alone and loses nothing. Every
 repo that is announced appears in the same ledger, whichever repo it is. The bus token is read
-from `$TOWN_CRIER_TOKEN`, else from the env file named by `$TOWN_CRIER_ENV_FILE`; that variable's
-built-in default points at one personal checkout, so set it yourself or export the token. No token
-is a degradation, not an error.
+from `$TOWN_CRIER_TOKEN`, else from the env file named by `$TOWN_CRIER_ENV_FILE`; neither set
+means no request leaves for town-crier at all. No token is a degradation, not an error, and so is
+a host without curl: the bus half is the only thing that needs it.
 
-**The bus is the review surface; GitHub is kept for the per-job CI names.** Once a row is attached
-the script stops emitting the `[pr]` review, comment and decision lines, because the bus row is
-the reviewer's own record and reporting both duplicates every round. Where there is no row those
-lines fire as before, so a repo off the bus loses nothing.
-
-**A reviewer that never reports to its row leaves the watch blind.** On emmie #1297 (2026-09-10)
-crit posted round 2 on GitHub while bus row #3245 stayed `open` with 0 reviews, so nothing fired
-for an hour. Where a row does not move when the reviewer posts, re-arm with `--source gh`. After
-an hour of silence past a green push, read `gh pr view --json reviews` once before trusting it.
+**GitHub's review lines always fire, bus row or not.** They used to stop once a row was attached,
+and on emmie #1297 (2026-09-10) crit posted round 2 on GitHub while bus row #3245 stayed `open`
+with 0 reviews, so nothing fired for an hour; an unreadable row did the same. A round now shows as
+one `[bus]` line and one `[pr]` line, and that duplicate is the price of never being blind.
 
 **The watch attaches to the bus late, and that is normal.** The row is created when the PR is
 dispatched for review, which always lands after the PR itself opens — so arming a watch right
 after `gh pr create` is early by design and the first resolve misses. The script retries every
 tick until it attaches, then prints `[bus] attached #N`. Read the arming line: `bus pending` means
-the row has not appeared yet, `github only (…)` names the reason there will never be one. If the
-arming line says `bus pending` and no `[bus] attached` follows, the review surface is not covered
-— say so rather than reporting the PR as watched.
+the row has not appeared yet, `github only (…)` names the reason there will never be one. Either
+way GitHub's review lines fire, so a review is never missed for want of a row; what a missing row
+costs is the gate and trial state the bus alone reports.
 
 **A crit row never carries findings.** crit's bus submit sends stance, verdict URL and note, no
 `findings[]`, so a crit round reads `gate clear` with empty finding counts whatever crit posted.

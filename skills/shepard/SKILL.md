@@ -520,19 +520,17 @@ The script prints one line per change, tagged `[ci]`, `[pr]`, `[bus]`, `[warn]`,
 line lands. The short version:
 
 - `[ci] FAILING`, `[bus] review` and `[pr] +N review(s)` mean a full cycle.
-- `[ci] needs attention` means a check finished without a verdict, or its result is for another
-  commit. Not green: read the check before treating CI as clean.
+- `[ci] needs attention` means a lane finished neutral, or its result is for another commit.
+  Not green: read the lane before treating CI as clean. Skipped lanes are not flagged here;
+  `ci-failures.sh` names them.
 - `[pr] head moved` means someone else pushed: re-snapshot before doing anything.
 - `STALE` on a verdict means it is about replaced code, not a result about the diff now.
 - `[warn]` means the watch is blind on that side: say so.
 - `[hb]` and `[end]` mean nothing to do, except report when the script exits.
 
 The `[bus]` half is the town-crier review ledger. It attaches late by design — the row appears
-when the PR is dispatched for review, after the PR opens — and a reviewer that never reports to
-its row leaves the watch blind (emmie #1297, 2026-09-10). Where a row does not move when the
-reviewer posts, re-arm with `--source gh`. If the arming line says `bus pending` and no
-`[bus] attached` follows, the review surface is not covered; say so rather than reporting the PR
-as watched.
+when the PR is dispatched for review, after the PR opens — and GitHub's own review lines fire
+whether or not it ever attaches, so a reviewer that posts on GitHub always wakes the watch.
 
 A notification is not a user turn. When a line lands that means new work, run the cycle — same
 counters. When it is a heartbeat or a change that raises nothing, say one

@@ -4,13 +4,14 @@
 # changes, never a running status.
 #
 # Two surfaces, one tick, with the bus first among them:
-#   GitHub  — PR state, head SHA, per-job check rollup (always). Its review/comment/
-#             decision lines fire ONLY while no bus row is attached: the bus row is the
-#             reviewer's own record and reporting both duplicates every round.
+#   GitHub  — PR state, head SHA, per-job check rollup, reviews, comments, decision.
+#             Always, whatever the bus says: a reviewer that posts on GitHub and never
+#             reports to its bus row (emmie #1297) must still wake the watch.
 #   The bus — town-crier's ledger row: gate, trial, findings, reviewer (when the
 #             PR is announced there and a token is readable). The row is created at
 #             DISPATCH, which always lands after the PR opens, so the watch attaches on
-#             a later tick and says so with "[bus] attached #<id>".
+#             a later tick and says so with "[bus] attached #<id>". A round shows up
+#             on both surfaces, as one [bus] line and one [pr] line.
 #
 # The bus is not crit-only. Every repo that announces on town-crier is covered by
 # the same poll — lokalekeuze, emmie, kendo, crit, and the rest. A repo that is
@@ -30,9 +31,10 @@
 #   3  setup failure, said on stdout: no PR, missing dependency, bad flag value — or `--source bus`
 #      with no town-crier row for this PR after 20 ticks
 #
-# The token is read from $TOWN_CRIER_TOKEN, else from $TOWN_CRIER_ENV_FILE
-# (default ~/Code/crit/.env). It is never printed, and no line this script emits
-# contains it. No token means no bus surface — not an error.
+# The token is read from $TOWN_CRIER_TOKEN, else from the env file named by
+# $TOWN_CRIER_ENV_FILE. Neither set means no bus surface — not an error, and no
+# request leaves for town-crier. The token is never printed, no line this script
+# emits contains it, and it never appears in a process's argv.
 set -uo pipefail
 
 # Setup failures speak on stdout too: Monitor surfaces only stdout, so a
@@ -41,7 +43,6 @@ die() { ended=setup; echo "[end] setup failed: $1 — watch never started"; exit
 
 command -v gh   >/dev/null || die "gh CLI required"
 command -v jq   >/dev/null || die "jq required"
-command -v curl >/dev/null || die "curl required"
 
 INTERVAL=30
 HEARTBEAT_MIN=30
@@ -90,11 +91,26 @@ read_env_key() {
   sed -n -E "s/^[[:space:]]*$2=[\"']?([^\"'#[:space:]]+).*/\1/p" "$1" | tail -1
 }
 
-BUS_ENV_FILE="${TOWN_CRIER_ENV_FILE:-$HOME/Code/crit/.env}"
+# No default env file: a built-in path into one person's checkout made every other
+# machine's auto mode look for a token it could never have, and made this watch send
+# PR URLs to town-crier wherever that file happened to exist (emmie #1386 review).
+BUS_ENV_FILE="${TOWN_CRIER_ENV_FILE:-}"
 BUS_TOKEN="${TOWN_CRIER_TOKEN:-$(read_env_key "$BUS_ENV_FILE" TOWN_CRIER_TOKEN 2>/dev/null)}"
 BUS_URL="${TOWN_CRIER_URL:-$(read_env_key "$BUS_ENV_FILE" TOWN_CRIER_URL 2>/dev/null)}"
 BUS_URL="${BUS_URL:-https://town-crier-mcp.fly.dev}"
 BUS_URL="${BUS_URL%/}"
+
+# curl is the bus half's only dependency, so its absence costs the bus half and
+# nothing else: a GitHub-only watch runs on gh and jq alone.
+BUS_WHY=""
+if [[ "$SOURCE" == "gh" ]]; then
+  BUS_TOKEN=""; BUS_WHY="--source gh"
+elif ! command -v curl >/dev/null; then
+  [[ "$SOURCE" == "bus" ]] && die "--source bus needs curl"
+  BUS_TOKEN=""; BUS_WHY="no curl"
+elif [[ -z "$BUS_TOKEN" ]]; then
+  BUS_WHY="no town-crier token"
+fi
 
 BUS_ID=""
 bus_resolve_id() {
@@ -111,7 +127,7 @@ bus_resolve_id() {
   # honours status, limit and offset alone, so scanning is the only way to the id.
   local body id status
   for status in open in_review "done"; do
-    body=$(curl -sS --max-time 20 -K "$BUS_AUTH_CONFIG" \
+    body=$(curl -sSf --max-time 20 --max-filesize 4194304 -K "$BUS_AUTH_CONFIG" \
       "$BUS_URL/api/review-requests?status=$status&limit=200" \
       -H 'accept: application/json' 2>/dev/null) || continue
     id=$(jq -r --arg url "$PR_URL" '.requests[]? | select(.pr_url == $url) | .id' <<<"$body" 2>/dev/null | head -1)
@@ -152,23 +168,27 @@ gh_snapshot() {
         ci_fail:    ([$checks[] | select(.c == "FAILURE" or .c == "TIMED_OUT" or .c == "CANCELLED" or .c == "ERROR" or .c == "ACTION_REQUIRED" or .c == "STARTUP_FAILURE") | .n] | sort | join(",")),
         ci_pending: ([$checks[] | select(.c == "PENDING" or .c == "IN_PROGRESS" or .c == "QUEUED" or .c == "EXPECTED")] | length),
         ci_pass:    ([$checks[] | select(.c == "SUCCESS")] | length),
-        # SKIPPED, NEUTRAL and STALE fall into none of the three buckets above — a
-        # completed check with one of these conclusions is neither a failure nor a
-        # pass. Left uncounted, it vanishes: with a passing sibling, ci_pass alone
-        # still selects GREEN, reporting a check whose result does not apply to
-        # this commit (STALE) or never ran to a verdict (SKIPPED/NEUTRAL) as clean.
+        # NEUTRAL and STALE fall into none of the three buckets above — a completed
+        # check with one of these conclusions is neither a failure nor a pass. Left
+        # uncounted, it vanishes: with a passing sibling, ci_pass alone still selects
+        # GREEN, reporting a check whose result does not apply to this commit (STALE)
+        # or never reached a verdict (NEUTRAL) as clean.
         #
-        # WORKFLOW LANES ONLY (`.w != ""`), and that restriction is what keeps the
-        # state worth reading. The masking shape this exists to catch is a JOB that
-        # did not run — a `paths:` filter greening a rollup over a lane that never
-        # executed (WR-0898) — and such a job always carries the name of its workflow. A
-        # check an APP posts through the Checks API carries none, and an app that
-        # renders information rather than judging it has NO verdict to reach: the
-        # kendo tracker card is NEUTRAL on every linked PR forever. Counted, it made
-        # ATTN permanent, and the only ATTN anyone would ever see was the harmless
-        # one — which is how the skipped lane this state is for gets scrolled past.
-        # A never-firing gate and an always-firing one fail the same way. (lokalekeuze)
-        ci_attn:    ([$checks[] | select((.c == "SKIPPED" or .c == "NEUTRAL" or .c == "STALE") and .w != "") | .n] | sort | join(","))
+        # SKIPPED is deliberately NOT here. A repo that gates its matrix behind a
+        # detect-changes job skips ten lanes on an ordinary PR (kendo #2209: 11,
+        # emmie #1386: 10, measured 2026-09-13), so counting it made every such PR
+        # ATTN and none ever green. A repo whose rollup requires every lane to report
+        # (lokalekeuze) turns a skipped lane into a red rollup, which is RED here
+        # already. ci-failures.sh lists each skipped job by name, which is where the
+        # skill reads CI first.
+        #
+        # WORKFLOW LANES ONLY (`.w != ""`). A check an APP posts through the Checks
+        # API carries no workflowName, and an app that renders information rather
+        # than judging it has NO verdict to reach: the kendo tracker card is NEUTRAL
+        # on every linked PR forever. Counted, it made ATTN permanent, and the only
+        # ATTN anyone would ever see was the harmless one. A never-firing gate and an
+        # always-firing one fail the same way. (lokalekeuze)
+        ci_attn:    ([$checks[] | select((.c == "NEUTRAL" or .c == "STALE") and .w != "") | .n] | sort | join(","))
       }
     | .ci_state = (if .ci_fail != "" then "RED" elif .ci_pending > 0 then "PENDING"
                    elif .ci_attn != "" then "ATTN" elif .ci_pass > 0 then "GREEN" else "NONE" end)' <<<"$raw" 2>/dev/null
@@ -177,7 +197,10 @@ gh_snapshot() {
 bus_snapshot() {
   [[ -z "$BUS_TOKEN" || -z "$BUS_ID" ]] && return 1
   local raw
-  raw=$(curl -sS --max-time 20 -K "$BUS_AUTH_CONFIG" \
+  # -f turns an HTTP error into an unreadable row instead of a JSON body that jq
+  # would read as a row with every field defaulted; --max-filesize bounds what a
+  # misbehaving service can hand a shell variable.
+  raw=$(curl -sSf --max-time 20 --max-filesize 4194304 -K "$BUS_AUTH_CONFIG" \
     "$BUS_URL/api/review-requests/$BUS_ID" \
     -H 'accept: application/json' 2>/dev/null) || return 1
   [[ -z "$raw" ]] && return 1
@@ -249,11 +272,10 @@ emit_changes() {
     case "${cur[ci_state]-}" in
       RED)     echo "[ci]  FAILING: ${cur[ci_fail]}  (pass ${cur[ci_pass]-?} · pending ${cur[ci_pending]-?})" ;;
       PENDING) [[ -n "${prev[ci_fail]-}" ]] && echo "[ci]  red checks re-running, not green yet (pass ${cur[ci_pass]-?} · pending ${cur[ci_pending]-?})" ;;
-      # Never green while a check is skipped, neutral or stale — a stale required
-      # check does not satisfy branch protection even with every sibling passing,
-      # and a skip is this classifier's only signal that a check never reached a
-      # verdict at all.
-      ATTN)    echo "[ci]  needs attention (skipped/neutral/stale): ${cur[ci_attn]}  (pass ${cur[ci_pass]-?})" ;;
+      # Never green while a lane is neutral or stale — a stale required check does
+      # not satisfy branch protection even with every sibling passing, and a neutral
+      # lane never reached a verdict at all.
+      ATTN)    echo "[ci]  needs attention (neutral/stale): ${cur[ci_attn]}  (pass ${cur[ci_pass]-?})" ;;
       GREEN)   echo "[ci]  all checks green (pass ${cur[ci_pass]-?})" ;;
       NONE)    echo "[ci]  no checks reported yet" ;;
     esac
@@ -262,18 +284,16 @@ emit_changes() {
   # READ, and the STALE note above is the comparison of the two.
   changed head     && [[ -n "${prev[head]-}" ]] && echo "[pr]  head moved $(was head) -> $(now head)"
 
-  # The bus owns the review surface once attached. Its row is the reviewer's own record —
-  # gate, findings and verdict in one read — while GitHub only counts reviews and comments.
-  # Reporting both duplicates every round as [bus] review N and [pr] +1 GitHub review(s),
-  # so these three degrade to the bus and fire only where there is no bus row to own them.
-  if [[ -z "$BUS_ID" ]]; then
-    changed decision && echo "[pr]  review decision $(was decision) -> $(now decision)"
-    if changed reviews && [[ "${cur[reviews]-0}" -gt "${prev[reviews]-0}" ]]; then
-      echo "[pr]  +$(( ${cur[reviews]-0} - ${prev[reviews]-0} )) GitHub review(s)"
-    fi
-    if changed comments && [[ "${cur[comments]-0}" -gt "${prev[comments]-0}" ]]; then
-      echo "[pr]  +$(( ${cur[comments]-0} - ${prev[comments]-0} )) comment(s)"
-    fi
+  # GitHub's review lines fire whether or not a bus row is attached. They used to be
+  # gated on BUS_ID, and a reviewer that posted on GitHub while its bus row stayed at
+  # 0 reviews left the watch blind for an hour (emmie #1297); an unreadable row did the
+  # same. One duplicate line per round is the price of never being blind.
+  changed decision && echo "[pr]  review decision $(was decision) -> $(now decision)"
+  if changed reviews && [[ "${cur[reviews]-0}" -gt "${prev[reviews]-0}" ]]; then
+    echo "[pr]  +$(( ${cur[reviews]-0} - ${prev[reviews]-0} )) GitHub review(s)"
+  fi
+  if changed comments && [[ "${cur[comments]-0}" -gt "${prev[comments]-0}" ]]; then
+    echo "[pr]  +$(( ${cur[comments]-0} - ${prev[comments]-0} )) comment(s)"
   fi
 }
 
@@ -299,7 +319,8 @@ trap on_exit EXIT
 # run's whole duration, readable by any other local user through `ps` or
 # /proc/<pid>/cmdline. A curl config file read via `-K` keeps it out of argv; mode 600
 # and the EXIT trap above keep it off disk past this run. Created under the trap so a
-# kill between here and the first tick still removes it. (lokalekeuze #209, crit review)
+# kill between here and the first tick still removes it, and only when the bus half
+# runs at all — BUS_TOKEN is already empty under --source gh. (lokalekeuze #209)
 BUS_AUTH_CONFIG=""
 if [[ -n "$BUS_TOKEN" ]]; then
   BUS_AUTH_CONFIG=$(mktemp "${TMPDIR:-/tmp}/pr-watch-auth.XXXXXX")
@@ -311,19 +332,17 @@ fi
 # after the PR itself opens. A watch armed at PR-open time is therefore early BY DESIGN and
 # this first resolve normally misses. Resolving once and giving up would leave the bus
 # surface permanently dead on the common path — the loop retries until it attaches.
-if [[ "$SOURCE" != "gh" && -n "$BUS_TOKEN" ]]; then
-  BUS_ID=$(bus_resolve_id) || BUS_ID=""
-fi
 if [[ "$SOURCE" == "bus" && -z "$BUS_TOKEN" ]]; then
   die "--source bus, but no town-crier token is readable"
 fi
+if [[ -n "$BUS_TOKEN" ]]; then
+  BUS_ID=$(bus_resolve_id) || BUS_ID=""
+fi
 
 if [[ -n "$BUS_ID" ]]; then
-  surface="bus #$BUS_ID (reviews) + github (ci jobs)"
-elif [[ "$SOURCE" == "gh" ]]; then
-  surface="github only (--source gh)"
+  surface="bus #$BUS_ID (reviews) + github (ci jobs, reviews)"
 elif [[ -z "$BUS_TOKEN" ]]; then
-  surface="github only (no town-crier token)"
+  surface="github only (${BUS_WHY})"
 else
   surface="github · bus pending — retrying until the review request lands"
 fi
@@ -334,7 +353,7 @@ while true; do
   # Attach late. The row appears at dispatch, so on the common path this succeeds a tick or
   # two in. Announcing it matters: without a line, the bus surface coming up looks identical
   # to it never having existed, which is how a watch reads as covered while it is blind.
-  if [[ -z "$BUS_ID" && "$SOURCE" != "gh" && -n "$BUS_TOKEN" ]]; then
+  if [[ -z "$BUS_ID" && -n "$BUS_TOKEN" ]]; then
     BUS_ID=$(bus_resolve_id) || BUS_ID=""
     if [[ -n "$BUS_ID" ]]; then
       echo "[bus] attached #${BUS_ID} — bus owns the review surface from here"
