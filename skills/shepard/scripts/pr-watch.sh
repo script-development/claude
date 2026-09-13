@@ -135,7 +135,10 @@ gh_snapshot() {
   [[ -z "$raw" ]] && return 1
   jq -c '
     ([.statusCheckRollup[]?
-      | {n: (.name // .context // "?"), c: (.conclusion // .state // ""), s: (.status // "COMPLETED")}
+      | {n: (.name // .context // "?"), c: (.conclusion // .state // ""), s: (.status // "COMPLETED"),
+         # Which workflow the check belongs to, or "" for one an APP posted directly
+         # through the Checks API. `ci_attn` is the only consumer; see its comment.
+         w: (.workflowName // "")}
       # A CheckRun in flight carries its state in .status and serialises conclusion
       # as "", which `//` does not fall through — bucket on status first so a
       # re-running red job counts as pending, never as nothing.
@@ -154,7 +157,18 @@ gh_snapshot() {
         # pass. Left uncounted, it vanishes: with a passing sibling, ci_pass alone
         # still selects GREEN, reporting a check whose result does not apply to
         # this commit (STALE) or never ran to a verdict (SKIPPED/NEUTRAL) as clean.
-        ci_attn:    ([$checks[] | select(.c == "SKIPPED" or .c == "NEUTRAL" or .c == "STALE") | .n] | sort | join(","))
+        #
+        # WORKFLOW LANES ONLY (`.w != ""`), and that restriction is what keeps the
+        # state worth reading. The masking shape this exists to catch is a JOB that
+        # did not run — a `paths:` filter greening a rollup over a lane that never
+        # executed (WR-0898) — and such a job always carries the name of its workflow. A
+        # check an APP posts through the Checks API carries none, and an app that
+        # renders information rather than judging it has NO verdict to reach: the
+        # kendo tracker card is NEUTRAL on every linked PR forever. Counted, it made
+        # ATTN permanent, and the only ATTN anyone would ever see was the harmless
+        # one — which is how the skipped lane this state is for gets scrolled past.
+        # A never-firing gate and an always-firing one fail the same way. (lokalekeuze)
+        ci_attn:    ([$checks[] | select((.c == "SKIPPED" or .c == "NEUTRAL" or .c == "STALE") and .w != "") | .n] | sort | join(","))
       }
     | .ci_state = (if .ci_fail != "" then "RED" elif .ci_pending > 0 then "PENDING"
                    elif .ci_attn != "" then "ATTN" elif .ci_pass > 0 then "GREEN" else "NONE" end)' <<<"$raw" 2>/dev/null

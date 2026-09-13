@@ -342,14 +342,14 @@ reset; bus_absent
 gh_tick 1 OPEN aaaaaaaa 0 0
 cat > "$state/gh_2.json" <<'EOF'
 {"state":"OPEN","headRefOid":"aaaaaaaa",
- "statusCheckRollup":[{"name":"required-check","conclusion":"STALE"},
-                      {"name":"other","conclusion":"SUCCESS"}],
+ "statusCheckRollup":[{"name":"required-check","conclusion":"STALE","workflowName":"CI"},
+                      {"name":"other","conclusion":"SUCCESS","workflowName":"CI"}],
  "reviews":[],"comments":[],"reviewDecision":""}
 EOF
 cat > "$state/gh_3.json" <<'EOF'
 {"state":"MERGED","headRefOid":"aaaaaaaa",
- "statusCheckRollup":[{"name":"required-check","conclusion":"STALE"},
-                      {"name":"other","conclusion":"SUCCESS"}],
+ "statusCheckRollup":[{"name":"required-check","conclusion":"STALE","workflowName":"CI"},
+                      {"name":"other","conclusion":"SUCCESS","workflowName":"CI"}],
  "reviews":[],"comments":[],"reviewDecision":""}
 EOF
 out=$(run); rc=$?
@@ -364,13 +364,53 @@ reset; bus_absent
 gh_tick 1 OPEN aaaaaaaa 0 0
 cat > "$state/gh_2.json" <<'EOF'
 {"state":"OPEN","headRefOid":"aaaaaaaa",
- "statusCheckRollup":[{"name":"conditional-job","conclusion":"SKIPPED"}],
+ "statusCheckRollup":[{"name":"conditional-job","conclusion":"SKIPPED","workflowName":"CI"}],
  "reviews":[],"comments":[],"reviewDecision":""}
 EOF
 gh_tick 3 MERGED aaaaaaaa 0 0
 out=$(run); rc=$?
 check "a SKIPPED-only result speaks instead of going quiet" 0 "$out" $rc \
   "[ci]  needs attention (skipped/neutral/stale): conditional-job"
+
+# An APP posts a check through the Checks API with no workflow behind it, and one
+# that renders information rather than judging it never reaches a verdict: the
+# `kendo` tracker card is NEUTRAL on every linked PR, forever. Counted as ATTN it
+# made the state permanent, so the only ATTN ever seen was the harmless one —
+# training the reader to scroll past the skipped lane the state is for. A
+# never-firing gate and an always-firing one fail the same way.
+reset; bus_absent
+# Tick 1 reports no checks at all, so tick 2 landing GREEN is a real change: this
+# watcher speaks only on change, and a first tick already green emits nothing.
+cat > "$state/gh_1.json" <<'EOF'
+{"state":"OPEN","headRefOid":"aaaaaaaa","statusCheckRollup":[],
+ "reviews":[],"comments":[],"reviewDecision":""}
+EOF
+cat > "$state/gh_2.json" <<'EOF'
+{"state":"OPEN","headRefOid":"aaaaaaaa",
+ "statusCheckRollup":[{"name":"ci-passed","conclusion":"SUCCESS","workflowName":"CI"},
+                      {"name":"kendo","conclusion":"NEUTRAL","workflowName":""}],
+ "reviews":[],"comments":[],"reviewDecision":""}
+EOF
+gh_tick 3 MERGED aaaaaaaa 0 0
+out=$(run); rc=$?
+check "an app check with no workflow is not ATTN" 0 "$out" $rc \
+  "[ci]  all checks green" "![ci]  needs attention"
+
+# The discrimination is per check, not per run: a lane that did not run still
+# speaks even while an app check sits NEUTRAL beside it, and only the lane is named.
+reset; bus_absent
+gh_tick 1 OPEN aaaaaaaa 0 0
+cat > "$state/gh_2.json" <<'EOF'
+{"state":"OPEN","headRefOid":"aaaaaaaa",
+ "statusCheckRollup":[{"name":"conditional-job","conclusion":"SKIPPED","workflowName":"CI"},
+                      {"name":"kendo","conclusion":"NEUTRAL","workflowName":""},
+                      {"name":"other","conclusion":"SUCCESS","workflowName":"CI"}],
+ "reviews":[],"comments":[],"reviewDecision":""}
+EOF
+gh_tick 3 MERGED aaaaaaaa 0 0
+out=$(run); rc=$?
+check "a skipped lane still speaks beside a neutral app check" 0 "$out" $rc \
+  "[ci]  needs attention (skipped/neutral/stale): conditional-job" "!kendo"
 
 # The header comment promises the token never appears in anything this script
 # emits. That promise covers stdout; it does not by itself cover argv, which
