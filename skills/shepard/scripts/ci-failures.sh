@@ -133,6 +133,8 @@ while IFS=$'\t' read -r run_id workflow status conclusion; do
                       any_failed=1
                       failed_jobs+=("${job_id}"$'\t'"${job_name}") ;;
       cancelled)      echo "  CANC  ${job_name}"; any_failed=1 ;;
+      # A stale job result no longer describes this head; it is not a pass.
+      stale)          echo "  STAL  ${job_name}"; any_failed=1 ;;
       skipped)        echo "  skip  ${job_name}" ;;
       "")             echo "  ...   ${job_name} (${job_status})" ;;
       *)              echo "  ${job_conclusion}  ${job_name}" ;;

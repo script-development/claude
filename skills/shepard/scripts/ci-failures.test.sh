@@ -352,6 +352,14 @@ cat > "$fixtures/json/runs-emptyjobs.json" <<'JSON'
 JSON
 printf '{"jobs":[]}\n' > "$fixtures/json/jobs-921.json"
 
+# A stale job conclusion inside a run whose own conclusion is success: the job's
+# result no longer describes this head, so the run cannot be called green.
+cat > "$fixtures/json/runs-stalejob.json" <<'JSON'
+[{"databaseId":922,"workflowName":"CI","event":"pull_request","status":"completed","conclusion":"success"}]
+JSON
+printf '{"jobs":[{"databaseId":9221,"name":"backend","status":"completed","conclusion":"stale"}]}\n' \
+    > "$fixtures/json/jobs-922.json"
+
 # invoke_pr <runs-fixture> — run from outside any checkout, so no HEAD warning
 invoke_pr() {
     out=$(cd "$tmp" && FAKE_RUNS="$1" PATH="$json_bin:$PATH" bash "$subject" 77 2>&1)
@@ -379,6 +387,10 @@ expect_absent "Status: GREEN" "a null job list never lands on GREEN"
 invoke_pr emptyjobs
 expect_rc 3 "an empty job list is unreadable, not green"
 expect_absent "Status: GREEN" "an empty job list never lands on GREEN"
+
+invoke_pr stalejob
+expect_rc 1 "a stale job conclusion is not a pass"
+expect_contains "  STAL  backend" "the stale job is named"
 
 invoke_pr unlistable
 expect_rc 3 "a run listing gh could not produce exits 3"
