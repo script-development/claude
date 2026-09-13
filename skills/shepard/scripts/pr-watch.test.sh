@@ -22,7 +22,7 @@
 #
 # No framework by design, matching ci-failures.test.sh. Run it the same way:
 #
-#   bash ~/.claude/skills/shepard/scripts/pr-watch.test.sh
+#   bash <skill dir>/scripts/pr-watch.test.sh
 
 set -uo pipefail
 
@@ -161,7 +161,7 @@ gh_tick 2 OPEN aaaaaaaa 1 0; bus_tick 2 blocked 1 2 aaaaaaaa
 gh_tick 3 MERGED aaaaaaaa 1 0; bus_tick 3 blocked 1 2 aaaaaaaa
 out=$(run); rc=$?
 check "new bus review emits one line" 0 "$out" $rc \
-  "[bus] review 1 by crit" "findings 2 issue/0 nit" "[bus] gate clear -> blocked" "![pr]  +1 GitHub review(s)"
+  "[bus] review 1 by crit" "findings 2 issue/0 nit" "[bus] gate clear -> blocked" "[pr]  +1 GitHub review(s)"
 
 # A verdict at a replaced head is not a result about the code now on the branch.
 reset; bus_listed
@@ -181,9 +181,9 @@ out=$(run); rc=$?
 check "ci red then green both emit" 0 "$out" $rc "[ci]  FAILING: test-unit" "[ci]  all checks green"
 
 # A bus outage must not take the GitHub surface down with it, and must announce
-# itself rather than let the quiet read as "no reviews yet". Two silences are pinned
-# alongside: the review surface stays the bus's even while the row is unreadable (no
-# [pr] comment line), and the remembered bus fields must not flap to "—" every tick.
+# itself rather than let the quiet read as "no reviews yet". GitHub's own comment
+# lines keep firing through the outage — that is the whole point of never gating
+# them on the bus — and the remembered bus fields must not flap to "—" every tick.
 reset; bus_listed
 gh_tick 1 OPEN aaaaaaaa 0 0; bus_tick 1 clear 0 0 aaaaaaaa
 gh_tick 2 OPEN aaaaaaaa 0 1; : > "$state/bus_2.json"
@@ -193,7 +193,7 @@ gh_tick 5 MERGED aaaaaaaa 0 3
 out=$(run); rc=$?
 check "bus outage warns, github keeps reporting" 0 "$out" $rc \
   "[warn] bus row #2575 unreadable for 3 ticks" "[ci]  FAILING: test-unit" \
-  "![pr]  +1 comment(s)" "!-> —"
+  "[pr]  +1 comment(s)" "!-> —"
 
 # GitHub itself unreadable: the watcher is blind and must say so. Silence here
 # would be indistinguishable from a PR nobody has touched.
@@ -379,7 +379,10 @@ check "a NEUTRAL-only lane speaks instead of going quiet" 0 "$out" $rc \
 # skip into a red rollup, which is RED here already; ci-failures.sh names each
 # skipped job. So a skip beside a passing sibling is green, and only a skip.
 reset; bus_absent
-gh_tick 1 OPEN aaaaaaaa 0 0
+cat > "$state/gh_1.json" <<'EOF'
+{"state":"OPEN","headRefOid":"aaaaaaaa","statusCheckRollup":[],
+ "reviews":[],"comments":[],"reviewDecision":""}
+EOF
 cat > "$state/gh_2.json" <<'EOF'
 {"state":"OPEN","headRefOid":"aaaaaaaa",
  "statusCheckRollup":[{"name":"Backend Unit Tests","conclusion":"SKIPPED","workflowName":"CI"},

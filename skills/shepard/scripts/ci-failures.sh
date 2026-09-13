@@ -71,8 +71,14 @@ else
 
   # Newest run per workflow and trigger: `cancel-in-progress` leaves a cancelled run beside its
   # replacement on the same SHA, and only the replacement is a result about this head.
+  # A listing gh could not produce is not "no runs": the guard below would read an
+  # empty string as zero runs, and an empty run set lands on GREEN.
   runs=$(gh run list --commit "$sha" --json databaseId,workflowName,event,status,conclusion --limit 20 \
-    --jq 'group_by([.workflowName, .event]) | map(max_by(.databaseId))')
+    --jq 'group_by([.workflowName, .event]) | map(max_by(.databaseId))') || runs=""
+  if [[ -z "$runs" ]]; then
+    echo "error: could not list workflow runs for ${sha:0:9} — gh failed; not GREEN, retry shortly" >&2
+    exit 3
+  fi
   if [[ $(jq length <<<"$runs") -eq 0 ]]; then
     echo "error: no workflow runs found for ${sha:0:9} (CI may not have started yet)" >&2
     exit 3
@@ -105,7 +111,10 @@ while IFS=$'\t' read -r run_id workflow status conclusion; do
 
   # An unreadable job list is not "no job failed": without it nobody can see which lanes ran,
   # so the status below will not call this run GREEN.
+  # `null` is what --jq prints for a run object with no jobs key at all; jq then
+  # iterates nothing and the run would read as "no job failed".
   jobs=$(gh run view "$run_id" --json jobs --jq '.jobs') || jobs=""
+  [[ "$jobs" == "null" ]] && jobs=""
   if [[ -z "$jobs" ]]; then
     echo "  ???   job list unreadable — cannot confirm which jobs ran"
     any_unreadable=1

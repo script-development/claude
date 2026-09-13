@@ -33,7 +33,7 @@
 # No framework by design — the repo has no bats and no shell test harness, and
 # CI runs plain scripts with `bash <path>`. Run it the same way:
 #
-#   bash ~/.claude/skills/shepard/scripts/ci-failures.test.sh
+#   bash <skill dir>/scripts/ci-failures.test.sh
 
 set -uo pipefail
 
@@ -299,6 +299,7 @@ case "$1 $2" in
     "pr view")  src="$FIXTURES/json/pr.json" ;;
     "run list")
         [[ "$*" == *"--commit cafe1234"* ]] || { echo "fake gh: run list not scoped to the PR head: $*" >&2; exit 65; }
+        [[ "$FAKE_RUNS" == "unlistable" ]] && { echo "HTTP 502: Bad Gateway" >&2; exit 1; }
         src="$FIXTURES/json/runs-$FAKE_RUNS.json" ;;
     "run view")
         if [[ "$3" == "--job" ]]; then
@@ -336,6 +337,14 @@ printf '{"jobs":[{"databaseId":9101,"name":"backend","status":"completed","concl
 printf '{"jobs":[{"databaseId":9111,"name":"backend","status":"completed","conclusion":"success"}]}\n' \
     > "$fixtures/json/jobs-911.json"
 
+# A run object with no jobs key: --jq '.jobs' prints the literal `null`, which is
+# not an empty string, so the unreadable guard used to let it through and jq then
+# iterated nothing — a successful run with no visible lanes read GREEN.
+cat > "$fixtures/json/runs-nulljobs.json" <<'JSON'
+[{"databaseId":920,"workflowName":"CI","event":"pull_request","status":"completed","conclusion":"success"}]
+JSON
+printf '{"jobs":null}\n' > "$fixtures/json/jobs-920.json"
+
 # invoke_pr <runs-fixture> — run from outside any checkout, so no HEAD warning
 invoke_pr() {
     out=$(cd "$tmp" && FAKE_RUNS="$1" PATH="$json_bin:$PATH" bash "$subject" 77 2>&1)
@@ -354,6 +363,16 @@ expect_absent "(900)" "the superseded run is not reported"
 invoke_pr dispatch
 expect_rc 1 "a failed run from another trigger on the same SHA still fails the PR"
 expect_contains "  FAIL  backend" "the other trigger's failed job is classified"
+
+invoke_pr nulljobs
+expect_rc 3 "a null job list is unreadable, not green"
+expect_contains "job list unreadable" "the null job list is named"
+expect_absent "Status: GREEN" "a null job list never lands on GREEN"
+
+invoke_pr unlistable
+expect_rc 3 "a run listing gh could not produce exits 3"
+expect_contains "could not list workflow runs" "the failed listing is named"
+expect_absent "Status: GREEN" "a failed listing never lands on GREEN"
 
 # ---------------------------------------------------------------- summary ---
 echo
