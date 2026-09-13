@@ -345,6 +345,13 @@ cat > "$fixtures/json/runs-nulljobs.json" <<'JSON'
 JSON
 printf '{"jobs":null}\n' > "$fixtures/json/jobs-920.json"
 
+# A run whose lanes gh did not hand back at all. Zero lanes proves nothing ran or
+# nothing was read; either way there is no lane to call green.
+cat > "$fixtures/json/runs-emptyjobs.json" <<'JSON'
+[{"databaseId":921,"workflowName":"CI","event":"pull_request","status":"completed","conclusion":"success"}]
+JSON
+printf '{"jobs":[]}\n' > "$fixtures/json/jobs-921.json"
+
 # invoke_pr <runs-fixture> — run from outside any checkout, so no HEAD warning
 invoke_pr() {
     out=$(cd "$tmp" && FAKE_RUNS="$1" PATH="$json_bin:$PATH" bash "$subject" 77 2>&1)
@@ -368,6 +375,10 @@ invoke_pr nulljobs
 expect_rc 3 "a null job list is unreadable, not green"
 expect_contains "job list unreadable" "the null job list is named"
 expect_absent "Status: GREEN" "a null job list never lands on GREEN"
+
+invoke_pr emptyjobs
+expect_rc 3 "an empty job list is unreadable, not green"
+expect_absent "Status: GREEN" "an empty job list never lands on GREEN"
 
 invoke_pr unlistable
 expect_rc 3 "a run listing gh could not produce exits 3"

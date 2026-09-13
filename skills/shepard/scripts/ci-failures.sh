@@ -73,7 +73,9 @@ else
   # replacement on the same SHA, and only the replacement is a result about this head.
   # A listing gh could not produce is not "no runs": the guard below would read an
   # empty string as zero runs, and an empty run set lands on GREEN.
-  runs=$(gh run list --commit "$sha" --json databaseId,workflowName,event,status,conclusion --limit 20 \
+  # 100, not 20: cancel-in-progress and re-runs stack runs on one SHA, and a run
+  # past the page would never be grouped, so its failure would never be read.
+  runs=$(gh run list --commit "$sha" --json databaseId,workflowName,event,status,conclusion --limit 100 \
     --jq 'group_by([.workflowName, .event]) | map(max_by(.databaseId))') || runs=""
   if [[ -z "$runs" ]]; then
     echo "error: could not list workflow runs for ${sha:0:9} — gh failed; not GREEN, retry shortly" >&2
@@ -111,10 +113,11 @@ while IFS=$'\t' read -r run_id workflow status conclusion; do
 
   # An unreadable job list is not "no job failed": without it nobody can see which lanes ran,
   # so the status below will not call this run GREEN.
-  # `null` is what --jq prints for a run object with no jobs key at all; jq then
-  # iterates nothing and the run would read as "no job failed".
+  # `null` is what --jq prints for a run object with no jobs key at all, and `[]`
+  # is a run whose lanes gh did not hand back; either way jq iterates nothing and
+  # the run would read as "no job failed" with no lane ever named.
   jobs=$(gh run view "$run_id" --json jobs --jq '.jobs') || jobs=""
-  [[ "$jobs" == "null" ]] && jobs=""
+  [[ "$jobs" == "null" || "$jobs" == "[]" ]] && jobs=""
   if [[ -z "$jobs" ]]; then
     echo "  ???   job list unreadable — cannot confirm which jobs ran"
     any_unreadable=1
