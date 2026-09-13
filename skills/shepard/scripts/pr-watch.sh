@@ -152,23 +152,27 @@ gh_snapshot() {
         ci_fail:    ([$checks[] | select(.c == "FAILURE" or .c == "TIMED_OUT" or .c == "CANCELLED" or .c == "ERROR" or .c == "ACTION_REQUIRED" or .c == "STARTUP_FAILURE") | .n] | sort | join(",")),
         ci_pending: ([$checks[] | select(.c == "PENDING" or .c == "IN_PROGRESS" or .c == "QUEUED" or .c == "EXPECTED")] | length),
         ci_pass:    ([$checks[] | select(.c == "SUCCESS")] | length),
-        # SKIPPED, NEUTRAL and STALE fall into none of the three buckets above — a
-        # completed check with one of these conclusions is neither a failure nor a
-        # pass. Left uncounted, it vanishes: with a passing sibling, ci_pass alone
-        # still selects GREEN, reporting a check whose result does not apply to
-        # this commit (STALE) or never ran to a verdict (SKIPPED/NEUTRAL) as clean.
+        # NEUTRAL and STALE fall into none of the three buckets above — a completed
+        # check with one of these conclusions is neither a failure nor a pass. Left
+        # uncounted, it vanishes: with a passing sibling, ci_pass alone still selects
+        # GREEN, reporting a check whose result does not apply to this commit (STALE)
+        # or never reached a verdict (NEUTRAL) as clean.
         #
-        # WORKFLOW LANES ONLY (`.w != ""`), and that restriction is what keeps the
-        # state worth reading. The masking shape this exists to catch is a JOB that
-        # did not run — a `paths:` filter greening a rollup over a lane that never
-        # executed (WR-0898) — and such a job always carries the name of its workflow. A
-        # check an APP posts through the Checks API carries none, and an app that
-        # renders information rather than judging it has NO verdict to reach: the
-        # kendo tracker card is NEUTRAL on every linked PR forever. Counted, it made
-        # ATTN permanent, and the only ATTN anyone would ever see was the harmless
-        # one — which is how the skipped lane this state is for gets scrolled past.
-        # A never-firing gate and an always-firing one fail the same way. (lokalekeuze)
-        ci_attn:    ([$checks[] | select((.c == "SKIPPED" or .c == "NEUTRAL" or .c == "STALE") and .w != "") | .n] | sort | join(","))
+        # SKIPPED is deliberately NOT here. A repo that gates its matrix behind a
+        # detect-changes job skips ten lanes on an ordinary PR (kendo #2209: 11,
+        # emmie #1386: 10, measured 2026-09-13), so counting it made every such PR
+        # ATTN and none ever green. A repo whose rollup requires every lane to report
+        # (lokalekeuze) turns a skipped lane into a red rollup, which is RED here
+        # already. ci-failures.sh lists each skipped job by name, which is where the
+        # skill reads CI first.
+        #
+        # WORKFLOW LANES ONLY (`.w != ""`). A check an APP posts through the Checks
+        # API carries no workflowName, and an app that renders information rather
+        # than judging it has NO verdict to reach: the kendo tracker card is NEUTRAL
+        # on every linked PR forever. Counted, it made ATTN permanent, and the only
+        # ATTN anyone would ever see was the harmless one. A never-firing gate and an
+        # always-firing one fail the same way. (lokalekeuze)
+        ci_attn:    ([$checks[] | select((.c == "NEUTRAL" or .c == "STALE") and .w != "") | .n] | sort | join(","))
       }
     | .ci_state = (if .ci_fail != "" then "RED" elif .ci_pending > 0 then "PENDING"
                    elif .ci_attn != "" then "ATTN" elif .ci_pass > 0 then "GREEN" else "NONE" end)' <<<"$raw" 2>/dev/null
@@ -249,11 +253,10 @@ emit_changes() {
     case "${cur[ci_state]-}" in
       RED)     echo "[ci]  FAILING: ${cur[ci_fail]}  (pass ${cur[ci_pass]-?} · pending ${cur[ci_pending]-?})" ;;
       PENDING) [[ -n "${prev[ci_fail]-}" ]] && echo "[ci]  red checks re-running, not green yet (pass ${cur[ci_pass]-?} · pending ${cur[ci_pending]-?})" ;;
-      # Never green while a check is skipped, neutral or stale — a stale required
-      # check does not satisfy branch protection even with every sibling passing,
-      # and a skip is this classifier's only signal that a check never reached a
-      # verdict at all.
-      ATTN)    echo "[ci]  needs attention (skipped/neutral/stale): ${cur[ci_attn]}  (pass ${cur[ci_pass]-?})" ;;
+      # Never green while a lane is neutral or stale — a stale required check does
+      # not satisfy branch protection even with every sibling passing, and a neutral
+      # lane never reached a verdict at all.
+      ATTN)    echo "[ci]  needs attention (neutral/stale): ${cur[ci_attn]}  (pass ${cur[ci_pass]-?})" ;;
       GREEN)   echo "[ci]  all checks green (pass ${cur[ci_pass]-?})" ;;
       NONE)    echo "[ci]  no checks reported yet" ;;
     esac

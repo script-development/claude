@@ -520,8 +520,9 @@ The script prints one line per change, tagged `[ci]`, `[pr]`, `[bus]`, `[warn]`,
 line lands. The short version:
 
 - `[ci] FAILING`, `[bus] review` and `[pr] +N review(s)` mean a full cycle.
-- `[ci] needs attention` means a check finished without a verdict, or its result is for another
-  commit. Not green: read the check before treating CI as clean.
+- `[ci] needs attention` means a lane finished neutral, or its result is for another commit.
+  Not green: read the lane before treating CI as clean. Skipped lanes are not flagged here;
+  `ci-failures.sh` names them.
 - `[pr] head moved` means someone else pushed: re-snapshot before doing anything.
 - `STALE` on a verdict means it is about replaced code, not a result about the diff now.
 - `[warn]` means the watch is blind on that side: say so.

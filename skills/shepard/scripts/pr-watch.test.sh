@@ -354,23 +354,42 @@ cat > "$state/gh_3.json" <<'EOF'
 EOF
 out=$(run); rc=$?
 check "a STALE check is never reported as green" 0 "$out" $rc \
-  "[ci]  needs attention (skipped/neutral/stale): required-check" "![ci]  all checks green"
+  "[ci]  needs attention (neutral/stale): required-check" "![ci]  all checks green"
 
-# SKIPPED and NEUTRAL land in neither ci_fail nor ci_pass nor ci_pending, and the
-# classifier used to map that combination to a state the emitter had no case
-# for — the watch went quiet instead of saying anything, which reads as "still
-# the last thing I told you" rather than as the true, unclassified state.
+# NEUTRAL lands in neither ci_fail nor ci_pass nor ci_pending, and the classifier
+# used to map that to a state the emitter had no case for — the watch went quiet
+# instead of saying anything, which reads as "still the last thing I told you"
+# rather than as the true, unclassified state.
 reset; bus_absent
 gh_tick 1 OPEN aaaaaaaa 0 0
 cat > "$state/gh_2.json" <<'EOF'
 {"state":"OPEN","headRefOid":"aaaaaaaa",
- "statusCheckRollup":[{"name":"conditional-job","conclusion":"SKIPPED","workflowName":"CI"}],
+ "statusCheckRollup":[{"name":"conditional-job","conclusion":"NEUTRAL","workflowName":"CI"}],
  "reviews":[],"comments":[],"reviewDecision":""}
 EOF
 gh_tick 3 MERGED aaaaaaaa 0 0
 out=$(run); rc=$?
-check "a SKIPPED-only result speaks instead of going quiet" 0 "$out" $rc \
-  "[ci]  needs attention (skipped/neutral/stale): conditional-job"
+check "a NEUTRAL-only lane speaks instead of going quiet" 0 "$out" $rc \
+  "[ci]  needs attention (neutral/stale): conditional-job"
+
+# A SKIPPED lane is routine wherever a detect-changes job gates the matrix: kendo
+# #2209 skipped 11 lanes and emmie #1386 skipped 10 on an ordinary PR. Counted as
+# ATTN, every such PR read "needs attention" and none ever read green — the
+# always-firing failure. A repo whose rollup requires every lane to report turns a
+# skip into a red rollup, which is RED here already; ci-failures.sh names each
+# skipped job. So a skip beside a passing sibling is green, and only a skip.
+reset; bus_absent
+gh_tick 1 OPEN aaaaaaaa 0 0
+cat > "$state/gh_2.json" <<'EOF'
+{"state":"OPEN","headRefOid":"aaaaaaaa",
+ "statusCheckRollup":[{"name":"Backend Unit Tests","conclusion":"SKIPPED","workflowName":"CI"},
+                      {"name":"ci-passed","conclusion":"SUCCESS","workflowName":"CI"}],
+ "reviews":[],"comments":[],"reviewDecision":""}
+EOF
+gh_tick 3 MERGED aaaaaaaa 0 0
+out=$(run); rc=$?
+check "a skipped lane beside a passing rollup is green" 0 "$out" $rc \
+  "[ci]  all checks green" "![ci]  needs attention"
 
 # An APP posts a check through the Checks API with no workflow behind it, and one
 # that renders information rather than judging it never reaches a verdict: the
@@ -396,21 +415,21 @@ out=$(run); rc=$?
 check "an app check with no workflow is not ATTN" 0 "$out" $rc \
   "[ci]  all checks green" "![ci]  needs attention"
 
-# The discrimination is per check, not per run: a lane that did not run still
-# speaks even while an app check sits NEUTRAL beside it, and only the lane is named.
+# The discrimination is per check, not per run: a neutral lane still speaks even
+# while an app check sits NEUTRAL beside it, and only the lane is named.
 reset; bus_absent
 gh_tick 1 OPEN aaaaaaaa 0 0
 cat > "$state/gh_2.json" <<'EOF'
 {"state":"OPEN","headRefOid":"aaaaaaaa",
- "statusCheckRollup":[{"name":"conditional-job","conclusion":"SKIPPED","workflowName":"CI"},
+ "statusCheckRollup":[{"name":"conditional-job","conclusion":"NEUTRAL","workflowName":"CI"},
                       {"name":"kendo","conclusion":"NEUTRAL","workflowName":""},
                       {"name":"other","conclusion":"SUCCESS","workflowName":"CI"}],
  "reviews":[],"comments":[],"reviewDecision":""}
 EOF
 gh_tick 3 MERGED aaaaaaaa 0 0
 out=$(run); rc=$?
-check "a skipped lane still speaks beside a neutral app check" 0 "$out" $rc \
-  "[ci]  needs attention (skipped/neutral/stale): conditional-job" "!kendo"
+check "a neutral lane still speaks beside a neutral app check" 0 "$out" $rc \
+  "[ci]  needs attention (neutral/stale): conditional-job" "!kendo"
 
 # The header comment promises the token never appears in anything this script
 # emits. That promise covers stdout; it does not by itself cover argv, which
