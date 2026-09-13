@@ -115,12 +115,17 @@ while IFS=$'\t' read -r run_id workflow status conclusion; do
   # so the status below will not call this run GREEN.
   # `null` is what --jq prints for a run object with no jobs key at all, and `[]`
   # is a run whose lanes gh did not hand back; either way jq iterates nothing and
-  # the run would read as "no job failed" with no lane ever named.
+  # a COMPLETED run would read as "no job failed" with no lane ever named. A run
+  # that has not completed is the one honest case of an empty list: its job
+  # records can lag the run by a few seconds, and it is already counted as
+  # running above, so it stays RUNNING rather than UNKNOWN (lokalekeuze #273).
   jobs=$(gh run view "$run_id" --json jobs --jq '.jobs') || jobs=""
   [[ "$jobs" == "null" || "$jobs" == "[]" ]] && jobs=""
-  if [[ -z "$jobs" ]]; then
+  if [[ -z "$jobs" && "$status" == "completed" ]]; then
     echo "  ???   job list unreadable — cannot confirm which jobs ran"
     any_unreadable=1
+  elif [[ -z "$jobs" ]]; then
+    echo "  ...   no job records yet"
   fi
   while IFS=$'\t' read -r job_id job_name job_status job_conclusion; do
     job_conclusion=${job_conclusion%$'\r'}

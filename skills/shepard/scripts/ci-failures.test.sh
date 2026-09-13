@@ -352,6 +352,14 @@ cat > "$fixtures/json/runs-emptyjobs.json" <<'JSON'
 JSON
 printf '{"jobs":[]}\n' > "$fixtures/json/jobs-921.json"
 
+# A run that has not completed may list no jobs yet: the records lag the run by
+# seconds. That is RUNNING, not UNKNOWN — the loop keeps polling instead of
+# retrying once and reporting.
+cat > "$fixtures/json/runs-startingjobs.json" <<'JSON'
+[{"databaseId":923,"workflowName":"CI","event":"pull_request","status":"in_progress","conclusion":null}]
+JSON
+printf '{"jobs":[]}\n' > "$fixtures/json/jobs-923.json"
+
 # A stale job conclusion inside a run whose own conclusion is success: the job's
 # result no longer describes this head, so the run cannot be called green.
 cat > "$fixtures/json/runs-stalejob.json" <<'JSON'
@@ -387,6 +395,11 @@ expect_absent "Status: GREEN" "a null job list never lands on GREEN"
 invoke_pr emptyjobs
 expect_rc 3 "an empty job list is unreadable, not green"
 expect_absent "Status: GREEN" "an empty job list never lands on GREEN"
+
+invoke_pr startingjobs
+expect_rc 2 "an in-progress run with no job records yet is RUNNING"
+expect_contains "no job records yet" "the empty list is named as not-yet"
+expect_absent "UNKNOWN" "an in-progress run with no jobs is not unreadable"
 
 invoke_pr stalejob
 expect_rc 1 "a stale job conclusion is not a pass"
