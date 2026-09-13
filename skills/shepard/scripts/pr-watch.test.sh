@@ -66,6 +66,9 @@ FAKE
 
 cat > "$bin/curl" <<'FAKE'
 #!/usr/bin/env bash
+# Every invocation's argv is appended for the token-exposure assertion below —
+# a fake that only served fixtures could not tell a leaked secret from a safe one.
+printf '%s\0' "$@" >> "$STATE/curl_argv.log"
 # Two routes: the open-ledger scan (id resolution) and one request row.
 for a in "$@"; do case "$a" in *"status=open"*) mode=list ;; */api/review-requests/*) mode=show ;; esac; done
 if [[ "${mode:-}" == "list" ]]; then
@@ -112,7 +115,7 @@ bus_listed() {
 }
 bus_absent() { echo '{"requests":[]}' > "$state/bus_list.json"; }
 
-reset() { rm -f "$state"/*.json "$state"/gh_n "$state"/bus_n; }
+reset() { rm -f "$state"/*.json "$state"/gh_n "$state"/bus_n "$state"/curl_argv.log; }
 
 run() { TOWN_CRIER_TOKEN=fake-token TOWN_CRIER_URL=https://bus.test bash "$subject" 42 --interval 0 --heartbeat 0 "$@" 2>&1; }
 
@@ -331,6 +334,61 @@ gh_tick 1 OPEN aaaaaaaa 0 0
 bash_bin=$(command -v bash)
 out=$(PATH="$tmp/emptybin" "$bash_bin" "$subject" 42 --once 2>/dev/null); rc=$?
 check "a missing dependency speaks on stdout" 3 "$out" $rc "[end] setup failed:" "watch never started"
+
+# A STALE conclusion means this required check's result does not apply to the
+# current commit — it does not satisfy branch protection even with a passing
+# sibling, so a passing sibling must never be enough to call the run green.
+reset; bus_absent
+gh_tick 1 OPEN aaaaaaaa 0 0
+cat > "$state/gh_2.json" <<'EOF'
+{"state":"OPEN","headRefOid":"aaaaaaaa",
+ "statusCheckRollup":[{"name":"required-check","conclusion":"STALE"},
+                      {"name":"other","conclusion":"SUCCESS"}],
+ "reviews":[],"comments":[],"reviewDecision":""}
+EOF
+cat > "$state/gh_3.json" <<'EOF'
+{"state":"MERGED","headRefOid":"aaaaaaaa",
+ "statusCheckRollup":[{"name":"required-check","conclusion":"STALE"},
+                      {"name":"other","conclusion":"SUCCESS"}],
+ "reviews":[],"comments":[],"reviewDecision":""}
+EOF
+out=$(run); rc=$?
+check "a STALE check is never reported as green" 0 "$out" $rc \
+  "[ci]  needs attention (skipped/neutral/stale): required-check" "![ci]  all checks green"
+
+# SKIPPED and NEUTRAL land in neither ci_fail nor ci_pass nor ci_pending, and the
+# classifier used to map that combination to a state the emitter had no case
+# for — the watch went quiet instead of saying anything, which reads as "still
+# the last thing I told you" rather than as the true, unclassified state.
+reset; bus_absent
+gh_tick 1 OPEN aaaaaaaa 0 0
+cat > "$state/gh_2.json" <<'EOF'
+{"state":"OPEN","headRefOid":"aaaaaaaa",
+ "statusCheckRollup":[{"name":"conditional-job","conclusion":"SKIPPED"}],
+ "reviews":[],"comments":[],"reviewDecision":""}
+EOF
+gh_tick 3 MERGED aaaaaaaa 0 0
+out=$(run); rc=$?
+check "a SKIPPED-only result speaks instead of going quiet" 0 "$out" $rc \
+  "[ci]  needs attention (skipped/neutral/stale): conditional-job"
+
+# The header comment promises the token never appears in anything this script
+# emits. That promise covers stdout; it does not by itself cover argv, which
+# `ps`/procfs expose to any other local user for as long as the process runs.
+reset; bus_listed
+bus_tick 1 clean 0 0 aaaaaaaa
+gh_tick 1 OPEN aaaaaaaa 0 0
+run --once --source bus >/dev/null 2>&1
+if grep -qzF 'fake-token' "$state/curl_argv.log" 2>/dev/null; then
+  failed=$((failed + 1)); printf '  FAIL  %s\n' 'bus token never appears in a curl argv'
+else
+  passed=$((passed + 1)); printf '  ok    %s\n' 'bus token never appears in a curl argv'
+fi
+if grep -qzF -- '-K' "$state/curl_argv.log" 2>/dev/null; then
+  passed=$((passed + 1)); printf '  ok    %s\n' 'bus auth travels via curl -K, not -H'
+else
+  failed=$((failed + 1)); printf '  FAIL  %s\n' 'bus auth travels via curl -K, not -H'
+fi
 
 echo
 echo "passed: $passed   failed: $failed"

@@ -69,10 +69,10 @@ can reach several. A ticket filed on a staging tracker is invisible to whoever w
 What is specific to this repo about crit — its contract is `../reviewers/crit.md` and is not
 repeated here. Usually two lines:
 
-- **The review state crit submits here and the merge signal.** In one repo crit submits as
-  `COMMENTED`, so GitHub never shows an approval and the merge is an admin merge on "CI green and
-  Crit approves at the current head". In another it submits real review states and is a code
-  owner, so its approval satisfies the branch rule. Say which, verified on one PR.
+- **The review state crit submits here and the merge signal.** Where `crit-ai` is a code owner
+  its approval satisfies the branch rule and `reviewDecision` reads `APPROVED`; where the rule
+  also needs a human approval, or crit submits only `COMMENTED`, the merge signal is something
+  else. Say which, verified on one merged PR, and say who merges.
 - **Where a nitpick report goes** when that differs from the Board line above.
 
 ## House rules

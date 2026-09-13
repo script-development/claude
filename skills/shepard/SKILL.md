@@ -6,9 +6,9 @@ description: >
   design calls, replies in every thread, pushes once, and arms a live watch on the PR. Use it
   whenever the user says "shepard", "shepherd this PR", "drive the PR", "fix ci", "make ci
   green", "watch ci", "monitor the PR", "keep pushing until green", "process the feedback on
-  <PR>", "answer the review", "the reviewer came back again", or right after /build-it opens a
-  PR. A repo's own tuned PR driver wins where one exists. Not for a read-only status summary of
-  a PR.
+  <PR>", "answer the review", "the reviewer came back again", or right after a PR is opened. A
+  repo's own PR driver under another name wins where one exists. Not for a read-only status
+  summary of a PR.
 argument-hint: "[PR number or branch name]"
 ---
 
@@ -39,12 +39,13 @@ Not inside a git repository — stop: *"shepard needs a git repo and a PR to dri
 Resolve the **repo name**: the last path segment of `git remote get-url origin` (strip `.git`); no
 remote, the toplevel directory's basename.
 
-**If the repo carries its own PR-driving skill, use that instead and say so.** Check
-`.claude/skills/` for one — a repo may ship its own, checked in and maintained for its whole team,
-carrying that repo's fix table, ticket board and gate commands. A repo's own skill beats this one
-every time; this skill exists for the repos that have none.
+**A repo may ship its own copy of this skill**, checked in under `.claude/skills/` with that
+repo's reference file beside it. When a checked-in copy and a user-level install both answer, the
+checked-in copy wins: its team maintains it. A repo that ships a PR driver under another name
+wins over this skill too; say so and hand over.
 
-Then read two reference files in this skill's directory:
+Then read two reference files in this skill's directory (`<skill dir>` below: `.claude/skills/shepard`
+for a checked-in copy, `~/.claude/skills/shepard` for a user-level install):
 
 - **`references/repos/<repo-name>.md`** — the repo: integration branch, gates, auto-fixers, board,
   merge signal, house rules. It overrides every default below. The catalog ships only
@@ -128,7 +129,7 @@ cost of preventing it was an unbounded wait on a reviewer that may not even be r
 #### 2a · CI
 
 ```bash
-~/.claude/skills/shepard/scripts/ci-failures.sh <PR>
+<skill dir>/scripts/ci-failures.sh <PR>
 ```
 
 One call replaces the status-check → run-ID → log-fetch dance. It is pure `gh` + `jq`, so it works
@@ -496,7 +497,7 @@ watching.
 Arm it with the **Monitor** tool, `persistent: true`, running this skill's watcher:
 
 ```bash
-~/.claude/skills/shepard/scripts/pr-watch.sh <PR-number>
+<skill dir>/scripts/pr-watch.sh <PR-number>
 ```
 
 Run it from the checkout this turn used, so `gh` resolves the right repo. Default tick is 30s;
@@ -519,6 +520,8 @@ The script prints one line per change, tagged `[ci]`, `[pr]`, `[bus]`, `[warn]`,
 line lands. The short version:
 
 - `[ci] FAILING`, `[bus] review` and `[pr] +N review(s)` mean a full cycle.
+- `[ci] needs attention` means a check finished without a verdict, or its result is for another
+  commit. Not green: read the check before treating CI as clean.
 - `[pr] head moved` means someone else pushed: re-snapshot before doing anything.
 - `STALE` on a verdict means it is about replaced code, not a result about the diff now.
 - `[warn]` means the watch is blind on that side: say so.
@@ -542,8 +545,8 @@ hand-back.
 ## When to hand off instead
 
 - **The repo has its own PR-driving skill** → use that. It knows the repo's gates and board.
-- **The answer is "replace the construct"** → that is new work, not a fix. `/grill-me` to align on
-  the design, then `/build-it`.
+- **The answer is "replace the construct"** → that is new work, not a fix. Hand it to the repo's
+  planning skill, which the repo file names; this loop pushes fixes.
 - **Merge conflicts** → resolve them yourself; this loop pushes fixes, it does not rebase.
 - **The user only wants to know where the PR stands** → read it back and post nothing. Do not arm a watch.
 - **The user says stop watching** → `TaskStop` the monitor for this PR and say so.

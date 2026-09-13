@@ -111,8 +111,9 @@ bus_resolve_id() {
   # honours status, limit and offset alone, so scanning is the only way to the id.
   local body id status
   for status in open in_review "done"; do
-    body=$(curl -sS --max-time 20 "$BUS_URL/api/review-requests?status=$status&limit=200" \
-      -H "authorization: Bearer $BUS_TOKEN" -H 'accept: application/json' 2>/dev/null) || continue
+    body=$(curl -sS --max-time 20 -K "$BUS_AUTH_CONFIG" \
+      "$BUS_URL/api/review-requests?status=$status&limit=200" \
+      -H 'accept: application/json' 2>/dev/null) || continue
     id=$(jq -r --arg url "$PR_URL" '.requests[]? | select(.pr_url == $url) | .id' <<<"$body" 2>/dev/null | head -1)
     [[ -n "$id" ]] && { echo "$id"; return 0; }
   done
@@ -147,16 +148,24 @@ gh_snapshot() {
         comments:   ((.comments // []) | length),
         ci_fail:    ([$checks[] | select(.c == "FAILURE" or .c == "TIMED_OUT" or .c == "CANCELLED" or .c == "ERROR" or .c == "ACTION_REQUIRED" or .c == "STARTUP_FAILURE") | .n] | sort | join(",")),
         ci_pending: ([$checks[] | select(.c == "PENDING" or .c == "IN_PROGRESS" or .c == "QUEUED" or .c == "EXPECTED")] | length),
-        ci_pass:    ([$checks[] | select(.c == "SUCCESS")] | length)
+        ci_pass:    ([$checks[] | select(.c == "SUCCESS")] | length),
+        # SKIPPED, NEUTRAL and STALE fall into none of the three buckets above — a
+        # completed check with one of these conclusions is neither a failure nor a
+        # pass. Left uncounted, it vanishes: with a passing sibling, ci_pass alone
+        # still selects GREEN, reporting a check whose result does not apply to
+        # this commit (STALE) or never ran to a verdict (SKIPPED/NEUTRAL) as clean.
+        ci_attn:    ([$checks[] | select(.c == "SKIPPED" or .c == "NEUTRAL" or .c == "STALE") | .n] | sort | join(","))
       }
-    | .ci_state = (if .ci_fail != "" then "RED" elif .ci_pending > 0 then "PENDING" elif .ci_pass > 0 then "GREEN" else "NONE" end)' <<<"$raw" 2>/dev/null
+    | .ci_state = (if .ci_fail != "" then "RED" elif .ci_pending > 0 then "PENDING"
+                   elif .ci_attn != "" then "ATTN" elif .ci_pass > 0 then "GREEN" else "NONE" end)' <<<"$raw" 2>/dev/null
 }
 
 bus_snapshot() {
   [[ -z "$BUS_TOKEN" || -z "$BUS_ID" ]] && return 1
   local raw
-  raw=$(curl -sS --max-time 20 "$BUS_URL/api/review-requests/$BUS_ID" \
-    -H "authorization: Bearer $BUS_TOKEN" -H 'accept: application/json' 2>/dev/null) || return 1
+  raw=$(curl -sS --max-time 20 -K "$BUS_AUTH_CONFIG" \
+    "$BUS_URL/api/review-requests/$BUS_ID" \
+    -H 'accept: application/json' 2>/dev/null) || return 1
   [[ -z "$raw" ]] && return 1
   jq -c '
     {
@@ -222,11 +231,17 @@ emit_changes() {
   # back to the queue, and the whole rollup going green. Jobs finishing one by one inside
   # PENDING say nothing. Bucketing an in-flight check as PENDING empties ci_fail while the
   # job is still red, so an emptied ci_fail alone must never print "cleared".
-  if changed ci_fail || changed ci_state; then
+  if changed ci_fail || changed ci_attn || changed ci_state; then
     case "${cur[ci_state]-}" in
       RED)     echo "[ci]  FAILING: ${cur[ci_fail]}  (pass ${cur[ci_pass]-?} · pending ${cur[ci_pending]-?})" ;;
       PENDING) [[ -n "${prev[ci_fail]-}" ]] && echo "[ci]  red checks re-running, not green yet (pass ${cur[ci_pass]-?} · pending ${cur[ci_pending]-?})" ;;
+      # Never green while a check is skipped, neutral or stale — a stale required
+      # check does not satisfy branch protection even with every sibling passing,
+      # and a skip is this classifier's only signal that a check never reached a
+      # verdict at all.
+      ATTN)    echo "[ci]  needs attention (skipped/neutral/stale): ${cur[ci_attn]}  (pass ${cur[ci_pass]-?})" ;;
       GREEN)   echo "[ci]  all checks green (pass ${cur[ci_pass]-?})" ;;
+      NONE)    echo "[ci]  no checks reported yet" ;;
     esac
   fi
   # The PR head is GitHub's alone and always reported: `bus_head` is the head the reviewer
@@ -257,12 +272,26 @@ ended=""
 
 on_exit() {
   rm -f "$GH_ERR"
+  [[ -n "$BUS_AUTH_CONFIG" ]] && rm -f "$BUS_AUTH_CONFIG"
   # Silence must never be the only report. Any end — killed, crashed, terminal —
   # says so on stdout, so a dead watch is distinguishable from a quiet PR.
   [[ -n "$ended" ]] && return
   echo "[end] watch on PR #${PR_NUMBER} stopped (signal or timeout) — not a PR outcome"
 }
 trap on_exit EXIT
+
+# The header's promise ("no line this script emits contains the token") covers stdout,
+# not argv: a token passed to curl via `-H` sits in this process's command line for the
+# run's whole duration, readable by any other local user through `ps` or
+# /proc/<pid>/cmdline. A curl config file read via `-K` keeps it out of argv; mode 600
+# and the EXIT trap above keep it off disk past this run. Created under the trap so a
+# kill between here and the first tick still removes it. (lokalekeuze #209, crit review)
+BUS_AUTH_CONFIG=""
+if [[ -n "$BUS_TOKEN" ]]; then
+  BUS_AUTH_CONFIG=$(mktemp "${TMPDIR:-/tmp}/pr-watch-auth.XXXXXX")
+  chmod 600 "$BUS_AUTH_CONFIG"
+  printf 'header = "authorization: Bearer %s"\n' "$BUS_TOKEN" > "$BUS_AUTH_CONFIG"
+fi
 
 # The bus row is created when the PR is DISPATCHED for review, and dispatch always lands
 # after the PR itself opens. A watch armed at PR-open time is therefore early BY DESIGN and
