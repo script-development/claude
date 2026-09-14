@@ -211,9 +211,13 @@ total_lines() {
 }
 
 lines_contain() {
+    # $fragment already had its own backticks stripped (line ~322); the target
+    # line needs the same treatment or a fragment can never match a backtick it
+    # would otherwise straddle -- see docs/design.md's citation-resolver section
+    # for the incident this fixed and why stripping only one side is the bug.
     local file=$1 fragment=$2 spec=$3 n content
     while IFS= read -r n; do
-        content=$(sed -n "${n}p" "$file")
+        content=$(sed -n "${n}p" "$file" | sed -E 's/`//g')
         case "$content" in *"$fragment"*) return 0 ;; esac
     done < <(referenced_lines "$spec")
     return 1
@@ -399,7 +403,7 @@ while IFS= read -r line || [ -n "$line" ]; do
                     "$display" "$resolved" "$lineref" "$fragment"
                 changed=$((changed + 1))
             fi
-        elif grep -qF -- "$fragment" "$target" 2>/dev/null; then
+        elif grep -qF -- "$fragment" <(sed -E 's/`//g' "$target") 2>/dev/null; then
             printf 'OK       %-58s → %s contains the cited content\n' \
                 "$display" "$resolved"
         else

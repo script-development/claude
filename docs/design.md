@@ -1243,6 +1243,105 @@ this list rather than by recollection.
   `skill_listing` — those are content-injection attachments, not the *paths* this flag moves. No
   design change follows from it either way.
 
+- **O10 — Route 5: replace `fat_turn` with a per-request bound by moving the write trigger onto
+  `PostToolUse`.** Prompted by `docs/measured.md` finding #18: a real `/implement-plan` turn added
+  ~549,482 resident tokens in one uninterrupted stretch (1,625 messages, one `promptId`, no `Stop`
+  event until the very end) — not merely above `fat_turn`'s calibrated tail (p95 59,367, corpus max
+  323,673, finding #15) but proof the quantity `fat_turn` bounds is not bounded at all for an
+  unattended "run to completion" skill. Nothing stops such a turn at any size, so no percentile of it
+  is a real guarantee, and since `Stop` only observes at turn boundaries ([D18](#d18)'s own
+  invariant), a turn with no boundary for tens of minutes is invisible to it for that entire span —
+  which is exactly what happened: the trigger was crossed silently partway through, and by the time
+  `Stop` finally fired the session had already blown past the gate too.
+
+  **The proposal.** Move the same arming check onto `PostToolUse`, firing after every tool call
+  rather than only at the true end of a turn. `hooks/handoff-write.sh`'s formula generalises
+  directly, substituting a new bound — `large_request`, the max resident delta a *single* tool-call
+  round-trip can add — for `fat_turn`, the max an *entire uninterrupted turn* can add:
+
+  ```
+  trigger = ceiling − 2·large_request − authoring_turn
+  gate    = resident + large_request + authoring_turn < ceiling
+  ```
+
+  Same derivation as [D18](#d18) — one term for the gate's own forward margin, one for the band
+  width an unobserved interval could leap — just at finer observation granularity. The payoff is not
+  only a smaller margin: `large_request` is plausibly an *actually bounded* quantity (a single tool
+  call's output is capped by the harness somewhere, in the neighbourhood of the flat 200,000-token
+  single-request ceiling finding #16 hit as a dead end), where finding #18 now shows `fat_turn` is
+  not. A bounded observation gap is what makes the `[trigger, gate)` argument sound at all; this
+  restores that soundness rather than merely shrinking a number that was never a safe bound to begin
+  with.
+
+  **What this does to the turn accounting — confirmed live, `docs/measured.md` finding #19.**
+  [D18](#d18)'s `authoring_turn` term assumes the write happens in a fresh, separate turn after
+  `Stop` — the interrupted turn has, by construction, already finished (`Stop` only fires once the
+  model produced a response with no further tool calls), so blocking there starts a genuinely new
+  turn, and `authoring_turn`'s corpus bound (finding #14, 13.7k–64.6k) applies to it directly,
+  followed by whatever ordinary turns the session runs afterward — [D19](#d19) explicitly tells a
+  hook-fired write to keep going with no `/clear`, so the `2·fat_turn` gap those subsequent turns
+  accumulate before real compaction is priced separately, via `expected_gap_tokens`, not by the
+  trigger/gate formula itself. `PostToolUse` fires mid-turn, before the model would otherwise stop,
+  and finding #19 confirms directly (not merely by analogy to `PreToolUse` deny) that the authoring
+  instruction folds into the *same* ongoing turn — every `user`-role record in the probe transcript,
+  before and after the block, carried one `promptId` — rather than spawning a break. This does not
+  change the `trigger`/`gate` arithmetic, which operates on resident token totals and grows
+  identically regardless of which turn a request is attributed to, but it does mean the gap
+  accumulated *after* the write is bounded by `large_request` rather than `fat_turn` — smaller by
+  construction, same direction as the margin itself.
+
+  **A candidate cost, raised and then refuted.** The first probe's blocking run showed a `"## Exited
+  Auto Mode"` reminder land right after the block fired — *"ask clarifying questions... rather than
+  making assumptions"*, the opposite disposition from what an unattended write-trigger needs. A
+  proper matched-pair re-run (`docs/measured.md` finding #19, 7 interleaved `block`/`allow` pairs,
+  order alternated to separate the hook from call position) refuted it: `"Exited Auto Mode"` tracked
+  whether `"Auto Mode Active"` had appeared at session start at all — 6 of 7 trials, matched exactly
+  in every one of 14 runs — regardless of whether the hook blocked, including all 4 non-blocking
+  trials in the first batch. Something about running several nested `claude -p` calls back-to-back
+  predicts `"Auto Mode Active"`'s own appearance (call position within the sequence, not the hook),
+  but the block itself does not cause the exit. Not a cost of Route 5.
+
+  **Prerequisites, in this order:**
+  1. **Verify the mechanism live** — **done**, `docs/measured.md` finding #19: `PostToolUse`
+     `decision:"block"` does deliver `reason` as the model's next instruction mid-turn; the resulting
+     work folds into the same turn (confirmed above); the session-scoped latch ([D17](#d17)'s own
+     `~/.claude/state/handoff-trigger/$session_id` file, the same mechanism) does suppress re-firing
+     on subsequent tool calls; and the one candidate cost this probe turned up (an auto-mode exit) is
+     refuted, not confirmed, by a follow-up matched-pair run. Nothing left open on this item.
+  2. **Measure `large_request`'s distribution** — finding #15's own corpus-mining method, at
+     per-request instead of per-turn granularity (max resident delta of one tool-call round-trip, not
+     one whole turn). Probe tooling for this kind of corpus mining lives in `mission_control`, not
+     this repo — extend what is there rather than writing a fresh one-off script here.
+  3. Only once that holds: decide whether Route 5 replaces [D18](#d18)'s `Stop`-based trigger, runs
+     alongside it, or is rejected the way [Route 4](#d17) was, for a cost this repo has not fully
+     priced — `PostToolUse` runs far more often than `Stop`, on the same order as the statusline's
+     own "~4× per tool call" hot path (line 509), so what it costs to keep that check pure is itself
+     unmeasured.
+
+- **O11 — `verify-citations.sh` stripped backticks from the citation's fragment but not from the
+  target line, so a markdown target could never match one that crossed a real backtick.** Found while
+  writing a handoff that cited `docs/design.md`/`docs/measured.md` directly, same session. The
+  fragment (the text after `|`) has its own backticks stripped deliberately — a citation author
+  writes `` `foo` `` for readability, and the literal match should not require reproducing that
+  decoration — but the target *line* was compared unstripped. Invisible for the script's whole life
+  until now: every citation target before this repo existed was source code (PHP/JS/Rust), which
+  never contains a literal backtick, so the asymmetry had nothing to bite. This repo's own docs are
+  markdown and are cited from handoffs routinely, and a fragment that has to cross a real backtick in
+  the target — citing `` replace `fat_turn` `` as `replace fat_turn` — reported CHANGED on a line
+  that had not changed at all: a false positive in a fail-closed gate, the exact failure mode O7's own
+  language calls worse than a missed one.
+
+  **Resolved, 2026-09-14** — strip backticks from the target content too, in both `lines_contain` and
+  the whole-file `grep -qF` branch (`lib/verify-citations.sh`). Four new regression assertions in
+  `lib/verify-citations.test.sh` ("v5" in that file's own regression history), all 62 passing; a real
+  content change (not just a backtick) is still caught, pinning that the fix does not turn the check
+  into a no-op. Left standing here rather than deleted, because the generalisable part is the shape of
+  the bug, not the fix: a resolver that strips formatting from one side of a comparison and not the
+  other works by accident until something finally exercises the un-stripped side. Not yet flowed back
+  to Kendo's independent copy of this script (`mission_control`'s `upstream-feedback/kendo.md`, the
+  same mechanism [O8](#open-questions) used for the prior gap) — a follow-up, not done as part of
+  this fix.
+
 ---
 
 ## Build order

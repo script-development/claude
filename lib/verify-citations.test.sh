@@ -18,6 +18,16 @@
 #       because the line rule used GNU-only BRE `\+`. Note the shape: v4 is the
 #       first entry no fixture below can catch, since CI's sed is the one that
 #       works. It is pinned statically under "Portability" instead.
+#   v5  reported a real, unchanged line in a MARKDOWN target as CHANGED whenever
+#       the cited fragment had to cross a backtick the target actually has —
+#       the fragment gets its own backticks stripped (so a citation author can
+#       write `` `foo` `` for readability without the literal match caring),
+#       but the target line never got the same treatment, so the two could not
+#       line up. Invisible against every fixture above because none of them are
+#       markdown: this repo's own docs (`docs/design.md`, `docs/measured.md`)
+#       are cited from handoffs constantly and are exactly the shape that hits
+#       it. Fixed by stripping backticks from the target side too, in both the
+#       per-line and whole-file checks.
 #
 # Both directions matter and both are pinned here. A missed phantom costs a
 # reviewer round; a false MISSING teaches the author the gate is wrong and can
@@ -144,6 +154,13 @@ MD
 cat > "$fixture/site/legacy.html" <<'HTML'
 <p>The old docs mentioned PhantomInGeneratedProse.</p>
 HTML
+
+# v5 fixture: a markdown target whose real content has literal backticks. Line 1
+# is the one under test; line 2 exists only so the file has more than one line.
+cat > "$fixture/docs/markdown-with-backticks.md" <<'MD'
+The write trigger checks `fat_turn` before firing.
+Second line, unrelated.
+MD
 
 printf 'PK\003\004\000\000binary\000payload\000' > "$fixture/assets/logo.bin"
 : > "$fixture/backend/app/Empty.php"
@@ -304,6 +321,26 @@ assert_verdict OK 'app/Helpers/Mention.php:109 | return $matches[1];' \
 assert_verdict OK 'src/shared/:42'      'line reference on a directory is not checked'
 assert_verdict OK 'assets/logo.bin:42'  'line reference into a binary file is not checked'
 assert_verdict CHANGED 'app/Empty.php:1' 'line reference into an empty file'
+
+echo
+echo "Backticks in the cited target itself (v5)"
+# The target's real line is: The write trigger checks `fat_turn` before firing.
+# Fragment crosses both backticks -- CHANGED before the fix, since only the
+# fragment's own backticks were stripped and the target's were not.
+assert_verdict OK 'docs/markdown-with-backticks.md:1 | checks fat_turn before' \
+    'fragment spanning a backtick-quoted word, line-referenced'
+# Same fragment, no line reference -- exercises the whole-file grep branch,
+# which needed its own fix independent of lines_contain.
+assert_verdict OK 'docs/markdown-with-backticks.md | checks fat_turn before' \
+    'fragment spanning a backtick-quoted word, whole-file'
+# A fragment that never touches a backtick worked even before the fix --
+# pins that the fix did not change this case.
+assert_verdict OK 'docs/markdown-with-backticks.md:1 | write trigger checks' \
+    'fragment not touching a backtick still resolves'
+# A genuinely absent fragment must still report CHANGED -- pins that stripping
+# backticks did not turn the check into a no-op.
+assert_verdict CHANGED 'docs/markdown-with-backticks.md:1 | checks slow_turn before' \
+    'a real content change is still caught after stripping backticks'
 
 echo
 echo "Normalising how citations get pasted"

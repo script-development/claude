@@ -1403,3 +1403,194 @@ any other model.
 # plus the window delta as the starting guess, rather than re-bisecting from scratch.
 # Delete the scratch project and its ~/.claude/projects/*/ transcript directory afterward.
 ```
+
+---
+
+## Finding #18, 2026-09-14 — a single unattended `/implement-plan` turn added ~549k resident tokens, blowing past `fat_turn`'s calibrated band by more than an order of magnitude; the write trigger declined exactly as D18 predicted, on what looks like its first real firing
+
+**Question.** D18's invariant (`docs/design.md:1000-1001`) rests on a specific claim: "since `Stop`
+only observes at turn boundaries, a turn no larger than `fat_turn` cannot leap the band unseen" —
+and its converse, left untested until now, is that a turn *larger* than `fat_turn` can. Finding #15
+measured the corpus's mid-session tail (`p95` 59,367, max 323,673) from turns that had already
+completed and logged, flagging a survivorship gap: "a turn that grew large enough to race an actual
+compaction may be underrepresented." This is that turn, caught live rather than mined after the
+fact, and it asks whether the decline path (`hooks/handoff-write.sh:284-293`) actually fires the way
+its comment describes when a real one happens.
+
+**Method.** Not a designed probe — an incident, noticed live and analyzed post hoc from the
+production transcript
+(`~/.claude/projects/c--Users-Bart-Documents-GitHub-kendo/ca7cdaa6-c2b4-471d-8820-b32e17831b4f.jsonl`,
+kendo project, session `ca7cdaa6-c2b4-471d-8820-b32e17831b4f`, 2026-09-14, `/implement-plan` on
+KD-1472). Same extraction the real hooks use: `jq` over `message.usage`, resident =
+`input_tokens + cache_creation_input_tokens + cache_read_input_tokens`, last record per turn.
+Turn boundary confirmed two ways — every assistant record from the first API call to the Stop event
+carries the identical `promptId` (`0dcedf87-473e-41fd-9137-f1234bf56176`), and the session's sole
+`type:"system", subtype:"turn_duration"` record reports `messageCount:1625` for that one turn.
+
+**Result.** The session was a single `Stop`-hook turn from cold start to completion. `/clear` at
+08:43:19, `/implement-plan` invoked at 08:43:33, first API call's resident 89,885 (08:43:42, mostly
+reused cache from before the clear), last API call's resident 639,367 (08:14:59 / 09:14:59), one
+`Stop` event at 09:15:00.222 — the *only* `hookName:"Stop"` record in the whole transcript.
+`turn_duration` logs `durationMs:1,885,429` (~31.4 min) and `messageCount:1625` for that span.
+**Single-turn delta: ~549,482 tokens** (639,367 − 89,885). Sampling the intervening per-call
+`message.usage` records shows this was a smooth, monotonic climb (e.g. 288,572 → 305,320 → 313,105 →
+333,553 → … → 635,263 → 636,279 → 637,715 → 639,367) — no anomalous single-call spike, just ~1,625
+ordinary increments compounding with no turn boundary in between to observe any of them.
+
+This machine's active constants (the plugin cache's `context-economy` 0.3.0 build) had `fat_turn`
+locally reduced from the checked-in 60,000 to 30,000, and `authoring_turn` from 65,000 to 32,500,
+with `CTX_COMPACT_THRESHOLD_TOKENS=400,000` declared via `~/.claude/settings.json`. Trigger
+`= 400,000 − 2·30,000 − 32,500 = 307,500`; need at Stop `= 639,367 + 30,000 + 32,500 = 701,867 >
+400,000` (ceiling). The hook declined via its `need >= ceiling` branch
+(`hooks/handoff-write.sh:284-293`), reporting exactly this arithmetic
+("declined to arm at 639k... single turn appears to have jumped past the 307k trigger point"). No
+earlier Stop event ever ran to observe resident crossing 307,500 partway through — the turn carried
+straight through the entire `[trigger, gate)` band, and the band itself (one `fat_turn` wide, 30,000
+at this machine's configuration) was smaller than the single-turn delta by more than 18×.
+
+**What this settles.** The invariant's converse, previously only reasoned about, is now observed
+directly: a turn far larger than `fat_turn` does leap the `[trigger, gate)` band unseen, and the
+decline path fires exactly as designed when it does — no stale handoff was produced, one loud
+message was, matching `docs/design.md`'s stated preference ("the failure is one loud message and a
+manual `/handoff`, never a handoff authored from a summary"). It also sharpens finding #15's own
+caveat about survivorship: the corpus's mid-session max (323,673, 259 tool calls) is not a ceiling on
+how large an unattended turn can get — this one ran to 1,625 messages and ~549k tokens of growth,
+nearly double the entire measured corpus's max in a single instance, with nothing in `/implement-plan`
+or the harness itself imposing a bound. Turn size for a "run a plan to completion" skill is not
+merely heavy-tailed within finding #15's range; it is effectively unbounded, which is a different
+(and harder) property than a wider percentile can fix.
+
+**What this does not settle.** n=1 — one session, one skill (`/implement-plan`), one repo. Whether a
+turn this large is a rare extreme or a recurring shape for autonomous "implement this whole plan"
+skills is unmeasured; finding #15's corpus (724 mid-session turns, 48 sessions, 4 projects) contains
+nothing near this size, so this single data point cannot say whether it belongs in that
+distribution's tail or represents a distinct population (bounded checklist-style turns vs.
+open-ended "run to completion" turns) that corpus didn't sample. The specific figures (307,500
+trigger, 701,867 need) are particular to this machine's locally-edited constants and declared
+ceiling, not the checked-in defaults (`fat_turn` 60,000, `authoring_turn` 65,000, ceiling 887,000) —
+a different configuration would decline at different numbers, though the qualitative result (the
+single-turn delta dwarfs any plausible `fat_turn` calibration) does not depend on which configuration
+was active. And this incident cannot distinguish whether the fix belongs in `context-economy` at all
+(a higher-frequency, non-blocking observation point) versus in the calling skill (bounding how long
+`/implement-plan`-shaped work is allowed to run before yielding a turn boundary) — see the open
+question this prompted in `docs/design.md`.
+
+### Reproduction
+
+Not a synthesized probe — re-derive from a real transcript that exhibits the same shape:
+
+```
+# Given a transcript path suspected of containing one very long turn:
+jq -r 'select(.message.usage != null) | .message.usage
+       | (.input_tokens // 0) + (.cache_creation_input_tokens // 0)
+         + (.cache_read_input_tokens // 0)' <transcript.jsonl>
+# Diff first vs. last value between two type:"system" subtype:"turn_duration" records
+# (or cold start and the first such record, for a session's opening turn) to get the
+# single-turn resident delta. Cross-check messageCount/durationMs on that same record.
+# Confirm the turn boundary by checking every assistant record in the span shares one promptId.
+```
+
+No script was saved — this was found by inspecting one specific incident's transcript, not by a
+scan; a corpus-wide version of this query (largest single-turn resident delta per session, compared
+against each session's own `fat_turn` at the time) would be the natural follow-up if this shape
+turns out to recur.
+
+---
+
+## Finding #19, 2026-09-14 — `PostToolUse` `decision:"block"` delivers `reason` as an instruction mid-turn, folds into the same turn, and a session latch suppresses re-firing; confirmed live, and a side observation raised then refuted
+
+**Question.** `docs/design.md` O10 (Route 5) rested on three claims reasoned from documented hook
+semantics but never confirmed live: (1) `PostToolUse` returning `decision:"block"` actually delivers
+`reason` to the model as something it treats as an instruction, not a passive log entry; (2) the
+resulting work folds into the *same* ongoing turn (same `promptId`) rather than the harness spawning
+a fresh one, the way `Stop`'s `stop_hook_active` re-entry flag implies happens there; and (3) a
+session-scoped on-disk latch (the same mechanism `hooks/handoff-write.sh` already uses) can suppress
+the block from re-firing on every subsequent tool call once armed. This asks whether all three hold,
+same discipline as findings #13/#16/#17: verify before trusting documentation.
+
+**Method.** Same probe shape as those findings — isolated scratch project, `.claude/settings.json`
+registering a `PostToolUse` hook (matcher `""`, fires after every tool call) — but the hook itself
+carries the thing under test rather than merely logging: on first firing it writes an on-disk latch
+and returns `{"decision":"block","reason":"PROBE-MARKER-7Q2: ...say the single word BANANAFISH...
+then continue exactly what you were doing"}`; on every firing after the latch exists, it exits 0
+silently. The `claude -p` prompt explicitly forced three separate, un-combined `Bash` tool calls
+(`echo step1`/`step2`/`step3`) so the hook would fire three times in one session.
+`claude-haiku-4-5-20251001`, fixed `--session-id`, `--allowedTools "Bash(echo *)"` (narrower than a
+full permission bypass, which trips this harness's own "Create Unsafe Agents" auto-mode classifier —
+a dead end worth naming: `--permission-mode bypassPermissions` on a nested `claude -p` call was
+refused outright). A second, control run used an identical setup but a hook that only logs and
+always exits 0 (never blocks), to check one incidental observation (below) for confounds — that
+single control was inconclusive (see below), so a follow-up batch reran it properly: a fresh scratch
+project, 7 interleaved `block`/`allow` pairs (14 `claude -p` calls total), the condition order
+alternated across pairs (`block`-then-`allow` for some pairs, `allow`-then-`block` for others) so a
+call-position effect couldn't masquerade as a condition effect, each trial grepping its own
+transcript for `"Auto Mode Active"`/`"Exited Auto Mode"` counts. CLI 2.1.270 throughout. ~$0.45
+total across both batches (16 calls). Both scratch projects and their transcript directories deleted
+immediately after each batch — no on-disk artifact to cite by `path:line`, re-derive via the method
+above.
+
+**Result — all three claims confirmed.**
+
+1. **`reason` reaches the model and is treated as an instruction.** The block rendered into the
+   transcript as a `<system-reminder>` attachment immediately after the tool's own result:
+   `"PostToolUse:Bash hook blocking error from command: ...: PROBE-MARKER-7Q2: before your next tool
+   call, say the single word BANANAFISH..."`. The model's very next output was the standalone text
+   `"BANANAFISH"`, then it resumed exactly where it left off (`echo step2`). Framing matters for real
+   deployment: the harness reports this as a *"hook blocking error from command"*, not a clean
+   freestanding instruction — `reason` text for a real write-trigger should be worded so the model
+   does not read it as "the tool call itself just failed."
+2. **It folds into the same turn.** Every `user`-role record in the transcript (the real prompt and
+   all three tool_results) carries the identical `promptId` — no new synthetic user turn was created
+   around the block. This confirms O10's inference for `PostToolUse` specifically; `Stop`'s own
+   block mechanism was not exercised here (the kendo session finding #18 mined declined rather than
+   fired) and remains unconfirmed live for that hook.
+3. **The on-disk latch suppresses re-firing.** The hook's own log shows it was invoked on all three
+   tool calls, but the block (and the model's BANANAFISH reply) appeared only once — the second and
+   third `echo` calls proceeded with no further interruption.
+
+**A side observation, raised and then refuted by a matched-pair re-run the same day.** The first
+blocking run's transcript showed a `"## Auto Mode Active"` reminder at session start and, right after
+the block fired, a `"## Exited Auto Mode"` reminder — *"ask clarifying questions... rather than
+making assumptions,"* the opposite disposition from what an unattended write-trigger needs. The
+control run available at the time never showed `"Auto Mode Active"` at all, so it could not isolate
+cause — flagged as unconfirmed pending a matched re-run. That re-run (7 interleaved pairs, 14 calls
+total, `block`/`allow` order alternated across pairs to separate the hook's effect from call
+position): **`"Exited Auto Mode"` appeared in every single trial where `"Auto Mode Active"` appeared
+at all — 6 of 7 — regardless of condition, including 4 of 4 non-blocking `allow` trials**, and never
+appeared when `"Active"` had not. The two counts matched exactly in all 14 runs; not one trial showed
+`active=1, exited=0` or the reverse. **The block does not cause the exit — refuted.** What actually
+predicted whether `"Auto Mode Active"` showed up at all was call *position* within the rapid
+back-to-back sequence of nested `claude -p` calls (2nd call in a pair: active in 6/7; 1st call: active
+in 2/7) — some artifact of running many nested prints in quick succession, unrelated to hooks
+entirely, and out of scope for what this probe set out to answer. Not chased further; it does not
+bear on Route 5.
+
+**What this does not settle.** n=1 for the three confirmed mechanism claims (one session, three tool
+calls, one model, one hook ordering) — the auto-mode question specifically was the one re-run at
+higher n (14 calls) precisely because the first pass was inconclusive. Whether "folds into the same
+turn" generalizes to a block fired deep into a long-running turn with many prior tool calls, rather
+than the third call of a fresh session, remains untested. The call-position artifact behind
+`"Auto Mode Active"`'s own appearance is unexplained and was not investigated beyond confirming it is
+not the hook's doing.
+
+### Reproduction
+
+```
+# Scratch project, .claude/settings.json: PostToolUse hook, matcher "", command:
+#   on first firing: write a latch file, then
+#     jq -n '{"decision":"block","reason":"<marker instruction>"}'
+#   on every firing after: exit 0
+# claude -p "<prompt forcing 3+ separate, uncombined tool calls>" --model claude-haiku-4-5-20251001
+#   --session-id <fixed-uuid> --allowedTools "Bash(echo *)" --output-format json
+# Inspect the resulting transcript: does the block's `reason` appear before the model's next
+# assistant message; does the model's next output reflect it; do all user-role records (real
+# prompt + tool_results) share one promptId; does a second/third tool call re-trigger the block.
+#
+# For the auto-mode question specifically, a single matched pair is not enough (a single control
+# without "Auto Mode Active" at all isn't a valid comparison): run several interleaved block/allow
+# pairs, alternating which condition goes first within each pair, and grep each transcript for
+# "Auto Mode Active" / "Exited Auto Mode" counts. If the two counts move together regardless of
+# condition (as found here), call position -- not the hook -- is the confound; only trust a
+# block-causes-exit conclusion if exited tracks condition once active-at-start is held fixed.
+# Delete the scratch project and its ~/.claude/projects/*/ transcript directory afterward.
+```
