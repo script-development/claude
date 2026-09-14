@@ -5,6 +5,38 @@ incrementally — see `RELEASING.md` for why. Format follows [Keep a Changelog](
 versioning follows [Semantic Versioning](https://semver.org/), scoped to this plugin's own
 convention in `RELEASING.md`.
 
+## [0.3.1] - 2026-09-14
+
+### Fixed
+
+- **`lib/verify-citations.sh` stripped backticks from a citation's fragment but not from the target
+  line, so a markdown target could never match a fragment that crossed a real backtick**
+  (`docs/design.md` O11). Invisible for the script's whole life until now — every prior citation
+  target was source code, which never contains a literal backtick — but this repo's own docs
+  (`docs/design.md`, `docs/measured.md`) are markdown and are cited from handoffs routinely. A
+  fragment crossing a real backtick in the target reported CHANGED on a line that had not changed
+  at all. Fixed by stripping backticks from the target too, in both the per-line and whole-file
+  checks; four new regression assertions in `lib/verify-citations.test.sh`.
+
+### Added
+
+- **`docs/design.md` O10**: a proposed "Route 5" for the automatic handoff trigger — move the
+  arming check from `Stop` (which only observes at true turn boundaries) onto `PostToolUse` (which
+  fires after every tool call), replacing `fat_turn` (a whole uninterrupted turn's growth, shown
+  unbounded by finding #18) with `large_request` (one tool-call round-trip's growth, plausibly
+  bounded). Mechanism confirmed live (`docs/measured.md` finding #19): `PostToolUse`
+  `decision:"block"` does deliver `reason` as the model's next instruction mid-turn, folds into the
+  same turn, and a session latch suppresses re-firing; one candidate cost (an "Exited Auto Mode"
+  side effect) was raised and then refuted by a matched-pair re-run. Not yet built — the remaining
+  prerequisite is measuring `large_request`'s real distribution.
+- `docs/measured.md` finding #18: a real, unattended `/implement-plan` turn added ~549k resident
+  tokens in one uninterrupted stretch (1,625 messages, one turn) — the incident that prompted Route
+  5, and confirmation that the automatic write-trigger's own `[trigger, gate)` invariant can be
+  leapt unseen when a turn has no boundary for that long. The hook's decline in that case (rather
+  than a stale write) was exactly the designed-safe outcome, not a bug.
+- `docs/measured.md` finding #19: live verification of the `PostToolUse` mechanism above, plus the
+  matched-pair probe that refuted the auto-mode side effect.
+
 ## [0.3.0] - 2026-09-11
 
 ### Changed
