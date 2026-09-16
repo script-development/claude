@@ -269,12 +269,13 @@ elif [ "$source_kind" = compact ]; then
         if [ -e "$sidecar" ] && jq -e . "$sidecar" >/dev/null 2>&1; then
             r=$(jq -r '.written_at_tokens // empty' "$sidecar" 2>/dev/null | tr -d '\r')
             case "${r:-}" in ''|*[!0-9]*) ;; *) sidecar_present=true; sc_written_at_tokens=$r ;; esac
-            # The gap the WRITER deliberately reserved, when it recorded one (D18). An
-            # automatically written handoff lands ~2*fat_turn below the ceiling by construction,
-            # so judging it against CTX_HANDOFF_ACCEPTABLE_GAP_TOKENS alone would flag it as
-            # stale every time for doing exactly what it was designed to do. Absent -- a sidecar
-            # written before D18 -- leaves the constant in sole charge, which is the old
-            # behaviour and errs toward flagging: the safe direction for a verdict.
+            # The gap the WRITER deliberately reserved, when it recorded one (D18, corrected for
+            # Route 5). An automatically written handoff lands up to `2*large_request +
+            # authoring_turn` below the ceiling by construction (see hooks/handoff-write.sh's own
+            # derivation of that figure), so judging it against CTX_HANDOFF_ACCEPTABLE_GAP_TOKENS
+            # alone would flag it as stale every time for doing exactly what it was designed to do.
+            # Absent -- a sidecar written before D18 -- leaves the constant in sole charge, which
+            # is the old behaviour and errs toward flagging: the safe direction for a verdict.
             e=$(jq -r '.expected_gap_tokens // empty' "$sidecar" 2>/dev/null | tr -d '\r')
             case "${e:-}" in ''|*[!0-9]*) ;; *) sc_expected_gap=$e ;; esac
         fi

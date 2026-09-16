@@ -28,6 +28,11 @@
 #   h5  a DECLINE must latch too. It was silent-but-unlatched in the first draft, which meant the
 #       "ceiling unknown" message reappeared at every turn boundary for the rest of the session --
 #       the exact nag-fatigue the fire path was careful to avoid.
+#   h6  Route 5 (2026-09-16): this script is now registered on BOTH `PostToolUse` and `Stop`, same
+#       arithmetic, same latch. A `PostToolUse` payload carries no `stop_hook_active` field at all
+#       -- it must behave identically to a `Stop` payload with that field false, not require it,
+#       and the shared latch must block a second fire regardless of which of the two events the
+#       first one came from.
 #
 # No framework, matching the sibling verify-*.test.sh suites. Run it as:
 #
@@ -63,7 +68,7 @@ write_thresholds() {  # write_thresholds <path> [compact_threshold_value]
 CTX_NOTICE_TOKENS=120000
 CTX_URGE_TOKENS=200000
 CTX_COMPACT_THRESHOLD_TOKENS=${2:-}
-CTX_FAT_TURN_TOKENS=50000
+CTX_LARGE_REQUEST_TOKENS=50000
 CTX_AUTHORING_TURN_TOKENS=30000
 CTX_1M_COMPACT_THRESHOLD_TOKENS=887000
 EOF
@@ -118,7 +123,7 @@ next_session_id() {
     printf 'sess-auto-%s' "$n"
 }
 
-payload() {  # payload <transcript> [session_id] [stop_hook_active] [extra-jq-object]
+payload() {  # payload <transcript> [session_id] [stop_hook_active] [extra-jq-object] [hook_event_name]
     # `extra` is assigned rather than defaulted inline: `${4:-{}}` splits at the first `}`, so
     # the default closes early and every caller that DID pass an object got a stray brace
     # appended. It failed loudly here, but the same expression in the subject would have been a
@@ -127,9 +132,18 @@ payload() {  # payload <transcript> [session_id] [stop_hook_active] [extra-jq-ob
     [ $# -ge 4 ] && extra="$4"
     local sid="${2:-}"
     [ -n "$sid" ] || sid=$(next_session_id)
-    jq -nc --arg t "$1" --arg s "$sid" --argjson a "${3:-false}" \
-        '{session_id: $s, transcript_path: $t, hook_event_name: "Stop", stop_hook_active: $a}' \
-        | jq -c ". + ($extra)"
+    # h6 — a real PostToolUse payload carries no stop_hook_active field AT ALL (F5's base
+    # schema), not a false one. Omitted here rather than defaulted, so a case that asks for it
+    # exercises the actual shape rather than a stand-in.
+    if [ "${5:-Stop}" = "PostToolUse" ]; then
+        jq -nc --arg t "$1" --arg s "$sid" \
+            '{session_id: $s, transcript_path: $t, hook_event_name: "PostToolUse"}' \
+            | jq -c ". + ($extra)"
+    else
+        jq -nc --arg t "$1" --arg s "$sid" --argjson a "${3:-false}" \
+            '{session_id: $s, transcript_path: $t, hook_event_name: "Stop", stop_hook_active: $a}' \
+            | jq -c ". + ($extra)"
+    fi
 }
 
 # --- Runner ----------------------------------------------------------------
@@ -177,10 +191,11 @@ reset_latches() { rm -rf "$fixture/home/.claude/state"; }
 
 # --- Below the trigger -----------------------------------------------------
 #
-# THE ARITHMETIC EVERY CASE BELOW DEPENDS ON (D18). The trigger is derived, so a fixture's ceiling
-# and its resident size are no longer independent knobs — picking one constrains the other, and a
-# case that looks like it should fire will silently not if the pair is wrong. Against the fixture
-# thresholds (fat 50,000, authoring 30,000, notice 120,000):
+# THE ARITHMETIC EVERY CASE BELOW DEPENDS ON (D18, Route 5). The trigger is derived, so a
+# fixture's ceiling and its resident size are no longer independent knobs — picking one
+# constrains the other, and a case that looks like it should fire will silently not if the pair
+# is wrong. Against the fixture thresholds (large_request 50,000, authoring 30,000, notice
+# 120,000):
 #
 #     trigger = ceiling - 2*50000 - 30000 = ceiling - 130000      fire at or above
 #     gate    = resident + 50000 + 30000  <  ceiling              else decline
@@ -271,8 +286,8 @@ assert_field 'a floor decline never blocks' \
 #
 # need = 250000 + 50000 + 30000 = 330000. These two ceilings both put the trigger BELOW the
 # resident size (330000-130000 = 200000, and 200001), so the trigger is satisfied and the gate is
-# what decides — which is the only way to reach the gate at all now that the trigger sits one fat
-# turn beneath it. Reaching it means a single turn jumped the whole band.
+# what decides — which is the only way to reach the gate at all now that the trigger sits one
+# large_request beneath it. Reaching it means a single observation gap jumped the whole band.
 reset_latches
 assert_field 'headroom exactly equal to the ceiling declines' \
     '.decision' 'null' "$(payload "$deep")" CTX_COMPACT_THRESHOLD_TOKENS=330000
@@ -360,6 +375,33 @@ reset_latches
 assert_silent 'stop_hook_active falls through rather than blocking again' \
     "$(payload "$deep" sess-1 true)" CTX_COMPACT_THRESHOLD_TOKENS=380000
 
+# h6 — Route 5: the same script, registered on PostToolUse as well as Stop, must behave
+# identically either way and share one latch across both.
+reset_latches
+assert_field 'a PostToolUse payload fires the same as a Stop payload' \
+    '.decision' 'block' "$(payload "$deep" sess-ptu-fire false '{}' PostToolUse)" \
+    CTX_COMPACT_THRESHOLD_TOKENS=380000
+
+reset_latches
+assert_field 'a PostToolUse decline behaves the same as a Stop decline' \
+    '.decision' 'null' "$(payload "$deep_no1m" sess-ptu-decline false '{}' PostToolUse)"
+reset_latches
+assert_contains 'and names the same missing signal' \
+    '.systemMessage' 'ceiling is unknown' "$(payload "$deep_no1m" sess-ptu-decline false '{}' PostToolUse)"
+
+# Arrange — fire via Stop, so the latch is set from that event.
+reset_latches
+run "$(payload "$deep" sess-cross-1)" CTX_COMPACT_THRESHOLD_TOKENS=380000 >/dev/null
+# Act & Assert — a PostToolUse payload for the SAME session must see the shared latch.
+assert_silent 'a PostToolUse payload does not re-fire after Stop already fired this session' \
+    "$(payload "$deep" sess-cross-1 false '{}' PostToolUse)" CTX_COMPACT_THRESHOLD_TOKENS=380000
+
+# And the reverse: fire via PostToolUse, then Stop for the same session must see the latch too.
+reset_latches
+run "$(payload "$deep" sess-cross-2 false '{}' PostToolUse)" CTX_COMPACT_THRESHOLD_TOKENS=380000 >/dev/null
+assert_silent 'a Stop payload does not re-fire after PostToolUse already fired this session' \
+    "$(payload "$deep" sess-cross-2)" CTX_COMPACT_THRESHOLD_TOKENS=380000
+
 # --- Background work -------------------------------------------------------
 #
 # Backgrounded work survives a /clear and reports into the FRESH session, which has no idea what
@@ -442,10 +484,12 @@ if [ -e "$(sidecar_file sess-sc-1)" ]; then
         failed=$((failed + 1)); echo "FAIL written_at_tokens is the resident size at that Stop — got [$got]"
     fi
     # D18 — the gap the trigger reserved on purpose, so the read leg can tell nominal distance
-    # from real staleness. 2 * the fixture's fat turn (50,000), and it must be the WRITER's number
+    # from real staleness. `2*large_request + authoring_turn` (the TRUE worst-case ceiling of the
+    # reserved band, not `2*large_request` alone — see hooks/handoff-write.sh's own derivation):
+    # 2*50,000 + 30,000 = 130,000 against the fixture's own constants. Must be the WRITER's number
     # rather than something the reader recomputes: only this side knows which trigger fired.
     got=$(jq -r '.expected_gap_tokens' "$(sidecar_file sess-sc-1)" 2>/dev/null)
-    if [ "$got" = "100000" ]; then
+    if [ "$got" = "130000" ]; then
         passed=$((passed + 1)); echo "ok   expected_gap_tokens records the band the trigger reserved"
     else
         failed=$((failed + 1)); echo "FAIL expected_gap_tokens records the band the trigger reserved — got [$got]"

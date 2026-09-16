@@ -1308,15 +1308,74 @@ this list rather than by recollection.
      `~/.claude/state/handoff-trigger/$session_id` file, the same mechanism) does suppress re-firing
      on subsequent tool calls; and the one candidate cost this probe turned up (an auto-mode exit) is
      refuted, not confirmed, by a follow-up matched-pair run. Nothing left open on this item.
-  2. **Measure `large_request`'s distribution** — finding #15's own corpus-mining method, at
-     per-request instead of per-turn granularity (max resident delta of one tool-call round-trip, not
-     one whole turn). Probe tooling for this kind of corpus mining lives in `mission_control`, not
-     this repo — extend what is there rather than writing a fresh one-off script here.
+  2. **Measure `large_request`'s distribution** — **done**, 2026-09-16, `docs/measured.md` finding
+     #20. The `mission_control` tooling this item pointed at turned out not to exist (findings
+     #14/#15 both say no script was saved), so this is a fresh script,
+     `tools/measure-large-request.js`, at per-request instead of per-turn granularity: max resident
+     delta between two consecutive tool-call-bearing assistant responses (the actual `PostToolUse`
+     observation points), not one whole turn. Result: a real, much tighter quantity than `fat_turn`
+     at every percentile (combined max 142,188 vs. `fat_turn`'s mid-session max 323,673 and finding
+     #18's ~549k outlier) — but it splits into two populations that must not be pooled, exactly as
+     finding #15's zero-baseline/mid-session split warned: **within-turn** deltas (n=449, p99 19,654,
+     max 55,309) if `Stop` keeps observing every real turn boundary and `PostToolUse` only covers
+     the gaps inside one, versus **combined** deltas including a crossed turn boundary (n=563, p99
+     55,309, max 142,188) if `PostToolUse` becomes the only observation mechanism. Which figure
+     `large_request` should actually be sized at is exactly prerequisite 3's question, not something
+     this measurement can answer on its own.
   3. Only once that holds: decide whether Route 5 replaces [D18](#d18)'s `Stop`-based trigger, runs
      alongside it, or is rejected the way [Route 4](#d17) was, for a cost this repo has not fully
      priced — `PostToolUse` runs far more often than `Stop`, on the same order as the statusline's
      own "~4× per tool call" hot path (line 509), so what it costs to keep that check pure is itself
-     unmeasured.
+     unmeasured. **Done — replace, not alongside.** No advantage was found in running both triggers
+     as separate systems with their own margins; `Stop` stays registered, but only as the
+     zero-tool-call-turn backstop running the *same* check against the *same* constant and latch as
+     `PostToolUse`, not a second system (see `context-thresholds.sh`'s arming block). Shipped as
+     v0.4: `hooks/hooks.json` registers both events on `handoff-write.sh`; tail-bounded transcript
+     reads (`RESIDENT_TAIL_BYTES`) keep the added `PostToolUse` frequency cheap instead of a
+     full-file `jq` scan on every tool call.
+
+  **Constants set, not derived (2026-09-16).** Both `CTX_LARGE_REQUEST_TOKENS` and
+  `CTX_AUTHORING_TURN_TOKENS` were taken at a corpus max on the theory that a worst-case bound is
+  free to oversize — "too large costs nothing" beyond wasted margin. Challenged on two counts, and
+  both held up: (1) an oversized bound is not free — it widens `2·large_request + authoring_turn`,
+  the gap an auto-written handoff leaves before real compaction, and that gap turned out to
+  dominate the *typical* case (using the corpus's own medians, ~328,000 of the ~355,000 worst-case
+  band went unspent), not just the worst one; (2) the corpus behind both maxes (findings #14, #20)
+  was small and skewed toward this repo's own meta/tooling work (context-economy, mission-control)
+  rather than representative day-to-day engineering (kendo, kendo-2) — of finding #14's 20 samples,
+  the four smallest (13,698–23,472) were the only kendo/kendo-2 ones, and the entire 31k–64k tail
+  was context-economy/mission-control, leaving n=4 for the population that actually matters — too
+  thin to trust as a bound in either direction, so no percentile of the same corpus was going to
+  settle this honestly.
+
+  Resolution: drop the pretense that these are measured, representative values. The probes were not
+  wasted — they established the right *order of magnitude* (tens of thousands of tokens) and ruled
+  out a naively small guess — but the exact figure is now a judgement call, set directly and
+  revised **by patch** against real operating experience (trigger too early → stale handoffs;
+  trigger too late → lost the race to compaction), not against a recomputed statistic from the same
+  small corpus. Set 2026-09-16: `CTX_AUTHORING_TURN_TOKENS=30,000` (down from 65,000),
+  `CTX_LARGE_REQUEST_TOKENS=20,000` (down from 145,000) — pushing the derived trigger from
+  `887,000 − 355,000 = 532,000` to `887,000 − 70,000 = 817,000` on the declared 1M ceiling, and the
+  reserved gap from 355,000 down to 70,000. Trade-off taken deliberately, not discovered as a side
+  effect: `CTX_LARGE_REQUEST_TOKENS=20,000` sits below finding #20's own cross-turn p90 (36,485), so
+  the gate-failure ("declined, past the band") path is no longer expected to be rare the way D18's
+  ~5%-at-p95 figure for `fat_turn` was — it should be seen in ordinary sessions, in exchange for a
+  handoff that is far less stale when it does land.
+
+  **Re-fire cadence — scoped, not yet designed.** The once-per-session fire (inherited unquestioned
+  from [D18](#d18)) is a separate problem from the constants above: even at the tighter values, a
+  session that keeps working past its one write never gets a second one, so staleness still
+  accrues without bound the longer a session runs after firing. Two shapes were floated for a
+  periodic re-arm: (a) each re-fire **appends** a delta to the handoff (new Decisions/Traps/Pointers
+  since the last write) rather than re-authoring it from scratch, staying compatible with
+  [D6](#d6)/[D13](#d13)/[D16](#d16)'s existing format and cost model; (b) a more radical
+  continuously-written form, where the model appends to the handoff *at the moment* a decision is
+  made or a dead end found, independent of any token-count trigger at all. **(a) chosen over (b)
+  for now** — it fits the existing trigger/format machinery with no new open questions about
+  pruning an ever-growing log or replacing `/handoff` write-mode outright; (b) is a bigger,
+  separate redesign of the authoring discipline itself and is left for later if (a) proves
+  insufficient. Not yet designed or built: what a re-fire appends, how it re-arms the latch, and
+  how often.
 
 - **O11 — `verify-citations.sh` stripped backticks from the citation's fragment but not from the
   target line, so a markdown target could never match one that crossed a real backtick.** Found while

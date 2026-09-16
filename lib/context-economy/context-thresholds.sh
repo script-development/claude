@@ -167,44 +167,74 @@ CTX_URGE_TOKENS=200000
 # fires at all. Neither is thin headroom. One is early, one is dead code, and both come from
 # expressing a compaction-relative decision as a window-independent constant.
 #
-# The automatic trigger is therefore derived from the ceiling, at the LATEST point that is still
-# safe. Three expressions, all in resident tokens, all consumed by hooks/handoff-write.sh:
+# Rewritten AGAIN 2026-09-16 -- Route 5 ([O10](../../docs/design.md#o10),
+# [docs/measured.md](../../docs/measured.md) findings #18/#19/#20). D18's trigger observed at
+# `Stop`, which only fires at true turn boundaries -- and finding #18 caught the failure that
+# leaves open: a single uninterrupted turn (~549k tokens, 1,625 tool calls, no `Stop` event until
+# the very end) can leap the WHOLE [trigger, gate) band unseen, because nothing observes anything
+# in between. `fat_turn` was never a real bound on a turn like that; it was a bound on turns that
+# had already ended, measured from turns that had already ended (finding #15's own survivorship
+# caveat, which finding #18 then confirmed by example).
 #
-#     trigger  =  compact_threshold - 2*fat_turn - authoring_turn        fire at or above this
-#     gate     =  resident + fat_turn + authoring_turn  <  compact_threshold
+# So the check now also runs on `PostToolUse` (fires after every tool call), and `large_request`
+# -- the max resident delta a SINGLE tool-call round trip can add, finding #20 -- replaces
+# `fat_turn` in the same formula:
+#
+#     trigger  =  compact_threshold - 2*large_request - authoring_turn   fire at or above this
+#     gate     =  resident + large_request + authoring_turn  <  compact_threshold
 #     floor    =  trigger  >=  CTX_NOTICE_TOKENS                         else the window is too small
 #
-# WHY TWO FAT TURNS IN THE TRIGGER AND ONE IN THE GATE -- they are the same inequality in opposite
-# senses, and getting this wrong makes the trigger unsatisfiable. The gate is the real constraint:
-# once fired, the NEXT turn is the authoring turn, and it must complete before compaction. The
-# trigger has to sit strictly BELOW the gate or firing would fail its own check on arrival. It sits
-# exactly one fat turn below, which makes [trigger, gate) a band of width fat_turn -- and since the
-# Stop event only observes at turn boundaries, a turn no larger than fat_turn cannot leap the band
-# unobserved. That is the whole role of the second term: the resolution of the check, not a second
-# safety margin.
+# WHY `Stop` IS STILL REGISTERED, NOT RETIRED. `PostToolUse` only fires after a tool call -- a
+# turn with none (a plain back-and-forth turn, no `Read`/`Edit`/`Bash`) is invisible to it, and a
+# run of several such turns compounds unobserved for the same structural reason `fat_turn` failed
+# inside one turn, just spread across turns instead of tool calls. `Stop` fires unconditionally at
+# every turn boundary regardless of tool use, so it stays registered as the backstop for exactly
+# that case -- running the SAME check, against the SAME `large_request` constant and the SAME
+# on-disk latch (`hooks/handoff-write.sh`), not a second system with its own margin. That was
+# considered and rejected: a turn with zero tool calls produces a delta of the same ORDER as any
+# other single-observation-to-observation gap, so there is no case for a second, wider margin --
+# only for a second place to check.
+#
+# WHY TWO large_requests IN THE TRIGGER AND ONE IN THE GATE -- unchanged reasoning from D18, at
+# finer granularity. The gate is the real constraint: once fired, the NEXT turn is the authoring
+# turn, and it must complete before compaction. The trigger has to sit strictly BELOW the gate or
+# firing would fail its own check on arrival. It sits exactly one large_request below, which makes
+# [trigger, gate) a band of that width -- and since something now observes after every tool call
+# AND at every turn boundary, a single OBSERVATION GAP no larger than large_request cannot leap the
+# band unseen. That is the whole role of the second term: the resolution of the check, not a
+# second safety margin.
 #
 # WHEN THE GATE FAILS, DECLINE AND SAY SO -- do not lower the trigger silently and do not warn and
 # proceed. An armed trigger with negative slack loses the race to compaction every time, and the
 # handoff it produces is authored from a summary: exactly the `compacted: yes` degradation the
 # format exists to record, manufactured on purpose. An unarmed trigger is merely the status quo.
 # Degrade capability, never execution -- the same rule the statusline follows when this file is
-# missing entirely. Reaching the gate now means a turn leapt the band, which is what taking
-# fat_turn off the corpus max and onto p95 (below) makes possible; the failure is one loud message
+# missing entirely. Reaching the gate now means a single observation gap exceeded large_request --
+# and since Route 5's constants are SET rather than sized at a corpus tail (see below), this is
+# NOT expected to be rare in the way D18's ~5%-at-p95 figure for fat_turn was: finding #20's own
+# cross-turn distribution puts 20,000 well short of that population's p90, so a real turn-boundary
+# gate breach should be a regular occurrence late in a session, not an edge case. That is an
+# accepted, deliberate trade for a tighter (less stale) trigger, not an oversight -- but it means
+# the decline path will be seen in practice, not just in theory. The failure is one loud message
 # and a manual /handoff, not a bad handoff.
 #
 # WHEN THE FLOOR FAILS, THE WINDOW CANNOT BE SERVED BY PREDICTION AT ALL, and the hook says that
-# rather than firing uselessly early. The margin (2*fat_turn + authoring_turn = 185,000) is fixed
-# while the ceiling is not, so below a ceiling of ~305k the trigger lands under CTX_NOTICE_TOKENS
-# and the handoff would be written on a near-empty context that has nothing to hand off. A
-# 200k-window session (ceiling ~187k) is such a case: it gets the statusline advisory and the
-# manual path, and an explicit message saying why, instead of the silence it used to get.
+# rather than firing uselessly early. The margin (2*large_request + authoring_turn = 70,000) is
+# fixed while the ceiling is not, so below a ceiling the margin exceeds, the trigger lands under
+# CTX_NOTICE_TOKENS and the handoff would be written on a near-empty context that has nothing to
+# hand off. A 200k-window session (ceiling ~187k) is such a case: it gets the statusline advisory
+# and the manual path, and an explicit message saying why, instead of the silence it used to get.
 #
 # The statusline is exempt from all of this: it only DISPLAYS CTX_NOTICE_TOKENS/CTX_URGE_TOKENS,
-# and it is a hot path that must stay pure. Install time is exempt because it cannot know the
-# runtime window. The arming decision belongs in the hook, where the ceiling is resolvable.
+# and it is a hot path that must stay pure -- and there is no shortcut through it for the hooks
+# either: its `context_window` field is specific to the Statusline hook's OWN payload schema
+# (mission_control's F5, re-confirmed while scoping Route 5), not a field every hook payload
+# carries, so `PostToolUse` cannot read the count the statusline does and must derive it itself.
+# Install time is exempt because it cannot know the runtime window. The arming decision belongs in
+# the hook, where the ceiling is resolvable.
 
 # The compact threshold in RESIDENT TOKENS -- quantity (c) above, NOT a window. This is the value the
-# `T + fat_turn + authoring_turn < compact_threshold` comparison uses, so it is the only form a
+# `T + large_request + authoring_turn < compact_threshold` comparison uses, so it is the only form a
 # consumer may take on trust; anything derived from a window must have the 13_000 offset and the
 # output reserve subtracted first.
 #
@@ -214,10 +244,10 @@ CTX_URGE_TOKENS=200000
 # heuristic that inferred.
 #
 # SINCE [D18](../../docs/design.md#d18) THIS VALUE IS LOAD-BEARING IN A SECOND WAY: the automatic
-# trigger is DERIVED from it (`ceiling - 2*fat_turn - authoring_turn`), where before it only vetoed
-# a trigger fixed elsewhere. A wrong declaration no longer merely waves through a race it should
-# have declined -- it aims the trigger itself at the wrong point. The direction of the error is
-# unchanged (too large is unsafe) but its consequence is larger, so the "declare only what you
+# trigger is DERIVED from it (`ceiling - 2*large_request - authoring_turn`), where before it only
+# vetoed a trigger fixed elsewhere. A wrong declaration no longer merely waves through a race it
+# should have declined -- it aims the trigger itself at the wrong point. The direction of the error
+# is unchanged (too large is unsafe) but its consequence is larger, so the "declare only what you
 # measured" instruction above is now the stronger of the two reasons to read this block.
 #
 # It is assigned empty HERE and declared (or left empty) at the END of this file, after the constant
@@ -236,50 +266,40 @@ CTX_COMPACT_THRESHOLD_TOKENS=
 # here for the same reason every other number does: a consumer that restated them would be the
 # second copy this file exists to prevent.
 #
-# NEITHER IS A MEASUREMENT, AND SINCE [D18](../../docs/design.md#d18) THEY ARE NO LONGER THE SAME
-# KIND OF BOUND. The authoring turn is still a worst-case bound (corpus max) because it is still
-# only ever a safety margin: too large costs nothing. The fat turn is now a CALIBRATED bound (p95),
-# because D18 made it set the trigger's position as well as the gate's, where too large is not
-# conservative but self-defeating. Each carries its own justification below; do not assume the
-# rule that governs one governs the other.
+# SET VALUES, NOT DERIVED ONES -- changed 2026-09-16 while scoping Route 5's re-fire question, and
+# dropping the pretense that either constant is a measured, representative bound. Both were
+# previously taken at a corpus max (docs/measured.md findings #14 and #20) on the theory that a
+# worst-case bound was free to oversize -- "too large costs nothing" beyond wasted margin. That
+# theory turned out to be wrong on two counts:
 #
-# FAT TURN: MEASURED 2026-09-07 (docs/measured.md finding #15), superseding mission_control's
-# F4b(1), which was qualitative ("can add 50k+") and turned out not to be conservative. Mined 724
-# mid-session turns across 48 sessions (this repo, kendo, kendo-2, mission-control): median 6,707,
-# p90 34,897, p95 59,367, p99 158,290, MAX 323,673. "50k+" sat between p90 and p95; the real tail
-# runs 3-6x higher.
+#   1. An oversized authoring_turn/large_request does not just waste margin -- it widens the exact
+#      gap (2*large_request + authoring_turn, see below) that leaves an auto-written handoff stale
+#      by the time compaction actually hits, and that gap turned out to dominate the TYPICAL case,
+#      not just the worst one: a one-shot trigger sized for the worst case leaves most of its
+#      margin unspent on an ordinary session.
+#   2. The corpus behind both maxes was small and skewed toward this repo's own meta/tooling work
+#      (context-economy, mission-control) rather than representative day-to-day engineering
+#      (kendo, kendo-2). Of finding #14's 20 authoring-turn samples, the four smallest
+#      (13,698-23,472) were the only kendo/kendo-2 ones; the entire 31k-64k tail was
+#      context-economy/mission-control. Neither problem is fixable by choosing a different
+#      percentile of that same corpus -- n=4 for the population that actually matters is too thin
+#      to trust as a bound in either direction.
 #
-# TAKEN AT p95, ROUNDED UP TO 60,000. Changed from the corpus MAX (325,000) 2026-09-09 by
-# [D18](../../docs/design.md#d18). The max was the right statistic while this term was ONLY a veto
-# margin -- an over-large bound then cost nothing, because the trigger it guarded was fixed at 200k
-# and had 787k of slack under the 1M ceiling. D18 made the trigger itself a function of this term
-# (`ceiling - 2*fat_turn - authoring_turn`), and at the max that expression evaluates to 174,654:
-# BELOW the 200k advisory point it is supposed to sit far above. The worst-case bound had become
-# self-defeating -- not conservative, just wrong, because the quantity it feeds changed underneath
-# it. This is the specific hazard of a shared constant, and the reason it is worth writing down.
-#
-# WHY p95 RATHER THAN p90 OR p99. What this term now buys is BAND WIDTH: [trigger, gate) is one
-# fat_turn wide (see the arming block above), so a turn LARGER than this value can leap the band
-# between two Stop events and land in the declined region. p95 accepts that for ~5% of turns; p90
-# would widen the covered window by 49k of coverage at twice the leap risk, p99 (158,290) costs
-# 197k of coverage to buy 4 points. And the failure is bounded and loud: a leap produces one
-# decline message plus a manual /handoff, never a handoff authored from a summary. That asymmetry
-# is what makes a percentile defensible here where it was not before.
-#
-# Revise against a wider measurement, in either direction -- this is a CALIBRATED bound now, not a
-# worst-case one, so a single new session exceeding it is expected roughly 5% of the time and is
-# not evidence the number is wrong.
-CTX_FAT_TURN_TOKENS=60000
+# So: neither constant below is claimed to be measured, representative, or derived any more. The
+# probes were not wasted -- finding #14 and #20 established the right ORDER OF MAGNITUDE (tens of
+# thousands of tokens, not hundreds or single thousands) and ruled out a naively small guess -- but
+# pinning a value on top of that order of magnitude is a judgement call, made here, to be revised
+# BY PATCH as real sessions demonstrate the trigger firing too early (stale handoffs) or too late
+# (lost the race to compaction). Revise in either direction against real operating experience, not
+# against a recomputed statistic from the same small corpus.
+CTX_LARGE_REQUEST_TOKENS=20000
 
-# AUTHORING TURN: MEASURED 2026-09-07 (docs/measured.md finding #14), superseding the earlier
-# 30,000 estimate (which turned out close: measured mean was 30,024). 20 initial handoff-authoring
-# turns mined from past sessions across this repo, kendo, kendo-2 and mission-control:
-# 13,698-64,618 tokens, median 25,025, mean 30,024, MAX 64,618 -- taken at that max for the same
-# worst-case-margin reason as CTX_FAT_TURN_TOKENS above, not at the finding's own trimmed-mean
-# figure (which excludes one turn mixing unrelated work into the same authoring turn -- a real
-# scenario a fail-closed bound must still cover, and one that does not change the max either way,
-# since the excluded turn was smaller than 64,618). Revise DOWNWARD only against a measurement.
-CTX_AUTHORING_TURN_TOKENS=65000
+# AUTHORING TURN -- same status as CTX_LARGE_REQUEST_TOKENS above: a set value, order-of-magnitude
+# informed by docs/measured.md finding #14 (20 samples, 13,698-64,618, median 25,025), but not
+# claimed to be its max, its median, or otherwise derived from it, for the representativeness
+# reason given above. Revise by patch, in either direction, against real sessions -- not against a
+# recomputed statistic from this same corpus.
+CTX_AUTHORING_TURN_TOKENS=30000
 
 # THE 1M-BETA FALLBACK, used only when `[1m]` was detected in the transcript's modelUsage keys
 # and no CTX_COMPACT_THRESHOLD_TOKENS was declared. A DELIBERATE LOWER BOUND on quantity (c),
@@ -291,7 +311,7 @@ CTX_AUTHORING_TURN_TOKENS=65000
 # PRECISION MATTERS MORE SINCE [D18](../../docs/design.md#d18) THAN IT DID BEFORE, though still not
 # much. This used to decide a fixed T~200k against a bound near 887k, where being wrong by 50k
 # changed nothing. Now the trigger is derived from the bound, so a 50k error moves the trigger by
-# 50k -- from ~702k to ~752k. Both are comfortably inside the safe band and neither risks the
+# 50k -- from ~817k to ~867k. Both are comfortably inside the safe band and neither risks the
 # gate, so the lower bound stands; but the error no longer cancels out, and if a session ever needs
 # the trigger placed precisely, declare the real ceiling rather than widening this.
 CTX_1M_COMPACT_THRESHOLD_TOKENS=887000
@@ -313,8 +333,8 @@ CTX_1M_COMPACT_THRESHOLD_TOKENS=887000
 # shared: it is a conservative LOWER bound, and nothing reachable on a smaller window consumes it.
 # `CTX_URGE_TOKENS` is NOT what makes that true -- since D18 it gates nothing, it urges, exactly as
 # its name says: the statusline renders it and a human decides. What makes this declaration safe is
-# the derived trigger itself. At this bound the automatic write arms at `887000 - 2*60000 - 65000 =
-# 702,000`, and a 200k-window session auto-compacts near 187k, so it never comes close -- the
+# the derived trigger itself. At this bound the automatic write arms at `887000 - 2*20000 - 30000
+# = 817,000`, and a 200k-window session auto-compacts near 187k, so it never comes close -- the
 # declaration is unreachable there, not merely harmless. The one case it could get wrong is an
 # INTERMEDIATE window (say 500k), where a real ceiling near 425k would decline a case this bound
 # waves through. If such a session becomes normal here, declare that ceiling instead of widening
@@ -382,11 +402,14 @@ CTX_CHARS_PER_TOKEN_X100=268
 #
 # THIS VALUE IS FOR A HANDOFF A HUMAN WROTE, NOT ONE THE TRIGGER WROTE. Scoped 2026-09-09 by
 # [D18](../../docs/design.md#d18), which found the two jointly incoherent: an automatically written
-# handoff lands exactly 2*fat_turn below the ceiling BY CONSTRUCTION (that is the band the trigger
-# deliberately reserves), so its gap at compaction is ~120,000 -- twelve times this number. Judged
-# against this constant every auto-written handoff would be flagged "likely-undocumented", which is
-# not a staleness finding but a category error: the gap is nominal, and the verdict would be
-# reporting the design as a defect.
+# handoff lands up to `2*large_request + authoring_turn` below the ceiling BY CONSTRUCTION -- see
+# hooks/handoff-write.sh's own derivation of that figure (re-checked while scoping Route 5: the
+# worst case is the UPPER end of the reserved band, `2L+A`, not `2L` alone -- a distinction this
+# repo's own code got wrong in the same way both before and immediately after Route 5, until asked
+# to justify the arithmetic directly). At today's values that is 70,000 (2*20,000+30,000) -- far
+# more than this number either way. Judged against this constant every auto-written handoff would
+# be flagged "likely-undocumented", which is not a staleness finding but a category error: the gap
+# is nominal, and the verdict would be reporting the design as a defect.
 #
 # So the automatic path carries its OWN expected gap instead. `handoff-write.sh` records
 # `expected_gap_tokens` into the sidecar when the handoff lands, and `handoff-inject.sh` judges

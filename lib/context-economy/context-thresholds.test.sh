@@ -50,7 +50,7 @@ fail() { failed=$((failed + 1)); echo "FAIL $1 — $2"; }
 # shellcheck source=/dev/null
 values=$(env -u CTX_COMPACT_THRESHOLD_TOKENS bash -c '
     . "$1" || exit 1
-    for v in CTX_NOTICE_TOKENS CTX_URGE_TOKENS CTX_FAT_TURN_TOKENS CTX_AUTHORING_TURN_TOKENS \
+    for v in CTX_NOTICE_TOKENS CTX_URGE_TOKENS CTX_LARGE_REQUEST_TOKENS CTX_AUTHORING_TURN_TOKENS \
              CTX_1M_COMPACT_THRESHOLD_TOKENS CTX_COMPACT_THRESHOLD_TOKENS \
              CTX_GROWTH_TOKENS_PER_TURN HANDOFF_TARGET_TOKENS HANDOFF_CEILING_TOKENS \
              CTX_CHARS_PER_TOKEN_X100 CTX_HANDOFF_ACCEPTABLE_GAP_TOKENS; do
@@ -68,7 +68,7 @@ get() { printf '%s\n' "$values" | grep "^$1=" | cut -d= -f2-; }
 
 # --- t2 — every consumer-visible variable resolves -------------------------
 
-for v in CTX_NOTICE_TOKENS CTX_URGE_TOKENS CTX_FAT_TURN_TOKENS CTX_AUTHORING_TURN_TOKENS \
+for v in CTX_NOTICE_TOKENS CTX_URGE_TOKENS CTX_LARGE_REQUEST_TOKENS CTX_AUTHORING_TURN_TOKENS \
          CTX_1M_COMPACT_THRESHOLD_TOKENS CTX_GROWTH_TOKENS_PER_TURN \
          HANDOFF_TARGET_TOKENS HANDOFF_CEILING_TOKENS CTX_CHARS_PER_TOKEN_X100 \
          CTX_HANDOFF_ACCEPTABLE_GAP_TOKENS; do
@@ -127,8 +127,8 @@ target=$(get HANDOFF_TARGET_TOKENS); ceiling=$(get HANDOFF_CEILING_TOKENS)
 # declared ceiling'), which asserted an invariant the design no longer has: URGE is not the trigger
 # any more, so its headroom under the ceiling says nothing about whether anything can arm.
 
-fat=$(get CTX_FAT_TURN_TOKENS); auth=$(get CTX_AUTHORING_TURN_TOKENS)
-trigger=$(( declared - 2 * fat - auth ))
+large=$(get CTX_LARGE_REQUEST_TOKENS); auth=$(get CTX_AUTHORING_TURN_TOKENS)
+trigger=$(( declared - 2 * large - auth ))
 
 # The floor, which is also what hooks/handoff-write.sh enforces at runtime. Under the declared
 # ceiling the trigger must land at a depth where a handoff has something to record; if it does not,
@@ -142,27 +142,29 @@ else
 fi
 
 # The trigger must sit strictly BELOW the gate, or firing fails its own headroom check on arrival
-# and the hook declines every time it fires. The margin between them is exactly one fat turn by
-# construction; asserting it catches an edit that changes one expression without the other.
-gate=$(( declared - fat - auth ))
-if [ "$trigger" -lt "$gate" ] && [ "$(( gate - trigger ))" -eq "$fat" ]; then
-    pass 'the trigger sits exactly one fat turn below the gate, so firing can pass it'
+# and the hook declines every time it fires. The margin between them is exactly one large_request
+# by construction; asserting it catches an edit that changes one expression without the other.
+gate=$(( declared - large - auth ))
+if [ "$trigger" -lt "$gate" ] && [ "$(( gate - trigger ))" -eq "$large" ]; then
+    pass 'the trigger sits exactly one large_request below the gate, so firing can pass it'
 else
-    fail 'the trigger sits exactly one fat turn below the gate, so firing can pass it' \
-         "trigger=$trigger gate=$gate band=$(( gate - trigger )) fat=$fat"
+    fail 'the trigger sits exactly one large_request below the gate, so firing can pass it' \
+         "trigger=$trigger gate=$gate band=$(( gate - trigger )) large=$large"
 fi
 
-# D18's own finding, asserted so it cannot regress into an accident: an automatically written
-# handoff lands ~2*fat below the ceiling, which is FAR above the acceptable-gap constant. That is
-# expected, not a defect — but it is exactly why the writer records `expected_gap_tokens` and the
-# reader takes the larger of the two. If these two ever became comparable, that plumbing would be
-# dead weight and this check is where to notice.
+# D18's own finding (corrected for Route 5, 2026-09-16), asserted so it cannot regress into an
+# accident: an automatically written handoff lands up to `2*large_request + authoring_turn` below
+# the ceiling -- the true worst case of the reserved band, matching what
+# hooks/handoff-write.sh's sidecar actually records, not `2*large_request` alone -- which is FAR
+# above the acceptable-gap constant. That is expected, not a defect — but it is exactly why the
+# writer records `expected_gap_tokens` and the reader takes the larger of the two. If these two
+# ever became comparable, that plumbing would be dead weight and this check is where to notice.
 okgap=$(get CTX_HANDOFF_ACCEPTABLE_GAP_TOKENS)
-if [ "$(( 2 * fat ))" -gt "$okgap" ]; then
+if [ "$(( 2 * large + auth ))" -gt "$okgap" ]; then
     pass "an auto-written handoff's reserved gap exceeds the manual-path acceptable gap, as D18 found"
 else
     fail "an auto-written handoff's reserved gap exceeds the manual-path acceptable gap, as D18 found" \
-         "2*fat=$(( 2 * fat )) no longer exceeds $okgap — the expected_gap_tokens plumbing may be redundant"
+         "2*large_request+authoring=$(( 2 * large + auth )) no longer exceeds $okgap — the expected_gap_tokens plumbing may be redundant"
 fi
 
 # And URGE, now advisory-only, must still be reachable as a *display* threshold on the window this

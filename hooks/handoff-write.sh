@@ -1,15 +1,39 @@
 #!/bin/bash
 #
-# Stop hook: the WRITE leg of the automated handoff cycle (build-order item 4).
+# PostToolUse AND Stop hook: the WRITE leg of the automated handoff cycle (build-order item 4;
+# moved onto PostToolUse as well as Stop by Route 5, [O10](../docs/design.md#o10), 2026-09-16).
 #
-# At the LAST turn boundary where the session can still finish writing a handoff before
+# At the LAST safe point where the session can still finish writing a handoff before
 # auto-compaction takes it, this returns control to the model with an instruction to run
-# /handoff. `decision: "block"` on a Stop hook is not a veto -- `reason` becomes the model's next
-# instruction -- so this is what makes a handoff survive a compaction without the human having to
-# watch a number and act on it.
+# /handoff. `decision: "block"` is not a veto on either event -- `reason` becomes the model's
+# next instruction and folds into the same turn (confirmed for PostToolUse live,
+# docs/measured.md finding #19) -- so this is what makes a handoff survive a compaction without
+# the human having to watch a number and act on it.
 #
-# It fires AT MOST ONCE PER SESSION, and it DECLINES ENTIRELY unless it can establish where
-# compaction will fire. The decline is the important half; see "THE TRIGGER IS DERIVED" below.
+# ── WHY THIS SCRIPT IS REGISTERED ON TWO EVENTS, NOT ONE ───────────────────────────────────
+#
+# `PostToolUse` (fires after every tool call) is the PRIMARY observation point: finding #18 showed
+# a single uninterrupted `Stop`-only turn can add ~549k resident tokens with no boundary to observe
+# any of it, so the check now runs far more often than once per turn. `Stop` (fires unconditionally
+# at every turn boundary) STAYS registered too, running the exact same check against the exact same
+# constant and the exact same on-disk latch below -- not a second system with its own margin, just
+# a backstop for the one case `PostToolUse` structurally cannot see: a turn with zero tool calls (a
+# plain back-and-forth turn) never fires `PostToolUse` at all, and a run of several such turns would
+# compound unobserved for the same reason `fat_turn` failed inside one big turn, just spread across
+# several small ones instead. See [O10](../docs/design.md#o10) and
+# `lib/context-economy/context-thresholds.sh`'s arming block for the full reasoning; considered and
+# rejected keeping two separate thresholds, one per event -- a zero-tool-call turn's own delta is
+# the same ORDER as any other single-observation-to-observation gap, so there is no case for a
+# wider margin there, only for a second place to check.
+#
+# The logic below does not need to know which of the two events woke it: the arithmetic, the
+# latch, and the block/decline shape are identical either way. `stop_hook_active` (Stop-specific)
+# simply reads as `false` on a `PostToolUse` payload, which is exactly the no-op that field should
+# be there.
+#
+# It fires AT MOST ONCE PER SESSION regardless of which event triggers it, and it DECLINES
+# ENTIRELY unless it can establish where compaction will fire. The decline is the important half;
+# see "THE TRIGGER IS DERIVED" below.
 #
 # Thresholds are SOURCED from this bundle's lib/context-economy/context-thresholds.sh, never
 # restated. If that file is missing this hook does nothing at all -- degrade capability, never
@@ -26,8 +50,8 @@
 #   stale. On a 200k-window session compaction fires ~187k -- BELOW 200k -- so it never fired at
 #   all, silently, and could not have: the old worst-case margin alone exceeded the whole window.
 #
-# So the trigger is now `ceiling - 2*fat_turn - authoring_turn`, the latest point that is still
-# safe, with the gate one fat turn above it and CTX_NOTICE_TOKENS as a floor beneath it. 200k
+# So the trigger is `ceiling - 2*large_request - authoring_turn`, the latest point that is still
+# safe, with the gate one large_request above it and CTX_NOTICE_TOKENS as a floor beneath it. 200k
 # remains what it always usefully was -- the statusline's passive advisory, and the point at which
 # a HUMAN may choose to run /handoff. This hook no longer reads it.
 #
@@ -39,7 +63,20 @@
 #
 # Rejected alternatives, all of which look cheaper: an install-time check (cannot know the
 # runtime window -- it varies per model, per org, per session); a statusline warning (hot path,
-# ~4x per tool call, must stay pure); "warn and proceed"; and silently lowering the threshold.
+# ~4x per tool call, must stay pure -- and does not carry a token count for PostToolUse's own
+# frequency either: its `context_window` field is specific to the Statusline hook's own payload
+# schema, mission_control's F5, not a field every hook payload carries); "warn and proceed"; and
+# silently lowering the threshold.
+#
+# ── READING resident IS TAIL-BOUNDED, NOT A FULL-FILE SCAN ─────────────────────────────────
+#
+# Necessary once this runs at PostToolUse frequency, not merely nice-to-have: a full `jq` pass
+# over the whole transcript, repeated once per tool call, is exactly the wrong shape for finding
+# #18's own pathological case -- a 1,625-tool-call runaway turn would mean 1,625 full scans of a
+# transcript that is growing the entire time. The last usage record is comfortably within the
+# last `RESIDENT_TAIL_BYTES` of the file (finding #20's own corpus: even the largest single-request
+# growth measured is 142,188 tokens, a few hundred KB of raw transcript at most), so this reads
+# only the tail, not the whole file, on every path below.
 #
 # ── CLOUD-SESSION CAVEAT ───────────────────────────────────────────────────────────────────
 #
@@ -83,9 +120,59 @@ CTX_THRESHOLDS_FILE="${CTX_THRESHOLDS_FILE:-$hook_dir/../lib/context-economy/con
 # CTX_NOTICE_TOKENS rather than CTX_URGE_TOKENS since D18: URGE is advisory-only now (the
 # statusline renders it, a human acts on it) and this hook no longer reads it at all, while NOTICE
 # gained a second job here as both the cheap pre-filter and the floor beneath the derived trigger.
-for v in CTX_NOTICE_TOKENS CTX_FAT_TURN_TOKENS CTX_AUTHORING_TURN_TOKENS CTX_1M_COMPACT_THRESHOLD_TOKENS; do
+for v in CTX_NOTICE_TOKENS CTX_LARGE_REQUEST_TOKENS CTX_AUTHORING_TURN_TOKENS CTX_1M_COMPACT_THRESHOLD_TOKENS; do
     [ -n "${!v:-}" ] || exit 0
 done
+
+# ── Tail-bounded transcript reads ──────────────────────────────────────────────────────────
+# See the header: a full-file `jq` scan repeated at PostToolUse frequency is the wrong shape for
+# exactly finding #18's case (a runaway turn means many firings against a transcript that keeps
+# growing). RESIDENT_TAIL_BYTES is generously larger than any real byte-gap between two usage
+# records could plausibly be -- finding #20's own corpus max delta is 142,188 TOKENS, and even a
+# generous token-to-byte ratio leaves wide margin under this -- so an ordinary session never falls
+# through to the full-file fallback at all; only a transcript smaller than the window, or one
+# record's own encoding wider than it, does.
+RESIDENT_TAIL_BYTES=${RESIDENT_TAIL_BYTES:-2000000}
+
+# resident_from_transcript <path> -- last resident usage total (see the TRAP comment below on
+# what NOT to do instead). Reads the tail first; `tail -n +2` drops whatever line the byte cut
+# very likely split mid-record, which costs nothing since only the LAST full line is ever used.
+resident_from_transcript() {
+    local t="$1" out
+    out=$(tail -c "$RESIDENT_TAIL_BYTES" "$t" 2>/dev/null | tail -n +2 | jq -r '
+        select(.message.usage != null)
+        | .message.usage
+        | (.input_tokens // 0) + (.cache_creation_input_tokens // 0)
+          + (.cache_read_input_tokens // 0)' 2>/dev/null | tail -1)
+    case "$out" in
+        ''|*[!0-9]*)
+            jq -r 'select(.message.usage != null)
+                  | .message.usage
+                  | (.input_tokens // 0) + (.cache_creation_input_tokens // 0)
+                    + (.cache_read_input_tokens // 0)' "$t" 2>/dev/null | tail -1
+            ;;
+        *) printf '%s' "$out" ;;
+    esac
+}
+
+# ceiling_1m_from_transcript <path> -- same tail-then-fallback shape, for the `[1m]` detection
+# scan below. `cost-state` lines are periodic snapshots (F5), not a one-time marker, so recent
+# evidence is expected to still be near the tail on any session where it exists at all.
+ceiling_1m_from_transcript() {
+    local t="$1" out
+    out=$(tail -c "$RESIDENT_TAIL_BYTES" "$t" 2>/dev/null | tail -n +2 | jq -r '
+        select(.type == "cost-state" and .modelUsage != null)
+        | if (.modelUsage | keys | any(test("\\[1m\\]"))) then "1m" else "no" end' \
+        2>/dev/null | tail -1)
+    case "$out" in
+        1m|no) printf '%s' "$out" ;;
+        *)
+            jq -r 'select(.type == "cost-state" and .modelUsage != null)
+                  | if (.modelUsage | keys | any(test("\\[1m\\]"))) then "1m" else "no" end' \
+                "$t" 2>/dev/null | tail -1
+            ;;
+    esac
+}
 
 session_id=$(printf '%s' "$input" | jq -r '.session_id // empty')
 transcript=$(printf '%s' "$input" | jq -r '.transcript_path // empty')
@@ -145,25 +232,34 @@ if [ -e "$latch" ]; then
                 latch_mtime=$(stat -c %Y "$latch" 2>/dev/null); latch_mtime=${latch_mtime:-0}
                 if [ "$HANDOFF_PICK" = exact ] && [ -n "$HANDOFF_FILE" ] && [ -n "$HANDOFF_MTIME" ] \
                    && [ "$HANDOFF_MTIME" -ge "$latch_mtime" ]; then
-                    written_resident=$(jq -r 'select(.message.usage != null)
-                                      | .message.usage
-                                      | (.input_tokens // 0)
-                                        + (.cache_creation_input_tokens // 0)
-                                        + (.cache_read_input_tokens // 0)' "$transcript" 2>/dev/null | tail -1)
+                    written_resident=$(resident_from_transcript "$transcript")
                     case "${written_resident:-}" in
                         ''|*[!0-9]*) ;;
                         *)
                             # `expected_gap_tokens` is what makes the read leg's verdict
-                            # meaningful for an automatically written handoff (D18). The trigger
-                            # deliberately fires 2*fat_turn below the ceiling, so a gap of about
-                            # that size at compaction is NOMINAL, not staleness -- judged against
-                            # CTX_HANDOFF_ACCEPTABLE_GAP_TOKENS (10,350) it would be flagged every
-                            # single time. Recorded here rather than recomputed there because only
-                            # the writing side knows which trigger wrote this handoff; a sidecar
-                            # lacking the field is pre-D18 and the reader falls back to the
-                            # constant.
+                            # meaningful for an automatically written handoff (D18). THE TRUE
+                            # WORST-CASE GAP IS `2*large_request + authoring_turn`, NOT
+                            # `2*large_request` alone -- re-derived while scoping Route 5, and it
+                            # was already true (with fat_turn in large_request's place) before this
+                            # port, just never checked this precisely. Why: firing can happen
+                            # anywhere in [trigger, trigger+large_request) (the observation-gap
+                            # slop the gate tolerates), and the authoring turn itself can then add
+                            # up to another authoring_turn before the write completes, so
+                            # resident-at-write ranges over [trigger, trigger+large_request+
+                            # authoring_turn). Since ceiling-trigger = 2*large_request+
+                            # authoring_turn by construction, the gap (ceiling minus
+                            # resident-at-write) ranges over (large_request, 2*large_request+
+                            # authoring_turn] -- and it is the UPPER end of that range, not its
+                            # midpoint, that a fail-closed "is this gap nominal" comparison must
+                            # use, or a real gap in the understated zone gets flagged as
+                            # unexpectedly stale for doing exactly what the trigger was built to
+                            # allow. Judged against CTX_HANDOFF_ACCEPTABLE_GAP_TOKENS (10,350) alone
+                            # it would be flagged every single time regardless. Recorded here rather
+                            # than recomputed there because only the writing side knows which
+                            # trigger wrote this handoff; a sidecar lacking the field is pre-D18 and
+                            # the reader falls back to the constant.
                             jq -n --argjson w "$written_resident" --argjson t "$(date +%s)" \
-                                --argjson g "$(( 2 * CTX_FAT_TURN_TOKENS ))" \
+                                --argjson g "$(( 2 * CTX_LARGE_REQUEST_TOKENS + CTX_AUTHORING_TURN_TOKENS ))" \
                                 --arg h "$HANDOFF_FILE" \
                                 '{written_at_tokens: $w, written_at_epoch: $t, handoff_path: $h, expected_gap_tokens: $g}' \
                                 > "$sidecar" 2>/dev/null
@@ -185,17 +281,14 @@ fi
 [ "$stop_active" = "true" ] && exit 0
 
 # ── T: resident context in tokens ──────────────────────────────────────────────────────────
-# The last `usage` record in the transcript. Streamed with a per-line filter rather than slurped:
-# these files reach tens of MB and this runs at every turn boundary.
+# The last `usage` record in the transcript, via `resident_from_transcript` (tail-bounded, see
+# the header) rather than a full-file scan -- this runs after every tool call now, not merely at
+# turn boundaries.
 #
 # TRAP: never grep the transcript for a field name. It also matches the session TALKING about
 # that field -- measured, 22 apparent `context_window` hits in a session whose only source was
 # this repo's own statusline being read into context. Match parsed structure, as here.
-resident=$(jq -r 'select(.message.usage != null)
-                  | .message.usage
-                  | (.input_tokens // 0)
-                    + (.cache_creation_input_tokens // 0)
-                    + (.cache_read_input_tokens // 0)' "$transcript" 2>/dev/null | tail -1)
+resident=$(resident_from_transcript "$transcript")
 
 case "${resident:-}" in ''|*[!0-9]*) exit 0 ;; esac
 
@@ -204,11 +297,13 @@ case "${resident:-}" in ''|*[!0-9]*) exit 0 ;; esac
 # below CTX_NOTICE_TOKENS -- the floor below enforces exactly that -- so this is a sound necessary
 # condition and it costs one integer comparison.
 #
-# It is here for two reasons beyond speed. Resolving the ceiling can mean a second `jq` pass over a
-# transcript that reaches tens of MB, at every turn boundary of every session; and the "ceiling
-# unknown" decline below would otherwise be emitted at the FIRST Stop of a five-thousand-token
-# session, which is a nag about a threshold nothing was approaching. Shallow sessions must be left
-# alone by every path through this hook, not merely by the arming one.
+# It is here for two reasons beyond speed. Resolving the ceiling can mean a second tail-bounded
+# read (still not free, and the detection path -- the only one that needs it -- is a full-file
+# fallback whenever `[1m]` evidence isn't near the tail), at every observation point of every
+# session now that this fires after tool calls too; and the "ceiling unknown" decline below would
+# otherwise be emitted at the FIRST observation of a five-thousand-token session, which is a nag
+# about a threshold nothing was approaching. Shallow sessions must be left alone by every path
+# through this hook, not merely by the arming one.
 [ "$resident" -ge "$CTX_NOTICE_TOKENS" ] || exit 0
 
 # ── The ceiling: declared, else detected, else decline ─────────────────────────────────────
@@ -233,9 +328,7 @@ else
     # in 1 of 4 transcripts on that version and 0 of 26 on 2.1.235/2.1.228. So the decline below
     # is the COMMON path, not the exceptional one, and a machine that wants this hook armed
     # should declare CTX_COMPACT_THRESHOLD_TOKENS rather than wait for detection to succeed.
-    detected=$(jq -r 'select(.type == "cost-state" and .modelUsage != null)
-                      | if (.modelUsage | keys | any(test("\\[1m\\]"))) then "1m" else "no" end' \
-                  "$transcript" 2>/dev/null | tail -1)
+    detected=$(ceiling_1m_from_transcript "$transcript")
     if [ "${detected:-}" = "1m" ]; then
         ceiling="$CTX_1M_COMPACT_THRESHOLD_TOKENS"
         ceiling_basis="detected the 1M beta from a [1m] suffix in modelUsage"
@@ -256,22 +349,22 @@ fi
 
 # ── The derived trigger, its floor, and the gate ───────────────────────────────────────────
 # All three come from context-thresholds.sh's arming block; see there for why the trigger carries
-# two fat turns and the gate one. In short: the gate is the real constraint (the authoring turn
-# must finish before compaction), the trigger sits exactly one fat turn below it so that firing
-# cannot fail its own check on arrival, and the fat turn between them is the band a single turn
-# would have to exceed to leap past unobserved.
-trigger=$((ceiling - 2 * CTX_FAT_TURN_TOKENS - CTX_AUTHORING_TURN_TOKENS))
-need=$((resident + CTX_FAT_TURN_TOKENS + CTX_AUTHORING_TURN_TOKENS))
+# two large_requests and the gate one. In short: the gate is the real constraint (the authoring
+# turn must finish before compaction), the trigger sits exactly one large_request below it so that
+# firing cannot fail its own check on arrival, and the large_request between them is the band a
+# single observation gap would have to exceed to leap past unobserved.
+trigger=$((ceiling - 2 * CTX_LARGE_REQUEST_TOKENS - CTX_AUTHORING_TURN_TOKENS))
+need=$((resident + CTX_LARGE_REQUEST_TOKENS + CTX_AUTHORING_TURN_TOKENS))
 
 if [ "$trigger" -lt "$CTX_NOTICE_TOKENS" ]; then
     # THE WINDOW IS TOO SMALL FOR PREDICTION AT ALL, and this is the honest thing to say. The
-    # margin is fixed while the ceiling is not, so under a ceiling of ~305k the trigger lands
+    # margin is fixed while the ceiling is not, so under a ceiling of ~190k the trigger lands
     # below the depth at which a handoff has anything to record. Firing anyway would write one
     # from a near-empty context; staying silent (the pre-D18 behaviour on these windows) leaves a
     # human wondering why the automation never ran. So: say it once, name the arithmetic, and
     # point at the path that does work here.
     : > "$latch" 2>/dev/null
-    jq -n --arg m "handoff trigger declined to arm: compaction fires at ~$((ceiling / 1000))k ($ceiling_basis), and writing a handoff safely needs ~$(( (2 * CTX_FAT_TURN_TOKENS + CTX_AUTHORING_TURN_TOKENS) / 1000 ))k of that, which would put the trigger at $((trigger / 1000))k — below the $((CTX_NOTICE_TOKENS / 1000))k depth where a handoff has anything to record. This window cannot be served automatically; run /handoff by hand at a point of your choosing." \
+    jq -n --arg m "handoff trigger declined to arm: compaction fires at ~$((ceiling / 1000))k ($ceiling_basis), and writing a handoff safely needs ~$(( (2 * CTX_LARGE_REQUEST_TOKENS + CTX_AUTHORING_TURN_TOKENS) / 1000 ))k of that, which would put the trigger at $((trigger / 1000))k — below the $((CTX_NOTICE_TOKENS / 1000))k depth where a handoff has anything to record. This window cannot be served automatically; run /handoff by hand at a point of your choosing." \
         '{systemMessage: $m}'
     exit 0
 fi
@@ -282,10 +375,14 @@ fi
 [ "$resident" -ge "$trigger" ] || exit 0
 
 if [ "$need" -ge "$ceiling" ]; then
-    # Past the band. Since the trigger sits one fat turn below the gate, arriving here means a
-    # single turn leapt the whole band between two Stop events -- expected for roughly the 5% of
-    # turns above p95 (see CTX_FAT_TURN_TOKENS). One loud message and a manual /handoff is the
-    # designed cost of that, and it is strictly cheaper than a handoff authored from a summary.
+    # Past the band. Since the trigger sits one large_request below the gate, arriving here means
+    # a single observation gap leapt the whole band between two observation points -- and since
+    # Route 5's constants are SET rather than sized at a corpus tail (see CTX_LARGE_REQUEST_TOKENS),
+    # this is NOT expected to be rare the way D18's ~5%-at-p95 figure for fat_turn was: a real
+    # turn-boundary gap regularly exceeds 20,000 tokens in finding #20's own cross-turn population.
+    # That is an accepted trade for a tighter, less-stale trigger, not an oversight -- this path
+    # will be seen in practice. One loud message and a manual /handoff is the designed cost of
+    # that, and it is strictly cheaper than a handoff authored from a summary.
     : > "$latch" 2>/dev/null
     jq -n --arg m "handoff trigger declined to arm at $((resident / 1000))k: writing a handoff needs ~$((need / 1000))k of headroom but compaction fires at ~$((ceiling / 1000))k ($ceiling_basis). A single turn appears to have jumped past the $((trigger / 1000))k trigger point. Arming here would lose the race and produce a handoff authored from a compaction summary, which is worse than none." \
         '{systemMessage: $m}'

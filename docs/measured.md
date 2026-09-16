@@ -1594,3 +1594,684 @@ not the hook's doing.
 # block-causes-exit conclusion if exited tracks condition once active-at-start is held fixed.
 # Delete the scratch project and its ~/.claude/projects/*/ transcript directory afterward.
 ```
+
+---
+
+## Finding #20, 2026-09-16 — `large_request` (the per-tool-call-round-trip resident delta Route 5 needs) is real, an order of magnitude tighter than `fat_turn`, and still 2-2.4x larger across a turn boundary than within one
+
+**Question.** `docs/design.md` O10 (Route 5) proposes replacing `fat_turn` with `large_request` — the
+max resident delta a *single* tool-call round trip can add — as the bound a `PostToolUse`-based
+write-trigger arms against, on the theory that a single round trip is plausibly an actually-bounded
+quantity where finding #18 showed `fat_turn` is not. O10's second prerequisite ("measure
+`large_request`'s distribution") was unmeasured; no script survived from findings #14/#15 to extend
+(both say so explicitly), and O10's own pointer at tooling in `mission_control` turned out not to
+exist there either.
+
+**Method.** `tools/measure-large-request.js`, new. Same corpus as findings #14/#15/#18 (this repo,
+`kendo`, `kendo-2`, `mission-control`), every transcript found (47 sessions; the per-project cap this
+tool also supports made no measurable difference here — the corpus is small enough that "top 12 by
+size" is close to "everything"). Per transcript: dedupe assistant records by `requestId` (finding
+#14's own trap — the object is identical across every line sharing an id, so first-vs-last occurrence
+doesn't matter, only avoiding double-counting does); keep only assistant responses containing at
+least one `tool_use` block, since a response with no tool call is not a `PostToolUse` observation
+point — the next one is wherever the next tool-call-bearing response is, however far away. Resident =
+`input + cache_creation + cache_read` (never `+ output`, same as `hooks/handoff-write.sh`). Delta =
+resident at one such observation point minus the previous one. Subagent transcripts excluded
+(separate context, per `tools/context-audit.js`'s own trap #2/#3). Negative deltas (compaction/rewind
+shrinking the prefix) counted separately and excluded from every percentile, same treatment finding
+#15 gave its 2 post-compaction-boundary turns — none occurred in this sample. Each delta is tagged
+`crossedTurn`: whether a real user message (a plain string, or a content array with at least one
+non-`tool_result` block) intervened since the previous observation point, since that changes what the
+delta actually has to cover.
+
+**Result.**
+
+```
+                    n     min     median    p90      p95      p99       max
+within-turn        449     170     1,657    7,688   11,233   19,654    55,309
+cross-turn         114     681    11,959   36,485   54,514  112,265   142,188
+combined           563     170     2,448   14,680   22,031   55,309   142,188
+```
+
+598 tool-call-bearing observation points collected across 47 sessions; 0 negative deltas. Every one of
+the top 10 single deltas (142,188 down to 43,653) has `crossedTurn: true` except one (55,309, a `Read`)
+— consistent with the cross-turn population's own median running ~7x the within-turn median: crossing
+a turn boundary means the delta absorbs a whole new user message (which can itself be large — a
+pasted log, a long file, a tool result quoted back) on top of one ordinary round trip, where a
+within-turn delta is just the round trip alone.
+
+**What this settles.** `large_request` is a real, substantially tighter quantity than `fat_turn` at
+every percentile: even the *combined* max (142,188) is well under half of `fat_turn`'s mid-session p95
+(59,367) let alone its max (323,673, finding #15), and finding #18's ~549,482-token turn — the incident
+that motivated Route 5 — dwarfs every single `large_request` observation here by 4x at the pooled max
+and by 3.9x at just the cross-turn max. This is the qualitative claim O10 needed to survive contact
+with data: a single tool-call round trip is nowhere near as unbounded as a whole autonomous turn, which
+is exactly the gap `PostToolUse`-granularity observation is supposed to close.
+
+**What this sharpens, and changes about the arithmetic O10 sketched.** O10's formula (`trigger =
+ceiling − 2·large_request − authoring_turn`) implicitly assumed one `large_request` figure, the way
+`fat_turn` was one figure. This measurement shows two populations that must not be pooled into that one
+term any more than finding #15's zero-baseline and mid-session turns should be: **within-turn** deltas
+(what the margin needs if `Stop` keeps observing every real turn boundary and `PostToolUse` only has to
+cover the gaps *inside* a turn — the O10 "runs alongside Stop" option) versus **combined** deltas (what
+the margin needs if `PostToolUse` becomes the *only* observation mechanism — the "replaces Stop"
+option). Sizing the constant at the within-turn p99 (19,654) versus the combined max (142,188) is a
+7.2x difference in the term that gets doubled in the trigger formula — not a rounding choice, a
+different design decision each answering a different one of O10's still-open prerequisite-3 questions.
+**So this finding does not by itself let prerequisite 3 be decided** — it supplies the two numbers that
+decision has to choose between, not the choice itself.
+
+**What this does not settle.** n=47 sessions, all ordinary interactive or `/implement-plan`-adjacent
+work in four repos this account has used — nothing here specifically re-samples a session shaped like
+finding #18's 1,625-message runaway turn (that turn is exactly what made *within* it unobservable to
+`Stop`, but every tool-call-bearing response inside it would still have been an ordinary `PostToolUse`
+observation point with its own — presumably unremarkable — `large_request` delta; this measurement
+cannot confirm that without mining #18's own transcript at this granularity, which it does not do).
+Whether the cross-turn population's tail (p99 112,265, max 142,188) is itself bounded, or merely hasn't
+yet produced its own finding-#18-shaped outlier, is exactly finding #15's unresolved survivorship
+question one level down — this corpus only contains turns that completed normally, the same caveat
+finding #14 raised about its own sample. And the tool attribution in the top-10 table is suggestive
+(large deltas cluster on `Bash`/`Edit`/`Write`/`Read`, echoing finding #15's own top-10 shape) but not
+causally established — the delta is attributed to whichever tool call *follows* the growth, not
+demonstrated to be its cause.
+
+### Reproduction
+
+```
+node tools/measure-large-request.js --all
+# or, matching finding #15's exact sampling (top 12 largest transcripts per project):
+node tools/measure-large-request.js
+```
+
+`tools/measure-large-request.js` is new — see its header for the full method, including why a
+`crossedTurn` tag matters and why negative deltas are excluded rather than pooled.
+
+---
+
+## Queued, 2026-09-16 — five probes for a fork-based write mechanism (not yet run)
+
+**Context.** Raised while re-examining Route 5's staleness cost (the gap an auto-written handoff
+leaves before real compaction, `2·large_request + authoring_turn`): instead of the parent session
+authoring the handoff itself, the trigger could instruct it to **fork** (or spawn a backgrounded
+Task) a child that inherits context and writes the handoff off the parent's own critical path,
+dropping `authoring_turn` from the trigger formula entirely (`trigger = ceiling − 2·large_request`)
+since the writing no longer happens in the session racing the ceiling. The child's own format
+would use the existing background-task disposition pattern (F10, `docs/design.md:1502-1527`): the
+handoff starts as a structured-but-mostly-empty document with a `Status` line the child rewrites to
+`Complete` when done, and the post-compaction read leg is told to wait for that rather than
+continue. Five things this rests on are unconfirmed and worth checking live before committing to
+the mechanism, in the same discipline as findings #13/#16/#19/#20 — reasoning from documented
+semantics is not the same as having fired it. Probe tooling goes in `mission_control` (`tools/`,
+alongside `probe-claude-md*.js` and their shared `tools/lib/worktree-probe.js`), the usual place for
+this repo's own live-harness probes, not in this repo — findings here cite it, the same pattern
+`tools/measure-large-request.js` already broke from once script tooling started being kept instead
+of thrown away.
+
+**Recommended run order** (combined where one probe naturally answers two questions; #5 last since
+it is a separate track, not a refinement of 1-4):
+
+1. **(combined) Survival + spawn shape.** Does a backgrounded Task/fork spawned *before* the
+   parent's own auto-compaction keep running, and does its completion still reach/wake the *same*
+   session *after* compaction has pruned it — not merely across `/clear` (F10, confirmed) or with
+   `session_id` alone surviving (finding #16, confirmed), neither of which tested a live in-flight
+   background task crossing a real compaction boundary. Answered together with: should the spawn
+   instruction ask for a true **fork** (inherits full context automatically, this session's own
+   `Agent` tool semantics) or a plain backgrounded Task (starts fresh, needs an explicit
+   self-contained prompt) — decided first because it determines what the survival probe is actually
+   testing, and because it changes how cheap issuing the spawn call is (a fork needs no
+   context-summarizing prompt; a fresh Task does). This is the kill-switch: if completion does not
+   reliably reach the same session, the mechanism is dead regardless of the other four.
+2. **Whether the child can be given a raised (or disabled) auto-compact ceiling** — `claude
+   --autocompact` is a real, working flag (used directly in finding #16's own probe), but nothing
+   confirms the spawning mechanism (however `Agent`/Task actually launches a child under the hood)
+   exposes it as a settable parameter, and the `Agent` tool's own visible parameters (`subagent_type`,
+   `model`, `isolation`, `prompt`, `description`) list nothing like it. Not a strict blocker the way
+   #1 is — the child forks at roughly the trigger point, which by construction still has
+   `2·large_request` of headroom in front of it before the *parent's* ceiling — but unconfirmed
+   whether that leftover cushion is enough for the child's own write, or whether the child faces the
+   same completion-before-compaction race the whole mechanism exists to move off the parent.
+3. **Token cost of issuing the spawn call itself**, on the parent side — needed to tighten the
+   trigger's remaining `2·large_request` margin the same way `large_request` itself tightened
+   `fat_turn`: a fork/Task invocation is plausibly far cheaper and lower-variance than the generic
+   worst-case tool call `large_request` bounds (it doesn't echo a large file back), so a
+   purpose-specific bound could shrink the margin below `2·large_request`. A refinement, not a
+   blocker — falls out for free from whichever of the above probes actually issues a spawn call.
+4. *(folded into #1 above — listed here only because it was raised as its own question: fork vs
+   plain Task.)*
+5. **A different trigger entirely: `PreCompact` spawns the fork, instead of the
+   `PostToolUse`/`Stop` polling trigger reaching it.** This is "Route 4" (`docs/design.md:948-952`,
+   D17), previously rejected — but Route 4 evaluated running the **full authoring turn synchronously
+   inside `PreCompact`**, rejected because `PreCompact` blocks the harness for as long as it runs
+   with no observed timeout (finding #13: ran 65s, no kill) and no known ceiling. A `PreCompact` hook
+   that only **issues an async spawn and returns** is a different, lighter variant not evaluated
+   before. Its own open problem is independent of sync-vs-async: `PreCompact` can fire on a turn that
+   never actually compacts (finding #13, observed twice identically — one wasted firing, then a real
+   one at the same resident size), so this needs the same one-shot latch already used elsewhere, and
+   it is untested whether that double-firing is always exactly one wasted firing or can chain further
+   (finding #13's own open item). Kept last and separate because it changes *which hook* triggers the
+   fork, not a tightening of the `PostToolUse`/`Stop` design items 1-3 refine.
+
+Each probe gets its own finding number (#21 onward) as it actually runs; this entry is the
+pre-registration, not a substitute for them.
+
+---
+
+## Finding #21, 2026-09-16 — a backgrounded `Agent` spawn genuinely survives its own session's real auto-compaction and delivers a real completion notification, but NOT the specific claim the fork-based mechanism needs; two adjacent traps found along the way
+
+**Question.** Probe #1 from the queued list above: does a background `Task`/`Agent` spawned before
+the parent session's own auto-compaction keep running, and does its completion reach/wake the
+*same* session *after* compaction has pruned it — not merely across `/clear` (F10,
+`docs/design.md:1502-1527`, confirmed) and not merely `session_id` surviving alone (finding #16,
+confirmed), neither of which tested a live in-flight background task crossing a real compaction
+boundary. Folded in per the queued item's own note: which spawn form is actually callable at all
+(`Task` vs `Agent`, vs a true "fork").
+
+**Method.** Isolated scratch project, own `.claude/settings.json` registering a `SessionStart` hook
+that logs `source`, `session_id`, and the transcript's own last usage total on every firing (same
+technique as finding #16, giving hard evidence of real compaction rather than an inference).
+`claude-haiku-4-5-20251001`, `--autocompact 100000`, fixed `--session-id`, ~96,000 bytes of
+base64-random filler piped via **stdin** (an argv prompt that size hits "Argument list too long" on
+Windows — hit this for real, switched to stdin, no such limit there) to push resident to ~109k in
+one call. A background agent was then instructed to run a chain of short `sleep 10`s (a single
+*leading* sleep of 60s+ is blocked by the Bash tool's own safety rule — hit this for real too, on
+the first attempt at a plain `sleep 70`) totaling ~50-80s, then write a marker file, so its
+completion would fall well after the point the parent had already crossed the autocompact
+threshold. Persisted as `mission_control/tools/probe-fork-survival.js` (per this repo's own
+`docs/design.md` decision, `[O10](../../docs/design.md#o10)`, to keep this kind of tooling rather
+than re-derive it every time) — run several times manually while debugging, then re-run clean via
+the finished script itself (`node tools/probe-fork-survival.js --sleep-chain 5`) to confirm the
+script reproduces the manual result, not just describes it.
+
+**Result.**
+
+1. **Real compaction, confirmed directly, not inferred.** The `SessionStart` hook log showed
+   `source=compact` firing at essentially the same resident figure as the immediately preceding
+   reading (~110k, matching finding #16's "no async gap" behaviour exactly), and the *next* call's
+   `source=resume` reading was genuinely smaller (e.g. 110,018 → 32,080 in the clean re-run) —
+   real compaction, not merely a label.
+2. **A background `Agent` spawned before that compaction did complete for real, and its completion
+   was delivered as a genuine `<task-notification>` record in the transcript** — but the whole
+   spawn→completion→delivery cycle happened *within the one originating `claude -p` process*, not
+   across a process boundary. Told explicitly "reply immediately with just the task id, do not wait,
+   do not poll," the CLI (not the model choosing to disobey — no polling tool call appears in the
+   transcript between spawn and the notification) kept that single invocation open for the task's
+   full real duration and delivered the notification into the *same* turn before it returned. This
+   was reproduced identically across four separate attempts.
+3. **So the load-bearing question — does the notification survive the spawning *process* actually
+   exiting before the task finishes — is NOT cleanly answered, and what was checked pointed the
+   wrong way.** A hard kill (`SIGKILL`) of the spawning process 12 seconds into an 80-second spawned
+   task destroyed the in-flight work outright: the marker file it was supposed to write never
+   appeared even 2+ minutes later, with no further `claude` call of any kind run in between. Whatever
+   keeps a graceful `-p` call open until a task it just spawned resolves is doing real, load-bearing
+   work, not a decorative wait — the background task is not independent of its own spawning CLI
+   instance the way a detached OS process would be. Route 5's fork idea assumed the parent could
+   spawn and move on immediately, unblocked; what was observed instead is closer to "the turn that
+   spawns it does not return control until the spawn resolves or is destroyed," which is a
+   materially different cost shape than assumed, if it generalizes.
+
+**Two adjacent traps, worth keeping regardless of the mechanism's fate.** (a) The tool callable from
+a live session is named **`Agent`**, resolved via `ToolSearch({query:"select:Agent"})` — the bare
+name `"Task"` visible in a session's own `system/init` tool list is not directly invocable, and a
+prompt that just says "use the Task tool" produces a model that gets confused between `TaskCreate`/
+`TaskList`/etc. and never calls anything. (b) **`TaskOutput` is deprecated** — confirmed via a live
+`deferred_tools_record` transcript attachment, and via a live call: querying it for a task whose
+completion had *already* been delivered returned `<tool_use_error>No task found with ID: ...
+</tool_use_error>`, which looks exactly like "the task vanished" to a probe that doesn't know
+better. The real, current delivery path is the Agent tool's own spawn result (carries an
+`output_file` path) plus an unprompted later `<task-notification>` transcript record — never poll
+`TaskOutput` to check on one.
+
+**What this does not settle.** Whether a spawning turn *can* be made to return immediately (as
+literally instructed, several phrasings tried) while the task keeps running independently, and if
+so whether *that* independent survival crosses a real compaction+process boundary, is untested —
+every attempt that got as far as a real spawn stayed open until the notification arrived, and the
+one clean test of "the process disappears mid-task" (a hard kill) came back negative. Whether
+`subagent_type:"fork"` specifically (full context inheritance, this session's own `Agent` tool
+semantics) behaves any differently from the plain `"general-purpose"` type used throughout this
+probe is also untested — every spawn here used `"general-purpose"`, since the immediate question
+was survival/delivery mechanics, not context inheritance. n=1 machine, n=1 account/subscription
+configuration; whether the "stay open until resolved" behaviour is a fixed CLI property or
+configuration/version-dependent is unknown.
+
+**Bearing on the queued probe list.** Probes #2 (child `--autocompact` override) and #3 (spawn-call
+token cost) are downstream of a fork that can actually hand off control promptly — worth revisiting
+scope once/if a way is found to test a genuine graceful-exit-before-completion path. Probe #5
+(`PreCompact`-triggered spawn) is unaffected by this finding either way, since it changes which hook
+triggers the spawn, not whether spawning itself blocks.
+
+### Reproduction
+
+```
+node mission_control/tools/probe-fork-survival.js                    # normal path
+node mission_control/tools/probe-fork-survival.js --kill-after 12     # hard-kill stress test
+node mission_control/tools/probe-fork-survival.js --keep --json      # keep scratch dir + transcript, machine-readable summary
+```
+
+See the script's own header for the full method and the two traps above in more detail.
+
+**Addendum, same day — re-run to check what the "stays open" finding above actually costs in
+tokens, not just wall-clock.** The result above establishes the spawning call does not return
+early; it does not say whether the parent's own resident count grows substantially while it waits,
+which is the thing Route 5's trigger formula actually prices (staleness is a token quantity, not a
+latency one). A clean re-run (`--sleep-chain 3`, ~30s wait) with `--json` captured the resident
+figure at each step directly rather than only checking survival:
+
+```
+call1-filler (push over threshold):  resident 109,009
+call2-spawn  (returns after the spawned Agent + wait resolves): resident 32,045
+call3-followup (separate later call): resident 34,930
+```
+
+The `SessionStart` hook log pins why call2 comes back *lower*, not higher: `source=compact` fired
+at resident 109,758 — essentially unchanged from call1 — **while call2 was still in flight**,
+consistent with finding #13's already-established "compaction fires mid-request, not only between
+requests" behaviour, just now confirmed to also fire while the model is mid-tool-call, blocked
+waiting on a spawned agent. So in this run the parent's own token growth during the "stays open"
+wait was not authoring_turn-shaped at all — real compaction happened *inside* the blocking call and
+shrank things before it returned, rather than the parent accumulating a large new delta on top of
+its pre-spawn peak.
+
+This narrows, rather than overturns, the verdict above: "the invocation does not return early" is
+confirmed and real, but whether that costs Route 5 anything depends on whether it manifests as
+*wall-clock unavailability* (confirmed: the session is unresponsive for the spawn's whole duration)
+or as *resident-token growth racing the ceiling* (this one run: no, compaction absorbed it first).
+n=1 for this specific angle, and the overlap between "how long the spawn took" and "when
+mid-request compaction happened to fire" was a property of this run's own calibration (filler sized
+to sit near the threshold, sleep-chain long enough to still be running when the next compaction
+check landed) — in Route 5's actual design the spawn fires much earlier (at `ceiling −
+2·large_request`), with no guarantee compaction falls inside that particular call rather than well
+after it has already returned. Worth another run deliberately varying the gap between "spawn
+issued" and "ceiling reached" before treating this as settled either way.
+
+---
+
+## Finding #22, 2026-09-16 — the parent-side token cost of issuing a spawn call, measured cleanly: ~6.7k-7.9k tokens, well under `large_request`'s within-turn p99; but the CLI's own reported `usage` field is not a safe way to measure it when a spawn happened inside the call
+
+**Question.** Queued probe #3: the parent-side token cost of issuing the spawn call itself
+(`ToolSearch` + the `Agent` tool call + receiving the completion notification back), needed to
+judge whether a purpose-specific bound could shrink Route 5's trigger margin below
+`2·large_request` (finding #20) the way `large_request` itself shrank `fat_turn`. Finding #21's
+own addendum touched this but was confounded: real compaction happened to fire *inside* that
+run's own spawn call, so its `call1`/`call2` resident readings mix spawn cost with
+compaction shrinkage and can't isolate one from the other.
+
+**Method.** Extended `tools/probe-fork-survival.js` (new flags: `--autocompact`,
+`--filler-bytes`, `--child-filler-bytes` — `tools/probe-fork-survival.js:120-122`) so the
+confound can be removed directly: `--autocompact 900000` (far above anything this run's filler
+can reach) keeps real compaction from ever firing, and `--filler-bytes 100` keeps call1 cheap
+(it only needs to establish a session, not push resident — that was finding #21's job, not
+this one's). `node tools/probe-fork-survival.js --autocompact 900000 --filler-bytes 100
+--sleep-chain 1 --json`, run twice.
+
+**Result.** Both runs: `parentCompactedBetweenCall1And2: false` (confirmed via the hooklog, not
+inferred) and the SAME direction of surprise. Reading resident directly off the transcript (the
+`SessionStart` hook's own tail-bounded read, matching `hooks/handoff-write.sh`'s own technique,
+not the CLI's `--output-format json` result):
+
+```
+run    baseline (end of call1)   end of call2 (spawn done)   delta ("spawn cost")
+A      26,028                    33,935                      7,907
+B      26,372                    33,071                      6,699
+```
+
+But the script's OWN `resident(r2.usage)` — parsed from the CLI's final JSON result, the exact
+figure `probe-fork-survival.js`'s `log()` helper reports and finding #21's own table used —
+read **124,889 and 125,256** for the identical two calls: 3.7-3.8x the transcript-verified true
+figure, with no compaction to explain the gap this time (ruled out directly, see above). Direct
+inspection of the kept run's own transcript (`tools/probe-fork-survival.js`, run B kept) found
+why: the completed CLI process tree, walked via `find <session-dir>/subagents/`, contains a
+**separate** transcript file for the spawned child
+(`<session_id>/subagents/agent-<task_id>.jsonl`, own `.meta.json` alongside it) — not
+interleaved into the parent's own `.jsonl` the way a naive reading of "one session" might
+suggest. The CLI's final reported `usage` field does not match either file's own last-record
+resident alone; it is close to parent-resident-at-end-of-call plus a large share of what the
+child itself consumed across its own several turns (its own resident peaked at ~41k, over 2-3
+turns) — consistent with, though not proven to be exactly, a **sum across every API call made
+during the invocation, parent's and child's combined**, not the resident-context-size-of-the-
+last-request quantity `large_request`/`resident_from_transcript` both mean by "resident."
+
+**What this settles.** The parent-side cost of issuing a spawn call and waiting for it to
+resolve, measured the way it actually matters (transcript resident, the quantity Route 5's
+trigger prices) rather than the CLI's own cost-accounting figure, is **~6.7k-7.9k tokens** here
+— well under finding #20's within-turn `large_request` p99 (19,654) and roughly a third of its
+p99 combined figure, the qualitative result probe #3 was pre-registered to look for: a
+purpose-specific bound on the spawn round trip alone could plausibly tighten Route 5's margin
+below the generic `large_request` bound, *if* the mechanism's kill-switch problem (finding #21:
+the call doesn't return early) is ever resolved. n=2, one machine, one `--autocompact` setting
+each; not varied across model/prompt-length.
+
+**A trap worth keeping regardless of the mechanism's fate**, alongside finding #21's two: **the
+CLI's `--output-format json` result's own `usage` field is not resident, and is not safe to
+treat as resident, once a spawn happened during that call** — it appears to fold in a large
+share of the child's own separate consumption. Every prior probe in this queue (#20's
+`large_request`, #21's own table) either didn't involve a spawn at all or cross-checked against
+the `SessionStart` hook's transcript-read resident directly rather than trusting `r.usage`
+alone (finding #21's own "109,758... essentially unchanged" claim came from the hooklog, not
+`r2.usage`) — so nothing already published is contaminated by this, but a *future* probe or a
+real implementation that reads `claude -p --output-format json`'s own `usage` field to size a
+trigger, the way it's tempting to since it's right there in the result, would be measuring the
+wrong quantity the moment a spawn is involved.
+
+**What this does not settle.** The exact aggregation rule behind the CLI's reported `usage`
+(sum-of-all-calls is the best-fitting guess, not confirmed against the raw byte counts); whether
+it changes with `--output-format stream-json` or the non-`-p` interactive CLI; and whether the
+~7k spawn-cost figure holds up at a materially different child prompt size or `subagent_type`
+(both runs used the same short instruction text and `general-purpose`).
+
+### Reproduction
+
+```
+node tools/probe-fork-survival.js --autocompact 900000 --filler-bytes 100 --sleep-chain 1 --keep --json
+# then, to see the discrepancy directly: diff the "call2-spawn" resident in the JSON summary
+# against the SECOND "source=resume" line in its own hooklog (or the last message.usage record
+# in <kept-scratch>/../<session_id>.jsonl) — they should match closely if no spawn happened
+# inside the call, and diverge sharply (as above) when one did.
+```
+
+---
+
+## Finding #23, 2026-09-16 — no evidence a spawned child goes through the same hooked session lifecycle as the parent at all (so there is nothing to raise or disable); an attempt to push the child's own resident near a real ceiling was blocked by an unrelated `Read`-truncation trap before it could answer the question
+
+**Question.** Queued probe #2: can the spawned child be given a raised or disabled
+auto-compact ceiling? The `Agent` tool's own schema (`subagent_type`, `description`, `prompt`,
+`model`, `isolation`) already showed no such parameter by inspection (the dead end recorded in
+the prior handoff); this probe was meant to go further and check live whether the child
+undergoes *any* compaction-relevant lifecycle event at all, and if so at what size.
+
+**Method.** Same extension to `tools/probe-fork-survival.js` as finding #22, plus
+`--child-filler-bytes` (`tools/probe-fork-survival.js:263-269`): writes a filler file the
+spawned child is instructed to read via the `Read` tool before running its sleep chain,
+independent of the parent's own `--filler-bytes`. The shared `.claude/settings.json` now
+registers `PreCompact` alongside `SessionStart` on the SAME hook script
+(`tools/probe-fork-survival.js:230-237`), tagging each line with its own `hook_event_name` and
+`session_id`, so a child that fired either event under a *different* `session_id` would show up
+as a `foreignSessionLines` entry distinct from the parent's own fixed session id. Two runs:
+`--child-filler-bytes 72000` then `--child-filler-bytes 115000` (both with `--autocompact 900000
+--filler-bytes 100 --sleep-chain 1 --keep --json`, to isolate the child-only question from
+finding #22's own concerns).
+
+**Result.**
+
+1. **`foreignSessionLines` was empty in both runs — no `SessionStart` or `PreCompact` fired
+   under any session_id but the parent's, no matter the child's own filler size.** The spawned
+   child's own transcript exists (confirmed directly: `<session_id>/subagents/agent-
+   <task_id>.jsonl`, a real file, per finding #22's own discovery) but nothing about creating or
+   growing it triggered the project's registered hooks the way the top-level session's own
+   lifecycle does. This is consistent with the child not being a `claude` CLI process going
+   through the same session-lifecycle event system at all (it has no visible `--autocompact`
+   flag to set because it may not be the kind of thing `--autocompact` even applies to), though
+   this probe cannot rule out "it does go through that lifecycle but hooks aren't wired to fire
+   for subagent-scoped events" as an alternative explanation — only that, whichever is true,
+   there is no hook-visible signal to build a raised-ceiling mechanism against.
+2. **The intended stress (push the child's own resident near a real context-window ceiling)
+   did not work, for an unrelated, worth-keeping reason.** Both runs' child transcripts peaked
+   at essentially the SAME resident (~41,106-41,372) regardless of whether the filler file was
+   72,000 or 115,000 bytes. Direct inspection (`jq` over the child's own `.jsonl`, filtering
+   `.type=="user"` tool_result content, measuring string length) found why: the `Read` tool's
+   returned content topped out at **24,696 characters** in both runs, against source files of
+   96,000 and ~154,000 base64 characters respectively — a real, size-independent truncation
+   ceiling on a single `Read` call's returned content (**not** a per-line truncation: the filler
+   was rewritten with 200-character line breaks — `makeFillerFile()`,
+   `tools/probe-fork-survival.js:206-217` — specifically to rule that out after the first probe
+   run showed identical truncation against a single-line, ~96,000-char file).
+3. Both children completed their task normally (marker written, `DONE`/completion reported,
+   `<task-notification>` delivered) at this size — no context-overflow error observed, but this
+   says nothing about a real ceiling since the actual content that reached the child never grew
+   past ~41k resident regardless of what was asked for.
+
+**What this settles.** No live-visible mechanism (hook-based or flag-based) exists to detect,
+let alone raise or disable, a compaction ceiling for a spawned child — consistent with, and now
+somewhat strengthened by live evidence beyond, the dead end already recorded from schema
+inspection alone. If Route 5's fork idea is ever revisited, "assume the child inherits the
+parent's ceiling with no override available" is the safer default than assuming otherwise.
+
+**What this does not settle — the actual probe #2 question is still open.** Whether a child
+genuinely CAN be pushed toward a real context-window ceiling (and what happens there — silent
+truncation, a hard error, or something else) was not answered; the attempt here was blocked by
+the `Read`-truncation trap before it could reach a size worth calling a stress test. Reaching one
+would need a different content channel — several smaller `Read` calls across separate files
+(each under whatever the per-call cap actually is, unmeasured beyond "at least 24,696
+characters get through"), a `Bash`-piped read instead of `Read`, or a multi-turn child
+conversation that accumulates size turn over turn rather than in one call. Not attempted here:
+per finding #21's own "Bearing on the queued probe list" note, probe #2 is downstream of a fork
+that can actually hand off control promptly, which finding #21 already showed this mechanism
+cannot do — so this was pursued for completeness (per this session's own explicit instruction
+to carry out the queued probes) rather than because closing it changes Route 5's current
+disposition.
+
+### Reproduction
+
+```
+node tools/probe-fork-survival.js --autocompact 900000 --filler-bytes 100 --child-filler-bytes 115000 --sleep-chain 1 --keep --json
+# then inspect the child's own transcript directly:
+# find <kept-scratch's transcript project dir>/<session_id>/subagents -name '*.jsonl'
+# jq -r 'select(.type=="user") | .message.content[]? | select(.type=="tool_result") | (.content | if type=="string" then . else (.[0].text // "") end) | length' <that file>
+```
+
+---
+
+## Finding #24, 2026-09-16 — a `PreCompact` hook that only issues an async, detached spawn and returns does NOT block the harness (contrast Route 4's rejected synchronous form), and the detached work survives even the outer process tree being force-killed shortly after
+
+**Question.** Queued probe #5: is "Route 4, lighter variant" — a `PreCompact` hook that issues
+an async spawn and returns, instead of running the full authoring turn synchronously inside the
+hook (the already-rejected form, `docs/design.md` D17, confirmed blocking 65s+ with no observed
+ceiling, finding #13) — actually non-blocking in practice, and does the detached background work
+it starts survive independent of the hook script's own short-lived process? Independent of
+whether the `PostToolUse`/`Stop`-polling-based fork idea (probes #1-#3 above) is viable at all —
+this changes *which hook* triggers a spawn, not whether spawning itself blocks (finding #21's own
+note).
+
+**Method.** New script, `tools/probe-precompact-async-spawn.js` (mirrors finding #13's own
+convention: isolated scratch project, `PreCompact` + `SessionStart` hooks that timestamp and
+log, base64 filler over stdin to cross `--autocompact`). The `PreCompact` hook
+(`tools/probe-precompact-async-spawn.js:168-182`) checks a one-shot latch file; on first firing,
+backgrounds `sleep <N> && echo ASYNC_DONE > marker` via `nohup ... & disown` and returns
+immediately; on any later firing this session, logs `SKIPPED` and returns immediately too — the
+same one-shot-latch pattern `docs/design.md` D17/D18 already use for the real write trigger.
+Deliberately reuses this repo's own established, unavoidable workaround
+(`tools/lib/worktree-probe.js`'s own header: `claude -p --output-format json` does not exit on
+its own from a scripted spawn here, confirmed across four spawn strategies) rather than treating
+it as a stress-test option the way `probe-fork-survival.js --kill-after` does: watch stdout for
+the final parseable JSON, then `taskkill /T /F` the whole tree — meaning survival past that kill
+is what "normal" looks like for these scripts, not an extra stress condition, and is if anything
+a HARDER bar than real production (where the top-level session process doesn't exit at this
+point at all — it keeps running into `SessionStart(source:compact)`). `claude -p` (filler,
+`--autocompact 100000`) then `claude -p -c` (trivial "reply CONTINUE" prompt, to let
+`PreCompact` fire on its own), then a wait (`--post-call2-wait`, default async-sleep+15s) with
+NO further `claude` call before checking ground truth. Two runs (`--async-sleep 20` and `25`).
+
+**Result, both runs identical in every qualitative respect:**
+
+```
+                                run 1        run 2
+PreCompact firings              2            2       (finding #13's double-firing pattern, reproduced)
+  - SPAWNED                     1            1
+  - SKIPPED                     1            1       (one-shot latch correctly absorbed the wasted firing)
+hook entry->exit elapsed        33ms, 18ms   39ms, 13ms   (both firings, both runs -- not 65s+)
+SessionStart(source=compact)    seen         seen
+whole call2 wall-clock          5,082ms      4,561ms
+marker on disk after outer      TRUE         TRUE
+  kill + full wait, no further
+  claude call
+```
+
+1. **The hook itself returns near-instantly on both the wasted and the real firing** (13-39ms
+   entry-to-exit both runs) — categorically different from Route 4's confirmed 65s+ synchronous
+   block. The WHOLE `-p -c` invocation containing both `PreCompact` firings and the real
+   `SessionStart(source:compact)` completed in ~4.6-5.1 seconds total.
+2. **The one-shot latch correctly absorbed finding #13's double-firing pattern**: exactly one
+   spawn, not two, despite `PreCompact` firing twice per real compaction, identically to finding
+   #13's own n=2 observation.
+3. **The detached background task survived the outer process tree being force-killed.** In both
+   runs, the outer kill happened ~4.5-5s after `PreCompact`'s first (spawning) firing, well
+   before the async task's own 20s/25s sleep had elapsed — so the marker file, confirmed present
+   only after the FULL wait with no further `claude` call, could only have been written by a
+   process that kept running after its own great-grandparent process tree had already been torn
+   down by `taskkill /T /F`. This is the opposite result from finding #21's Agent-tool-based
+   probe #1, where a hard kill of the spawning process destroyed the in-flight background work
+   outright — the mechanics are different enough (a plain OS-level backgrounded shell process
+   launched from a short-lived hook script, vs. an `Agent`-tool subagent tied to its spawning
+   CLI invocation) that the two findings do not contradict each other; if anything this is
+   suggestive of *why* they differ: by the time the outer kill happens here, the hook's own
+   `bash.exe` instance (the immediate parent Windows would need for `taskkill /T`'s tree-walk to
+   reach the detached grandchild) has itself already exited, breaking the parent-child chain
+   `taskkill` walks — untested directly, offered as the likely mechanism, not confirmed.
+
+**What this settles.** The core premise of "Route 4, lighter variant" holds up live, twice: a
+`PreCompact` hook CAN issue background work and return without blocking the harness, and that
+work CAN survive independent of both the hook's own process and (a stronger test than needed)
+the whole outer `claude -p` process tree being killed shortly after. This directly undercuts
+Route 4's original rejection reason (blocking, no ceiling) for THIS variant specifically — the
+async form was not evaluated before (D17 only rejected the synchronous form) and this is now a
+live-confirmed, not just reasoned, candidate.
+
+**What this does not settle.** This tests OS-level process survival, not delivery of a
+completion signal back to a live, continuing interactive session the way finding #21's
+`<task-notification>` mechanism does for the `Agent`-tool route — a `PreCompact`-hook-spawned
+background process has no equivalent built-in notification path back into the transcript; it
+would need to write something (a file, a sidecar) that a LATER hook firing reads, which is
+exactly the read-leg pattern D17 already uses for the synchronous case and should carry over
+unchanged, but that carry-over itself is untested here. n=2, one machine, `--autocompact 100000`
+only, `sleep`-based dummy work only (not a real handoff-authoring turn) — whether a *real*
+authoring turn can itself be backgrounded this way (as opposed to a trivial shell command) is a
+materially different, unanswered question: the real work Route 5 would want to background is an
+LLM turn, not a shell script, and nothing here establishes that an LLM turn can be started
+detached from a hook in the first place (the `Agent` tool is the only demonstrated way to start
+one, and finding #21 already showed that route blocks). This finding shows the *hook* half
+works; it does not show the *what gets spawned* half does.
+
+### Reproduction
+
+```
+node tools/probe-precompact-async-spawn.js --async-sleep 20 --keep --json
+node tools/probe-precompact-async-spawn.js --async-sleep 25 --json
+```
+
+See the script's own header for the full method and the reasoning behind treating the outer
+process kill as "normal," not a stress-test flag.
+
+---
+
+**Bearing on Route 5's fork idea, all five queued probes now run (#21-#24; #4 was folded into
+#21).** Not itself a Decision — that call is left open, this is a summary of where the live
+evidence now stands so it isn't scattered across four findings.
+
+- The `PostToolUse`/`Stop`-trigger-spawns-an-`Agent` route (probes #1, #2, #3 — findings #21,
+  #23, #22) is **effectively closed for now**, not on the ceiling/cost questions it was designed
+  to answer but on its own kill-switch: finding #21 already showed the spawning call does not
+  hand off control early, so probes #2 and #3's own refinements (child ceiling, spawn-call
+  cost) matter only if that kill-switch problem is separately solved. Both were still run to
+  completion this session and both landed clean, reusable findings in their own right (#22's
+  CLI-`usage`-field trap, #23's `Read`-truncation trap, and #22's actual "~7k tokens" spawn-cost
+  figure, ready to use if the kill-switch problem is ever resolved) — but neither changes this
+  route's current disposition.
+- **The `PreCompact`-triggers-a-detached-spawn route (probe #5, finding #24) is the one live
+  result that came back positive**, and on a different mechanism than the `Agent`-tool route
+  entirely (an OS-level detached shell process from a hook script, not a harness-tracked
+  subagent) — so it does not inherit probe #1's kill-switch problem. It answers "can the hook
+  half of this work at all" cleanly (yes, twice, non-blocking, latch-correct, survives an outer
+  kill). It does **not** yet answer "can the thing Route 5 actually needs to background — an
+  LLM turn that writes a real handoff — be started this way at all," since the `Agent` tool is
+  the only demonstrated way to start a backgroundable LLM turn and finding #21 already showed
+  that route blocks. Closing that gap (can a `PreCompact` hook's `block`-style output, the same
+  mechanism [O10](../../docs/design.md#o10) already validated for `PostToolUse`, get a *later*
+  hook or read-leg to pick up and complete an authoring turn asynchronously, without going
+  through the `Agent` tool at all) is the natural next probe if this route is picked back up —
+  not queued as one of the original five, since it only became askable once #24 closed out #5.
+
+---
+
+## Finding #25, 2026-09-16 — `SessionStart(source:"compact")` can block the harness for a full 65s polling a file, same as `PreCompact` (finding #13): no observed cutoff, and the harness correctly withholds the model's response until the hook resolves, then proceeds normally
+
+**Question.** Raised directly by finding #24's own "what this does not settle": the read-leg
+design already decided on (the async writer rewrites a `Status` field on disk; the read leg —
+`SessionStart(source:"compact")`, the hook D17 already dispatches on — polls for `Status:
+Complete` rather than reading once, since finding #24's own timing showed real compaction can
+land well before a real authoring turn would finish) needs `SessionStart` itself to be able to
+block for a nontrivial duration. Finding #13 already answered this exact shape of question for
+`PreCompact` (65s+, no observed kill, no known ceiling) — this asks the same question of
+`SessionStart` specifically, never tested for blocking duration before.
+
+**Method.** Mirrors finding #13's own method exactly, hook swapped. New script,
+`tools/probe-sessionstart-compact-block.js`: isolated scratch project, `PreCompact` hook is
+log-only (real compaction should proceed unimpeded, not be re-tested), `SessionStart` hook
+(`tools/probe-sessionstart-compact-block.js:156-166`) checks `source` — anything but `"compact"`
+returns immediately (so `startup`/`resume` firings stay fast and don't confound timing); on
+`"compact"` it polls, once per second, for a marker file that is **deliberately never created**,
+up to `--poll-seconds` (default 65, matching finding #13's own chosen figure, past the
+commonly-cited ~60s hook-default), logging iteration count and elapsed time either way. `claude
+-p` (filler, `--autocompact 100000`) then `claude -p -c` (trivial prompt) then a third `-p -c`,
+each script-side call's own timeout raised well past `--poll-seconds` so the script's own
+timeout can't be what cuts things off.
+
+**Result.** One run, `--poll-seconds 65`. Direct transcript inspection (`jq` over the kept
+session's own `.jsonl`, timestamps plus each `user`/`assistant` record's role and first content
+block) gives the real sequence, which split differently across the two `-c` calls than the
+script's own per-call token/resident accounting first suggested — worth stating plainly since it
+took cross-checking the raw transcript to see: call2 (`"Reply with just the word CONTINUE"`)
+completed normally and fast (prompt 13:37:41.689 → response 13:37:42.971, ~1.3s), landing
+between the session crossing the `--autocompact` threshold and only the FIRST, *wasted*
+`PreCompact` firing (finding #13's own "fires once with no compaction behind it" pattern) — no
+compaction happened during call2 at all. Call3 (`"Reply with just the word CHECK"`) is the one
+that actually hit real compaction: its own prompt landed at 13:37:46.393, the SECOND (real)
+`PreCompact` fired right after (13:37:46.461), a synthetic `"This session is being continued
+from a previous conversation..."` summary user-turn was inserted at 13:38:01.939 (direct,
+unambiguous evidence of real compaction, not merely a source label), the compact-triggered
+`SessionStart` hook then polled the full **65 of 65 requested iterations** (entry 13:38:02.254 →
+exit 13:39:08.565, marker never appeared, exactly as configured) with **no cutoff, no kill, no
+truncated iteration count** — and only *after* that hook exited did call3's real response
+(`"CHECK"`) finally land, at 13:39:10.431 — call3's own measured wall-clock (87,529ms) matches
+this span almost exactly. The harness produced a normal, correct final response; nothing errored
+or hung indefinitely.
+
+**What this settles.** `SessionStart(source:"compact")` can block for at least 65 seconds with
+no observed ceiling, exactly mirroring finding #13's result for `PreCompact` — the
+`~60s-hook-default` figure is not a real ceiling here either. More directly useful than the
+duration number itself: **the harness genuinely gates the model's response on the hook
+resolving** (the "CHECK" reply did not land until 2s after the hook's own logged exit,
+consistent D17's existing reliance on `SessionStart(compact)` running synchronously, now shown to
+hold even under a long block, not just the near-instant reads D17 was built around) — so a
+Status-field-poll read-leg, the design this probe was raised to de-risk, is viable on the
+mechanism this repo already has: no new hook, no new trigger, the same one D17 dispatches on
+today.
+
+**What this does not settle.** n=1, one fixed duration (65s), one machine — same epistemic scope
+finding #13 itself claimed for the identical question asked of `PreCompact` ("no attempt was made
+to find where a real ceiling starts, only that 65s is under it"). Whether a materially longer poll
+(the actual worst case: a full authoring turn, finding #14's 13.7k-64.6k tokens, plausibly tens of
+seconds to a few minutes wall-clock) stays uncut is untested — but note what this is NOT about:
+the poll loop (`tools/probe-sessionstart-compact-block.js:159`) is already `sleep 1` in a
+`while` loop, i.e. already a chain of short sleeps, not one long blocking call, so this has
+nothing to do with the Bash-**tool**'s own leading-sleep-over-60s guardrail (finding #21) — that
+guardrail sits in front of a model's own tool calls inside an agentic turn and doesn't apply to a
+hook's plain shell command at all, wrong subsystem entirely. Since every loop iteration here is
+identical, there is no structural reason a longer run would get cut differently than this one
+wasn't; the only way it plausibly could is a harness-level wall-clock ceiling on TOTAL hook
+execution, independent of internal loop granularity — a real, different, still-untested question,
+not a sleep-chaining one. Low-priority given the design direction already agreed: a real
+implementation would poll with its own bounded timeout (D17's existing "likely-undocumented"
+fallback covers the case it's exceeded), so the exact ceiling — if one exists at all — only
+matters insofar as the chosen timeout needs to sit under it, and 65s-with-no-cutoff already
+supports a modest bound (order 90-120s) with reasonable confidence. Separately: whether polling
+every 1s (versus a longer interval) matters to any ceiling that does exist elsewhere is untested.
+And this probe's own script initially *looked* like it had a measurement bug (call2's
+script-reported wall-clock, 4,687ms, seemed wildly inconsistent with the hook's own 65s+ block)
+until cross-checked against the raw transcript directly — worth flagging as a trap in its own
+right: **when a hook-driven turn can split unpredictably across which physical `-c` invocation
+ends up "wearing" a long block** (here: the wasted `PreCompact` landed on call2, the real one and
+the resulting block landed on call3, one invocation later than finding #13's own framing put it),
+a script's own per-call bookkeeping can look self-contradictory even though nothing is actually
+wrong — the transcript's own absolute timestamps are the ground truth to reconcile against, not
+which call a script attributed a given hook firing to.
+
+### Reproduction
+
+```
+node tools/probe-sessionstart-compact-block.js --poll-seconds 65 --keep --json
+# then cross-check against the raw transcript directly, not just the script's own per-call
+# summary, exactly as this finding's own method required:
+# jq -r 'select(.type=="user" or .type=="assistant") | [.timestamp, .type, .message.role,
+#   (if .type=="assistant" then (.message.content[0].text // .message.content[0].type // "?")
+#    else (if (.message.content|type)=="string" then .message.content
+#          else (.message.content[0].type // "?") end) end)] | @tsv' <session>.jsonl
+```
