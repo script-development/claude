@@ -47,7 +47,7 @@ was hit and corrected while writing the tool:
    inflates by 2.1× (18,500 lines for 8,888 requests). Dedupe on `requestId`.
 2. **Subagent transcripts live in a separate directory**, `<project>/<parent-session>/subagents/`.
    The `isSidechain` flag alone does not find them.
-3. **`sessionId` is not a context boundary.** A subagent transcript carries its *parent's*
+3. **`sessionId` is not a context boundary.** A subagent transcript carries its _parent's_
    `sessionId`. Grouping on it merges a parent context with all of its children into one imaginary
    session — which then reports a file read once per agent as a "repeat read", when having separate
    contexts is the entire point of a subagent. The unit of context is the **transcript file**.
@@ -58,7 +58,7 @@ character counts and are approximations, labelled as such wherever they appear. 
 measured context size gives a median of **2.68 chars/token**, unsurprising for code, JSON and diffs.
 Character-derived figures below therefore understate by roughly 1.5×.
 Dollar figures use public list rates ($15/$75 per Mtok, cache write ×1.25, cache read ×0.1) and are
-a *split of where cost sits*, not a bill.
+a _split of where cost sits_, not a bill.
 
 > **Correction, same day.** The first version of this report stated that tool traffic was "0.27% of
 > spend" and concluded per-call frugality was a rounding error. That compared a **stock** (7.09M
@@ -72,13 +72,13 @@ a *split of where cost sits*, not a bill.
 
 ### 1. 98.1% of all tokens are cache reads. Context replay is the entire cost structure.
 
-| | tokens | share |
-|---|---|---|
-| uncached input | 0.61M | 0.0% |
-| cache creation (new material) | 44.06M | 1.7% |
+|                                 | tokens        | share     |
+| ------------------------------- | ------------- | --------- |
+| uncached input                  | 0.61M         | 0.0%      |
+| cache creation (new material)   | 44.06M        | 1.7%      |
 | **cache read (context replay)** | **2,617.12M** | **98.1%** |
-| output | 6.06M | 0.2% |
-| total | 2,667.86M | |
+| output                          | 6.06M         | 0.2%      |
+| total                           | 2,667.86M     |           |
 
 At list rates that is ~$5,215, of which cache read is 75.3% and output 8.7%.
 
@@ -92,20 +92,20 @@ before its session ends. The worst single context reached **111×** — 4.1 MB o
 ### 2. 90% of spend happens at context depths above 100k. 61% above 400k.
 
 | context depth | spend | cumulative |
-|---|---|---|
-| 0–100k | 136M | 5% |
-| 100–200k | 308M | 17% |
-| 200–300k | 304M | 28% |
-| 300–400k | 276M | 39% |
-| 400–500k | 283M | 49% |
-| 500–600k | 339M | 62% |
-| 600–700k | 336M | 75% |
-| 700–800k | 256M | 84% |
-| 800–900k | 161M | 90% |
-| 900k–1M | 261M | 100% |
+| ------------- | ----- | ---------- |
+| 0–100k        | 136M  | 5%         |
+| 100–200k      | 308M  | 17%        |
+| 200–300k      | 304M  | 28%        |
+| 300–400k      | 276M  | 39%        |
+| 400–500k      | 283M  | 49%        |
+| 500–600k      | 339M  | 62%        |
+| 600–700k      | 336M  | 75%        |
+| 700–800k      | 256M  | 84%        |
+| 800–900k      | 161M  | 90%        |
+| 900k–1M       | 261M  | 100%       |
 
-This is the load-bearing table. Cost per turn *is* the context size, so total cost is quadratic in
-session length. Nothing about *what* a turn does matters nearly as much as *how deep* the context
+This is the load-bearing table. Cost per turn _is_ the context size, so total cost is quadratic in
+session length. Nothing about _what_ a turn does matters nearly as much as _how deep_ the context
 was when it did it.
 
 ### 3. Spend is extremely concentrated: 11 of 191 contexts (6%) account for 80% of all tokens.
@@ -123,11 +123,11 @@ everything else, so its true cost is its size times its remaining lifetime in th
 Attributing each context's spend by what actually occupied it — preamble measured directly from
 turn-1 residency, the remainder split by measured character proportions:
 
-| occupies the replayed context | spend | share |
-|---|---|---|
-| tool traffic (calls + results) | 1,324M | **49.5%** |
-| conversation + injected context | 1,083M | 40.5% |
-| harness preamble (system prompt, tool defs, `CLAUDE.md`, skill listings) | 265M | 9.9% |
+| occupies the replayed context                                            | spend  | share     |
+| ------------------------------------------------------------------------ | ------ | --------- |
+| tool traffic (calls + results)                                           | 1,324M | **49.5%** |
+| conversation + injected context                                          | 1,083M | 40.5%     |
+| harness preamble (system prompt, tool defs, `CLAUDE.md`, skill listings) | 265M   | 9.9%      |
 
 Halving tool traffic would cut roughly **25%** of total spend. A 20k `Read` at turn 50 of a
 500-turn context does not cost 20k; it costs 20k × ~450 replays.
@@ -140,7 +140,7 @@ Two sub-findings:
 - **The harness preamble is smaller than expected but never leaves.** Median 55k for a main-loop
   context (range 0–67k), 23k for a subagent. Because it is resident from turn 1 it is replayed on
   every turn: 49% of spend in contexts that stayed under 100k, but only 6% in those that passed
-  600k. It is the dominant cost of *short* sessions and a rounding error in long ones — the exact
+  600k. It is the dominant cost of _short_ sessions and a rounding error in long ones — the exact
   inverse of the usual intuition, and the reason "just start a fresh session" is not free.
 
 ### 5. Composition of a real 999k-peak context (mission_control, 2026-08-06)
@@ -148,23 +148,23 @@ Two sub-findings:
 Excluding transcript bookkeeping that is never sent to the model (`file-history-*`, `mode`,
 `last-prompt` — a third of the file, and counting it overstates context badly):
 
-| | ~tokens | share |
-|---|---|---|
-| tool call inputs | 240k | 29% |
-| tool results | 228k | 27% |
-| assistant text | 109k | 13% |
-| user messages | 67k | 8% |
-| injected: skill_listing | 48k | 6% |
-| injected: edited_text_file | 35k | 4% |
-| injected: diagnostics | 33k | 4% |
-| system notices | 29k | 3% |
-| everything else | ~50k | 6% |
+|                            | ~tokens | share |
+| -------------------------- | ------- | ----- |
+| tool call inputs           | 240k    | 29%   |
+| tool results               | 228k    | 27%   |
+| assistant text             | 109k    | 13%   |
+| user messages              | 67k     | 8%    |
+| injected: skill_listing    | 48k     | 6%    |
+| injected: edited_text_file | 35k     | 4%    |
+| injected: diagnostics      | 33k     | 4%    |
+| system notices             | 29k     | 3%    |
+| everything else            | ~50k    | 6%    |
 
 The model's own tool calls are the single largest line, ahead of everything it read.
 
 > **Corrected 2026-08-24.** The `injected:*` and `system notices` rows in this table are
 > overstated — `context-audit.js` was measuring whole transcript records, metadata included. See
-> *Correction, 2026-08-24* at the end of this report for the revised figures. No other table in this
+> _Correction, 2026-08-24_ at the end of this report for the revised figures. No other table in this
 > report is affected.
 
 ### 6. The reset mechanism already exists, works extremely well, and fires far too late.
@@ -172,14 +172,14 @@ The model's own tool calls are the single largest line, ahead of everything it r
 Every compaction in the corpus — all three of them — carries `"trigger":"auto"`. **Not one was
 invoked manually.** Their metadata:
 
-| pre | post | dropped |
-|---|---|---|
+| pre       | post   | dropped |
+| --------- | ------ | ------- |
 | 1,000,355 | 22,978 | 977,377 |
-| 999,757 | 17,920 | 981,837 |
+| 999,757   | 17,920 | 981,837 |
 | 1,001,516 | 20,056 | 981,460 |
 
 Auto-compaction fires at the ~1M window ceiling and compresses to **~20k, a 98% reduction** —
-*smaller* than the 25k handoff brief assumed by the simulation in finding #7. The mechanism is not
+_smaller_ than the 25k handoff brief assumed by the simulation in finding #7. The mechanism is not
 the problem.
 
 The problem is the trigger. By 1M the quadratic bill is already paid: per finding #2, 90% of spend
@@ -192,22 +192,22 @@ slope.**
 This is the single most actionable finding in the report: the lever is the **threshold**, not the
 mechanism. Firing the same machinery at 200k instead of 1M is finding #7's 66%.
 
-What auto-compaction does *not* give is durability or inspectability — it produces an in-context
+What auto-compaction does _not_ give is durability or inspectability — it produces an in-context
 summary, chosen by a process we cannot audit, that vanishes with the session. That is the argument
 for a written handoff artifact rather than reliance on compaction alone: a file survives the
 session, can be verified mechanically, and can be corrected when wrong.
 
-### 7. Counterfactual: a reset-*threshold* discipline would have saved 45–77%.
+### 7. Counterfactual: a reset-_threshold_ discipline would have saved 45–77%.
 
 Simulated against the real per-turn growth rates each context exhibited, assuming a reset lands at
 a 25k handoff brief and regrows at that same measured rate:
 
-| reset at | simulated | actual | saved |
-|---|---|---|---|
-| 120k | 604M | 2,661M | **77%** |
-| 200k | 896M | 2,661M | **66%** |
-| 300k | 1,187M | 2,661M | **55%** |
-| 400k | 1,465M | 2,661M | **45%** |
+| reset at | simulated | actual | saved   |
+| -------- | --------- | ------ | ------- |
+| 120k     | 604M      | 2,661M | **77%** |
+| 200k     | 896M      | 2,661M | **66%** |
+| 300k     | 1,187M    | 2,661M | **55%** |
+| 400k     | 1,465M    | 2,661M | **45%** |
 
 The model is deliberately simple and its assumptions are visible in
 `tools/context-audit.js:simulate`. It does **not** price the handoff brief's authoring cost, the
@@ -230,20 +230,20 @@ reduces how long it stays.
 
 The initiating report proposed five interventions. Measurement re-ranks them, and contradicts three:
 
-| proposal | verdict |
-|---|---|
-| Bound every unbounded command | **Confirmed, and larger than it looks.** 55.8% of large shell calls run uncapped. Tool traffic is ~50% of spend, so the prize is a real slice of that, multiplied by how early in the context the call happens. |
-| Batch independent tool calls into one message | **Confirmed, small.** Saves one context replay per merged call. Real; a few percent. |
-| Split reviewers by model tier (Haiku for mechanical checks) | **Still contradicted as a cost lever**, but for a different reason than first stated. Reading is not cheap — but a cheaper model reading the same files builds the *same* context and replays it the same number of times. Tiering changes the price of the 8.7% output slice, not the 90% that is replay. Do it for latency or accuracy, not economy. |
-| "Resuming an agent is not cheaper than a fresh one" | **Confirmed, and it generalises.** This is finding #1 restated. It is the single most valuable line in the report. |
-| "`/clear` beats compaction; externalize evidence first" | **Confirmed, and understated.** Findings #6 and #7: compaction moves the intercept, threshold-resetting moves the slope. |
+| proposal                                                    | verdict                                                                                                                                                                                                                                                                                                                                                |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Bound every unbounded command                               | **Confirmed, and larger than it looks.** 55.8% of large shell calls run uncapped. Tool traffic is ~50% of spend, so the prize is a real slice of that, multiplied by how early in the context the call happens.                                                                                                                                        |
+| Batch independent tool calls into one message               | **Confirmed, small.** Saves one context replay per merged call. Real; a few percent.                                                                                                                                                                                                                                                                   |
+| Split reviewers by model tier (Haiku for mechanical checks) | **Still contradicted as a cost lever**, but for a different reason than first stated. Reading is not cheap — but a cheaper model reading the same files builds the _same_ context and replays it the same number of times. Tiering changes the price of the 8.7% output slice, not the 90% that is replay. Do it for latency or accuracy, not economy. |
+| "Resuming an agent is not cheaper than a fresh one"         | **Confirmed, and it generalises.** This is finding #1 restated. It is the single most valuable line in the report.                                                                                                                                                                                                                                     |
+| "`/clear` beats compaction; externalize evidence first"     | **Confirmed, and understated.** Findings #6 and #7: compaction moves the intercept, threshold-resetting moves the slope.                                                                                                                                                                                                                               |
 
 The unifying correction: **there is no such thing as a cheap tool call, only an early one.** Cost is
 size × remaining lifetime. That is why the two levers compound rather than compete — putting less
 into context, and keeping context shorter-lived, multiply.
 
 The report's closing exchange arrives at the right principle by reasoning rather than measurement:
-*preserve cheap re-derivability, not evidence.* A claim carrying `file:line` is ~20 tokens and
+_preserve cheap re-derivability, not evidence._ A claim carrying `file:line` is ~20 tokens and
 re-checkable in one cheap call; the file it came from is 5k and must be re-read. That principle is
 what makes finding #7 actionable — a reset is only safe if what mattered was written down in a form
 that fails loudly when wrong.
@@ -259,7 +259,7 @@ Ranked by measured leverage, not by how satisfying they are to build:
    `CLAUDE.md` arch-test inventory that misled the initiating session twice.
 3. **Subagents as context firewalls** (structural). Not because subagents are cheap — because
    reading done inside one never enters the parent's replayed context. The rule this implies is
-   *delegate reading, keep judgement* — close to the opposite of "downgrade the reviewer model".
+   _delegate reading, keep judgement_ — close to the opposite of "downgrade the reviewer model".
 4. **Input hygiene** (up to ~25% if tool traffic were halved; realistically less). Bounded output,
    scoped reads, no repeat reads, batched calls. Mechanically enforceable via a `PreToolUse` hook,
    which is the right form — it needs to fire on every call, not be remembered by a skill. Ranked
@@ -294,25 +294,25 @@ was **3.55M phantom characters, 7.4% of the old total**. Now fixed to measure `r
 **What does not change.** Every token figure in this report. Findings #1, #2, #3, #6, #7 and #8 read
 from `usage` or from `Read`/shell call counts, none of which the fix touches — verified by running
 the pre-fix and post-fix tools over an identical window and diffing: the token tables are
-byte-identical. Finding #4's *shares* are also unaffected in the direction that matters, because a
+byte-identical. Finding #4's _shares_ are also unaffected in the direction that matters, because a
 proportional split is invariant to the level of the ratio (see the calibration report for the
-distinction that does bite: the ratio *varying between* categories).
+distinction that does bite: the ratio _varying between_ categories).
 
 **What changes: finding #5's composition table.** Absolute figures for the four content rows are
 unchanged; their shares rise because the denominator shrank by ~65k (~8%).
 
-| row | as published | corrected |
-|---|---|---|
-| tool call inputs | 240k / 29% | 240k / **31%** |
-| tool results | 228k / 27% | 228k / **29%** |
-| assistant text | 109k / 13% | 109k / **14%** |
-| user messages | 67k / 8% | 67k / **9%** |
-| injected: skill_listing | 48k / 6% | **38k** / 5% |
-| injected: edited_text_file | 35k / 4% | **33k** / 4% |
-| injected: diagnostics | 33k / 4% | **31k** / 4% |
-| system notices | 29k / 3% | **2k / 0.3%** — effectively not context at all |
-| injected: task_reminder | 17k / 2% | **2k / 0.2%** |
-| injected: queued_command | 12k / 1% | **5k / 0.7%** |
+| row                        | as published | corrected                                      |
+| -------------------------- | ------------ | ---------------------------------------------- |
+| tool call inputs           | 240k / 29%   | 240k / **31%**                                 |
+| tool results               | 228k / 27%   | 228k / **29%**                                 |
+| assistant text             | 109k / 13%   | 109k / **14%**                                 |
+| user messages              | 67k / 8%     | 67k / **9%**                                   |
+| injected: skill_listing    | 48k / 6%     | **38k** / 5%                                   |
+| injected: edited_text_file | 35k / 4%     | **33k** / 4%                                   |
+| injected: diagnostics      | 33k / 4%     | **31k** / 4%                                   |
+| system notices             | 29k / 3%     | **2k / 0.3%** — effectively not context at all |
+| injected: task_reminder    | 17k / 2%     | **2k / 0.2%**                                  |
+| injected: queued_command   | 12k / 1%     | **5k / 0.7%**                                  |
 
 The `system notices` row should be read as deleted rather than shrunk. Its remaining 2k is the
 minority of records that do carry `content`.
@@ -350,7 +350,7 @@ which #6 did not look at, and one property that follows from it.
 blended figure answers neither — one is a recurring saving and the other a one-off charge, so their
 sum has no referent:
 
-1. **Context dropped** — ~980k tokens of resident material, per #6. This is a *recurring saving*:
+1. **Context dropped** — ~980k tokens of resident material, per #6. This is a _recurring saving_:
    every subsequent request stops replaying it.
 2. **Cache-write price paid once** — 36–45k tokens written fresh by the first post-compaction
    request, billed at the write multiplier (1.25× at the 5-minute TTL, 2× at the hour).
@@ -384,7 +384,7 @@ routine growth. It is the boundary's own bill.
 The post-compaction `read` is **~30k in all three cases**, against a `postTokens` of 18–23k. The
 conversation tail was destroyed, yet ~30k was still served from cache at 0.1×.
 
-`cache_read_input_tokens = N` means literally *the first N tokens of the rendered prompt* — reads
+`cache_read_input_tokens = N` means literally _the first N tokens of the rendered prompt_ — reads
 are necessarily prefix-shaped. That is what licenses identifying this ~30k as the tools-plus-system
 preamble rather than "30k of material from somewhere", and it is the assumption to check first if a
 later analysis makes this number mean something else.
@@ -410,7 +410,7 @@ recorded in `docs/calibration.md`.
 ### Two notes, one inferred and one confirming
 
 - **`preCompactDiscoveredTools` looks load-bearing for this, and that is inferred, not measured.**
-  Tools render *before* system in the prefix, so a changed tool set invalidates from position 0,
+  Tools render _before_ system in the prefix, so a changed tool set invalidates from position 0,
   system prompt included. The metadata field exists so the deferred-tool set is re-declared
   identically across the boundary — which would be the reason the read is ~30k and not 0. The
   corollary this suggested has since been tested and **refuted** — see finding #9 below, which also
@@ -428,17 +428,17 @@ and parse the JSON structure rather than grepping for field names, per the trap 
 
 ---
 
-## Finding #9, 2026-08-31 — loading a deferred tool mid-session does *not* rewrite the cache prefix
+## Finding #9, 2026-08-31 — loading a deferred tool mid-session does _not_ rewrite the cache prefix
 
 Numbered as a finding rather than appended to the addendum above because it settles a question the
 addendum could only pose, and the answer is the opposite of what was predicted.
 
 **The hypothesis, from the addendum's own trap.** Claude Code defers most tool schemas: they are
-named but undefined until `ToolSearch` loads one. Tools render *before* the system prompt, so a tool
+named but undefined until `ToolSearch` loads one. Tools render _before_ the system prompt, so a tool
 set that changes mid-session should invalidate the cache from position 0 — system prompt included —
 making every mid-session tool load cost a full prefix rewrite.
 
-**It is answerable because it is a question about the read's *size*, not its structure.** Reads are
+**It is answerable because it is a question about the read's _size_, not its structure.** Reads are
 prefix-shaped, so a prefix invalidation shows up as `cache_read_input_tokens` collapsing. This is
 exactly the distinction drawn in `docs/calibration.md`'s measurement-ceiling section: the breakpoint
 question needs structure the transcript never records, this one does not.
@@ -454,19 +454,19 @@ Survival below is the next request's `cache_read` over the prompt total of the r
 call. Pairs are excluded if they span a `compact_boundary`, if the first request read nothing
 (cold start), or if the gap exceeds 240 s — that last one so TTL expiry cannot pose as invalidation.
 
-| class | pairs | median survival | read = 0 | median write on the next request |
-|---|---|---|---|---|
-| NEW | 132 | 100.0% | 2 (1.5%) | 2,128 |
-| REPEAT | 3 | 100.0% | 0 | 967 |
-| MISS | 11 | 100.0% | 0 | 229 |
-| CONTROL | 6,597 | 100.0% | 6 (0.1%) | 1,040 |
+| class   | pairs | median survival | read = 0 | median write on the next request |
+| ------- | ----- | --------------- | -------- | -------------------------------- |
+| NEW     | 132   | 100.0%          | 2 (1.5%) | 2,128                            |
+| REPEAT  | 3     | 100.0%          | 0        | 967                              |
+| MISS    | 11    | 100.0%          | 0        | 229                              |
+| CONTROL | 6,597 | 100.0%          | 6 (0.1%) | 1,040                            |
 
 **Verdict: refuted.** The prefix survives a new deferred-tool load. Outside one workflow discussed
-below, 101 of 104 NEW pairs survived at *exactly* 100%.
+below, 101 of 104 NEW pairs survived at _exactly_ 100%.
 
 **The two collapses are not caused by the tool load, and the corpus proves it.** Both are subagent
 contexts inside a single ~100-way parallel workflow (`wf_baccf070-3e3`). Within that workflow, 29
-sibling agents made the *identical* load — `WebFetch` — at near-identical prompt sizes (~23.2k) and
+sibling agents made the _identical_ load — `WebFetch` — at near-identical prompt sizes (~23.2k) and
 gaps (~4 s). **27 kept their prefix and 2 read zero.** A deterministic invalidation would have hit
 all 29. Cache eviction under heavy parallel load is the obvious candidate and the transcript cannot
 confirm it, so the honest statement is that the mechanism for those two is undetermined — not that
@@ -489,7 +489,7 @@ message stream) rather than being re-rendered into the tools block ahead of the 
 
 **What this does to the `preCompactDiscoveredTools` inference above: weakens its premise, does not
 refute the inference.** The premise was "a changed tool set invalidates from position 0". What is
-now measured is narrower — *`ToolSearch` does not change the rendered tools block at all*, so it
+now measured is narrower — _`ToolSearch` does not change the rendered tools block at all_, so it
 never tests what a genuinely changed tools block would do. Whether that field is what keeps the
 ~30k prefix valid across a compaction is still untested, and still inferred.
 
@@ -519,13 +519,13 @@ report.
 
 **The defect.** `tools/context-audit.js` computed `newMaterial = inp + cc + out`, corpus-wide and
 per context. The reasoning was that output enters context and is not cache creation, so it must be
-a third source of new material. It is not — it is the *same* material counted twice. An assistant
+a third source of new material. It is not — it is the _same_ material counted twice. An assistant
 turn is re-sent as ordinary **input** on the very next request, where it is billed inside
 `cache_creation_input_tokens`. So output already sits in `cc`, and adding it again inflates the
 denominator and understates how many times material is actually replayed.
 
 **Why this is a measurement and not an argument.** The alternative was genuinely plausible: the
-server computed the KV for those tokens while generating them, so it *could* retain them and serve
+server computed the KV for those tokens while generating them, so it _could_ retain them and serve
 the next prefix as a pure read. Token conservation decides it exactly, with no `CHARS_PER_TOKEN`
 anywhere. The tokens sent on a request are `cr + cc + inp`, so between consecutive requests in one
 context `Δ(cr + cc + inp) = out(t) + newInput(t+1)`. Then `cc(t+1) ≈ Δ` means the whole increment
@@ -544,7 +544,7 @@ cc − Δ  ≡  prevPrefix − read − inp
 
 Algebra, not a finding — but it collapses what looked like several phenomena into one question: how
 far did request t+1's cache read reach, relative to everything sent on request t. Reaching exactly
-`prevPrefix` gives `cc = Δ`. Falling short writes the gap again. Running *past* it means the
+`prevPrefix` gives `cc = Δ`. Falling short writes the gap again. Running _past_ it means the
 generated tokens were already in the entry and no write was charged — which is the 2.3%. Measured:
 of 53,693 shortfall tokens, **51,896** arrive as reads, across 43 of 45 pairs, with `inp` averaging
 2 tokens. So the server does sometimes retain the KV it computed while generating and extend the
@@ -609,7 +609,7 @@ node tools/context-billing.js --json       # machine-readable
 Two further things the instrument found, which are properties of the cost model rather than
 corrections to this report:
 
-- **A cache write is once per *entry*, not once per token.** Bucketed by the gap between
+- **A cache write is once per _entry_, not once per token.** Bucketed by the gap between
   consecutive requests, `cc/Δ` is 1.01 under a minute, **1.87 at 5–60 minutes**, and 152.9 for the
   single pair over an hour: above the 5-minute TTL the prefix is written again at 1.25×. Idle time
   is billable, and nothing in this report or its counterfactual prices it.
@@ -638,7 +638,7 @@ this does not settle" below).
 `nested_memory` (CLAUDE.md files from subdirectories below the project root, e.g. `frontend/CLAUDE.md`
 and `frontend/tests/CLAUDE.md`) plus a `skill_listing` delta and small diagnostics/reminder
 attachments — shows up as a **second, separate** `cache_creation_input_tokens` charge on the
-*following* request, not the one the addendum measured:
+_following_ request, not the one the addendum measured:
 
 ```
                         wave 1 (request 1)       wave 2 (request 2)
@@ -705,7 +705,7 @@ requests choice.
 
 **What this does not settle.** Whether the addendum's ~30k surviving read really is the
 tools-plus-system preamble is untouched by any of the above — this finding is entirely about the
-*write* side. The cost-arithmetic and causation results are each n=2 (only two of the three
+_write_ side. The cost-arithmetic and causation results are each n=2 (only two of the three
 boundaries have a wave 2 to analyze); the null case is n=1. And the delay measured is exactly one
 request in every instance seen — whether a longer lag would keep compounding the saving, or whether
 something eventually forces wave 2 in sooner, is not tested here.
@@ -716,7 +716,7 @@ The "What this does not settle" paragraph above left one question open: whether 
 ~30k surviving post-compaction read really is the tools-plus-system preamble. A session's very
 first request — before any compaction, before any project-specific work has happened — offers a
 size-only test of that, in the same spirit as `docs/calibration.md`'s distinction between
-prefix-*size* questions (answerable from `usage`) and boundary-*content* questions (not, per
+prefix-_size_ questions (answerable from `usage`) and boundary-_content_ questions (not, per
 finding #11 below): if a fixed tools+system block dominates that first read, its size should look
 similar across different projects even though the projects' own work differs completely.
 
@@ -741,7 +741,7 @@ static/dynamic split `--exclude-dynamic-system-prompt-sections`'s own descriptio
 **One thing this settles by definition, not by inference — and it's not the part worth calling
 surprising.** `cache_read_input_tokens` on a session's first-ever request cannot be a from-cold
 value: a read is a cache hit, so those 26,417–27,510 tokens were necessarily written by some
-*other* process before this session sent its first request. What is worth noting is what that
+_other_ process before this session sent its first request. What is worth noting is what that
 implies given the cache is ephemeral (`docs/calibration.md`'s 5-minute and 1-hour tiers, nothing
 longer): that other write must have landed recently enough — within whichever tier applies — to
 still be alive at this session's start. That is a fact about **usage cadence on this account**
@@ -752,7 +752,7 @@ established architecturally by `--exclude-dynamic-system-prompt-sections`'s own 
 
 **What this still does not settle.** n=3, a thin basis for "tightly clustered" — nothing here
 rules out coincidence at this sample size. Which specific prior session or process wrote the warm
-entry each of these three hit is unknown — the transcripts only show that *something* did, not
+entry each of these three hit is unknown — the transcripts only show that _something_ did, not
 what. And whether the content actually read really is the tools-plus-system preamble, versus some
 other shared material, is still a content question this corpus cannot answer (finding #11).
 
@@ -772,8 +772,8 @@ directories a `nested_memory` attachment names, grep backward through the same t
 
 ## Finding #11, 2026-09-03 — the rendered system prompt is not recoverable from anything on disk; the harness's own flag docs are the next-best source
 
-**Question.** `docs/calibration.md:294` already asserts a ceiling: a boundary's *position* is
-observable (a token count) but the *content* at that position — which block it fell on —
+**Question.** `docs/calibration.md:294` already asserts a ceiling: a boundary's _position_ is
+observable (a token count) but the _content_ at that position — which block it fell on —
 "needs the rendered payload, which these transcripts do not carry." This finding asks whether
 that's actually true, by trying the two routes that could plausibly get at the rendered payload
 anyway, and finds it holds — then extends it: the ceiling isn't specific to breakpoint placement,
@@ -795,8 +795,8 @@ on-disk snapshot file (the session's own state directory, `~/.claude/sessions/`)
 content-bearing there either, only locks and small state files.
 
 **So the ceiling holds, and generalizes.** `docs/calibration.md:294` was written about breakpoint
-*placement* specifically. This finding did not find a narrower gap — the same absence covers the
-system prompt's *content*, full stop. Nothing readily available on this machine carries the
+_placement_ specifically. This finding did not find a narrower gap — the same absence covers the
+system prompt's _content_, full stop. Nothing readily available on this machine carries the
 rendered bytes.
 
 **What does move the question forward: two flags' own documentation, not measurement.** `claude
@@ -806,12 +806,12 @@ behavior that this repo's transcripts cannot independently verify but also has n
 - `--exclude-dynamic-system-prompt-sections`: "Move per-machine sections (cwd, env info, memory
   paths, git status) from the system prompt into the first user message. Improves cross-user
   prompt-cache reuse. Only applies with the default system prompt (ignored with
-  `--system-prompt`)." The *effect* stated — cross-user cache reuse improves when this content
+  `--system-prompt`)." The _effect_ stated — cross-user cache reuse improves when this content
   moves out — is itself proof, not inference, that the default system prompt contains
   machine-varying content today: reuse across users can only be incomplete if something in the
   shared prefix currently differs per user/machine. This is the same shared-warm-prefix shape the
   session-start numbers elsewhere in this repo point at, now with a named cause instead of an
-  inferred one. What it does **not** say is that these four are the *only* dynamic sections — the
+  inferred one. What it does **not** say is that these four are the _only_ dynamic sections — the
   parenthetical lists items without "e.g." or "such as," which reads like an enumeration by CLI-help
   convention, but that is a convention-based reading, not a stated exhaustiveness guarantee. Treat
   the list as "at least these," not "only these."
@@ -829,7 +829,7 @@ instead of being reverse-engineered from its `usage` side effects.
 **A same-session observation sharpens the exhaustiveness question further, with its own caveat.**
 Whether the four-item list is complete turns out to matter less than it first looked, because the
 benefit is incremental, not binary: cache reuse improves by whatever a given move-out covers,
-independent of whether it covers everything dynamic. What's more informative is this: in *this*
+independent of whether it covers everything dynamic. What's more informative is this: in _this_
 conversation, both `currentDate` and `gitStatus` — one of the four named items — arrived as a
 `<system-reminder>` block attached to the first user turn, not as anything resembling a
 system-prompt field, and this session never set `--exclude-dynamic-system-prompt-sections` (default
@@ -847,8 +847,8 @@ user message," or is some other, unrelated mechanism the harness also happens to
 this repo has not run a controlled A/B with `--exclude-dynamic-system-prompt-sections` toggled to
 confirm the cache-reuse improvement it claims, and finding #9/#10's own results were reached
 without needing it. Nor is the four-item list confirmed exhaustive, or the `currentDate`/`gitStatus`
-observation confirmed to share a mechanism with the flag. They narrow *where to look* and *what the
-boundary's content plausibly is*; they do not supply the bytes.
+observation confirmed to share a mechanism with the flag. They narrow _where to look_ and _what the
+boundary's content plausibly is_; they do not supply the bytes.
 
 ### Reproduction
 
@@ -891,7 +891,7 @@ the read side grow because more static content becomes a shared/cacheable prefix
 per-machine sections move out, or does it stay flat while those bytes just relocate to uncached
 first-message `input_tokens`? `input_tokens` is unchanged (2, both flags, both directories) —
 ruling out the second branch. Read grows and create shrinks by close to the same amount in both
-pairs — supporting the first: the relocated per-machine content still lands inside the *cached*
+pairs — supporting the first: the relocated per-machine content still lands inside the _cached_
 portion of the request either way; moving it out of the system prompt just makes it more likely to
 already match an existing cache entry (a "read") instead of writing a fresh one (a "create").
 
@@ -926,8 +926,8 @@ expected: the same content is still being sent, only reclassified. It has no bea
 is the effective-token calculation above, not this sum.
 
 **What this does not settle.** All four runs are under one account within a short window
-(~10 minutes), so this confirms cache reuse *within an account's own session pool*, not the flag's
-literal claim of *cross-user* reuse — testing that would need a second, unrelated account, which
+(~10 minutes), so this confirms cache reuse _within an account's own session pool_, not the flag's
+literal claim of _cross-user_ reuse — testing that would need a second, unrelated account, which
 this corpus can't provide. It also doesn't test whether the effect holds outside a single-turn,
 near-empty prompt, or after the 1-hour ephemeral tier actually expires — `cache_creation`'s
 `ephemeral_1h_input_tokens` field was the only non-zero one in every run; `ephemeral_5m` was 0
@@ -973,7 +973,7 @@ via the method above rather than looking for the original logs.
 **1. `PreCompact` firing does not mean compaction happens in that request.** Observed twice,
 identically: the request that first pushes resident context over the threshold (~119k tokens
 against a 100k `--autocompact` window) fires `PreCompact` at the end of that turn, but no
-`SessionStart(source:"compact")` follows — the transcript is still uncompacted. The *next*
+`SessionStart(source:"compact")` follows — the transcript is still uncompacted. The _next_
 `-p -c` invocation starts with an ordinary `"resume"`-sourced `SessionStart` (context still ~119k),
 fires a **second** `PreCompact` mid-request, and only that second firing is followed by the real
 `SessionStart(source:"compact")`. Within a firing that does lead to compaction, ordering is
@@ -1002,14 +1002,14 @@ found it present.
 never compacts, a handoff-write wired directly to every `PreCompact` firing would sometimes run for
 nothing, or run twice for one real compaction. The firing that's safe to act on is the one followed
 by compaction — which `PreCompact` itself cannot know in advance, only `SessionStart(source:"compact")`
-can confirm after the fact. That reopens rather than closes the question of *where* the pre-compaction
+can confirm after the fact. That reopens rather than closes the question of _where_ the pre-compaction
 transcript access `PreCompact` has gets paired with the "a compaction genuinely happened" guarantee
 only `SessionStart(source:"compact")` carries.
 
 **What this does not settle.** n=2 for the double-firing pattern and n=1 for the timeout probe — no
 attempt was made to find where a real ceiling starts, only that 65s is under it. Whether the
 double-firing is deterministic (always exactly one wasted `PreCompact` per compaction) or can chain
-further on a slower-growing session is untested. And nothing here establishes *why* the first
+further on a slower-growing session is untested. And nothing here establishes _why_ the first
 `PreCompact` fires without compacting — only that it does, twice, identically.
 
 ### Reproduction
@@ -1035,7 +1035,7 @@ the answer already exists in past sessions rather than needing a new live probe.
 hooks run in `kendo`, `kendo-2` and `mission-control` too) for a `Write`/`Edit` to the canonical
 handoff store (`*/.claude/context-economy/handoffs/*.md` or the older `*/.claude/handoff/*.md`) or a
 `Skill{handoff}` invocation. 61 candidate turns found across 24 sessions; excluded skill-invocation
-turns that don't do the write themselves, false positives (turns whose *other* tool calls merely
+turns that don't do the write themselves, false positives (turns whose _other_ tool calls merely
 touched files like `design.md` or `verify-handoff.sh` that happen to mention "handoff"), and turns
 missing a usable pre-turn usage record. **20 clean initial-authoring turns remained**, one per
 session. For each: dedupe `assistant` records by `requestId` (this doc's own standing trap, findings
@@ -1071,9 +1071,9 @@ c99b1e61*   mission-control   53,166   25
 
 **n=20, min=13,698, max=64,618, median=25,025, mean=30,024.** One outlier flagged, not folded into
 the headline range: `c99b1e61` (53,166 tokens, 25 tool calls, marked `*`) opens with a
-`ScheduleWakeup` call and several `Read`/`Edit` pairs unrelated to the handoff *before* the write —
+`ScheduleWakeup` call and several `Read`/`Edit` pairs unrelated to the handoff _before_ the write —
 mixed work in the same turn, not pure authoring cost. Excluding it: max=46,630, mean=28,435, median
-essentially unchanged. Four sessions also had smaller, later same-session *revision* turns (5,024 /
+essentially unchanged. Four sessions also had smaller, later same-session _revision_ turns (5,024 /
 5,244 / 8,226 / 18,056 tokens) — reported separately since those are follow-up edits, not the forced
 initial write the invariant is about.
 
@@ -1086,7 +1086,7 @@ concrete number where the invariant previously had a name and a qualitative worr
 
 **What this does not settle.** The corpus is retrospective and self-selected: it only contains turns
 where the write-trigger already fired and completed successfully, so it says nothing about turns
-that might have been *larger* than what a session's own configured `T` allowed for (if any such
+that might have been _larger_ than what a session's own configured `T` allowed for (if any such
 turn had blown through the ceiling into an actual compaction race, the resulting handoff would most
 likely never have been written cleanly enough to match this measurement's file-path signal, and
 would be invisible to this method — a survivorship gap, not a contradiction of the range above). The
@@ -1121,7 +1121,7 @@ answered `authoring_turn`.
 **Method.** Corpus-mined, not live-probed (explicit user preference, same as #14). A "turn" is
 F4b's own definition: everything between one real `type:"user"` message (never a `tool_result`
 wrapper) and the next, spanning 1..N assistant tool-use requests. Per turn: dedupe `assistant`
-records by `requestId`, keeping the *last* occurrence per id (findings #10/#13/#14's standing
+records by `requestId`, keeping the _last_ occurrence per id (findings #10/#13/#14's standing
 trap); `before_total` = last deduped usage sum strictly before the turn's start; `after_total` =
 last deduped usage sum at the turn's end; `delta = after_total - before_total`. Sampled the largest
 transcript files (by size) across the same four projects finding #14 used — `context-economy`,
@@ -1154,7 +1154,7 @@ case. Combined with finding #14's `authoring_turn` (13,698–64,618, median 25,0
 outlier-excluded figure) is already ~205k tokens of required slack — noise against a 1M window's
 ~787k slack, but close to the entire budget of a 200k-class window once a margin is added.
 
-**What this does not settle.** *Which* percentile to design `T` against is not decided by this
+**What this does not settle.** _Which_ percentile to design `T` against is not decided by this
 measurement — that is a design choice about acceptable failure rate, not a fact to derive. The
 corpus is retrospective and self-selected the same way #14's was: it can only contain turns that
 completed and got logged, so a turn that grew large enough to race an actual compaction may be
@@ -1237,12 +1237,13 @@ exhaustively characterized (whether it can chain further on a slower-growing ses
 untested, per finding #13's own caveat).
 
 **Dead ends.**
+
 - First attempt reused finding #13's filler-generation byte count verbatim (300,000 source bytes)
   without recomputing for a fresh probe: that tokenized to ~373,000 tokens in one message, over the
   API's flat 200,000-token single-request ceiling regardless of `--autocompact`'s window setting —
-  `terminal_reason:"prompt_too_long"`, no hook fired at all. `--autocompact` bounds when the *harness*
+  `terminal_reason:"prompt_too_long"`, no hook fired at all. `--autocompact` bounds when the _harness_
   compacts; it does not raise what a single request may contain.
-- Second attempt added a second full-size filler on the *second* call, on top of an
+- Second attempt added a second full-size filler on the _second_ call, on top of an
   already-over-threshold first call. That drove the same `prompt_too_long` failure again, this time
   mid-compaction-attempt (`PreCompact` fired twice, no completion) — compounding two large fillers
   in successive turns overflows even a compacted prefix. The working recipe puts all the filler in
@@ -1410,7 +1411,7 @@ any other model.
 
 **Question.** D18's invariant (`docs/design.md:1000-1001`) rests on a specific claim: "since `Stop`
 only observes at turn boundaries, a turn no larger than `fat_turn` cannot leap the band unseen" —
-and its converse, left untested until now, is that a turn *larger* than `fat_turn` can. Finding #15
+and its converse, left untested until now, is that a turn _larger_ than `fat_turn` can. Finding #15
 measured the corpus's mid-session tail (`p95` 59,367, max 323,673) from turns that had already
 completed and logged, flagging a survivorship gap: "a turn that grew large enough to race an actual
 compaction may be underrepresented." This is that turn, caught live rather than mined after the
@@ -1430,7 +1431,7 @@ carries the identical `promptId` (`0dcedf87-473e-41fd-9137-f1234bf56176`), and t
 **Result.** The session was a single `Stop`-hook turn from cold start to completion. `/clear` at
 08:43:19, `/implement-plan` invoked at 08:43:33, first API call's resident 89,885 (08:43:42, mostly
 reused cache from before the clear), last API call's resident 639,367 (08:14:59 / 09:14:59), one
-`Stop` event at 09:15:00.222 — the *only* `hookName:"Stop"` record in the whole transcript.
+`Stop` event at 09:15:00.222 — the _only_ `hookName:"Stop"` record in the whole transcript.
 `turn_duration` logs `durationMs:1,885,429` (~31.4 min) and `messageCount:1625` for that span.
 **Single-turn delta: ~549,482 tokens** (639,367 − 89,885). Sampling the intervening per-call
 `message.usage` records shows this was a smooth, monotonic climb (e.g. 288,572 → 305,320 → 313,105 →
@@ -1502,7 +1503,7 @@ turns out to recur.
 **Question.** `docs/design.md` O10 (Route 5) rested on three claims reasoned from documented hook
 semantics but never confirmed live: (1) `PostToolUse` returning `decision:"block"` actually delivers
 `reason` to the model as something it treats as an instruction, not a passive log entry; (2) the
-resulting work folds into the *same* ongoing turn (same `promptId`) rather than the harness spawning
+resulting work folds into the _same_ ongoing turn (same `promptId`) rather than the harness spawning
 a fresh one, the way `Stop`'s `stop_hook_active` re-entry flag implies happens there; and (3) a
 session-scoped on-disk latch (the same mechanism `hooks/handoff-write.sh` already uses) can suppress
 the block from re-firing on every subsequent tool call once armed. This asks whether all three hold,
@@ -1534,9 +1535,9 @@ above.
 1. **`reason` reaches the model and is treated as an instruction.** The block rendered into the
    transcript as a `<system-reminder>` attachment immediately after the tool's own result:
    `"PostToolUse:Bash hook blocking error from command: ...: PROBE-MARKER-7Q2: before your next tool
-   call, say the single word BANANAFISH..."`. The model's very next output was the standalone text
+call, say the single word BANANAFISH..."`. The model's very next output was the standalone text
    `"BANANAFISH"`, then it resumed exactly where it left off (`echo step2`). Framing matters for real
-   deployment: the harness reports this as a *"hook blocking error from command"*, not a clean
+   deployment: the harness reports this as a _"hook blocking error from command"_, not a clean
    freestanding instruction — `reason` text for a real write-trigger should be worded so the model
    does not read it as "the tool call itself just failed."
 2. **It folds into the same turn.** Every `user`-role record in the transcript (the real prompt and
@@ -1550,8 +1551,8 @@ above.
 
 **A side observation, raised and then refuted by a matched-pair re-run the same day.** The first
 blocking run's transcript showed a `"## Auto Mode Active"` reminder at session start and, right after
-the block fired, a `"## Exited Auto Mode"` reminder — *"ask clarifying questions... rather than
-making assumptions,"* the opposite disposition from what an unattended write-trigger needs. The
+the block fired, a `"## Exited Auto Mode"` reminder — _"ask clarifying questions... rather than
+making assumptions,"_ the opposite disposition from what an unattended write-trigger needs. The
 control run available at the time never showed `"Auto Mode Active"` at all, so it could not isolate
 cause — flagged as unconfirmed pending a matched re-run. That re-run (7 interleaved pairs, 14 calls
 total, `block`/`allow` order alternated across pairs to separate the hook's effect from call
@@ -1559,7 +1560,7 @@ position): **`"Exited Auto Mode"` appeared in every single trial where `"Auto Mo
 at all — 6 of 7 — regardless of condition, including 4 of 4 non-blocking `allow` trials**, and never
 appeared when `"Active"` had not. The two counts matched exactly in all 14 runs; not one trial showed
 `active=1, exited=0` or the reverse. **The block does not cause the exit — refuted.** What actually
-predicted whether `"Auto Mode Active"` showed up at all was call *position* within the rapid
+predicted whether `"Auto Mode Active"` showed up at all was call _position_ within the rapid
 back-to-back sequence of nested `claude -p` calls (2nd call in a pair: active in 6/7; 1st call: active
 in 2/7) — some artifact of running many nested prints in quick succession, unrelated to hooks
 entirely, and out of scope for what this probe set out to answer. Not chased further; it does not
@@ -1600,7 +1601,7 @@ not the hook's doing.
 ## Finding #20, 2026-09-16 — `large_request` (the per-tool-call-round-trip resident delta Route 5 needs) is real, an order of magnitude tighter than `fat_turn`, and still 2-2.4x larger across a turn boundary than within one
 
 **Question.** `docs/design.md` O10 (Route 5) proposes replacing `fat_turn` with `large_request` — the
-max resident delta a *single* tool-call round trip can add — as the bound a `PostToolUse`-based
+max resident delta a _single_ tool-call round trip can add — as the bound a `PostToolUse`-based
 write-trigger arms against, on the theory that a single round trip is plausibly an actually-bounded
 quantity where finding #18 showed `fat_turn` is not. O10's second prerequisite ("measure
 `large_request`'s distribution") was unmeasured; no script survived from findings #14/#15 to extend
@@ -1641,7 +1642,7 @@ pasted log, a long file, a tool result quoted back) on top of one ordinary round
 within-turn delta is just the round trip alone.
 
 **What this settles.** `large_request` is a real, substantially tighter quantity than `fat_turn` at
-every percentile: even the *combined* max (142,188) is well under half of `fat_turn`'s mid-session p95
+every percentile: even the _combined_ max (142,188) is well under half of `fat_turn`'s mid-session p95
 (59,367) let alone its max (323,673, finding #15), and finding #18's ~549,482-token turn — the incident
 that motivated Route 5 — dwarfs every single `large_request` observation here by 4x at the pooled max
 and by 3.9x at just the cross-turn max. This is the qualitative claim O10 needed to survive contact
@@ -1653,8 +1654,8 @@ ceiling − 2·large_request − authoring_turn`) implicitly assumed one `large_
 `fat_turn` was one figure. This measurement shows two populations that must not be pooled into that one
 term any more than finding #15's zero-baseline and mid-session turns should be: **within-turn** deltas
 (what the margin needs if `Stop` keeps observing every real turn boundary and `PostToolUse` only has to
-cover the gaps *inside* a turn — the O10 "runs alongside Stop" option) versus **combined** deltas (what
-the margin needs if `PostToolUse` becomes the *only* observation mechanism — the "replaces Stop"
+cover the gaps _inside_ a turn — the O10 "runs alongside Stop" option) versus **combined** deltas (what
+the margin needs if `PostToolUse` becomes the _only_ observation mechanism — the "replaces Stop"
 option). Sizing the constant at the within-turn p99 (19,654) versus the combined max (142,188) is a
 7.2x difference in the term that gets doubled in the trigger formula — not a rounding choice, a
 different design decision each answering a different one of O10's still-open prerequisite-3 questions.
@@ -1663,7 +1664,7 @@ decision has to choose between, not the choice itself.
 
 **What this does not settle.** n=47 sessions, all ordinary interactive or `/implement-plan`-adjacent
 work in four repos this account has used — nothing here specifically re-samples a session shaped like
-finding #18's 1,625-message runaway turn (that turn is exactly what made *within* it unobservable to
+finding #18's 1,625-message runaway turn (that turn is exactly what made _within_ it unobservable to
 `Stop`, but every tool-call-bearing response inside it would still have been an ordinary `PostToolUse`
 observation point with its own — presumably unremarkable — `large_request` delta; this measurement
 cannot confirm that without mining #18's own transcript at this granularity, which it does not do).
@@ -1672,7 +1673,7 @@ yet produced its own finding-#18-shaped outlier, is exactly finding #15's unreso
 question one level down — this corpus only contains turns that completed normally, the same caveat
 finding #14 raised about its own sample. And the tool attribution in the top-10 table is suggestive
 (large deltas cluster on `Bash`/`Edit`/`Write`/`Read`, echoing finding #15's own top-10 shape) but not
-causally established — the delta is attributed to whichever tool call *follows* the growth, not
+causally established — the delta is attributed to whichever tool call _follows_ the growth, not
 demonstrated to be its cause.
 
 ### Reproduction
@@ -1710,9 +1711,9 @@ of thrown away.
 **Recommended run order** (combined where one probe naturally answers two questions; #5 last since
 it is a separate track, not a refinement of 1-4):
 
-1. **(combined) Survival + spawn shape.** Does a backgrounded Task/fork spawned *before* the
-   parent's own auto-compaction keep running, and does its completion still reach/wake the *same*
-   session *after* compaction has pruned it — not merely across `/clear` (F10, confirmed) or with
+1. **(combined) Survival + spawn shape.** Does a backgrounded Task/fork spawned _before_ the
+   parent's own auto-compaction keep running, and does its completion still reach/wake the _same_
+   session _after_ compaction has pruned it — not merely across `/clear` (F10, confirmed) or with
    `session_id` alone surviving (finding #16, confirmed), neither of which tested a live in-flight
    background task crossing a real compaction boundary. Answered together with: should the spawn
    instruction ask for a true **fork** (inherits full context automatically, this session's own
@@ -1722,12 +1723,12 @@ it is a separate track, not a refinement of 1-4):
    context-summarizing prompt; a fresh Task does). This is the kill-switch: if completion does not
    reliably reach the same session, the mechanism is dead regardless of the other four.
 2. **Whether the child can be given a raised (or disabled) auto-compact ceiling** — `claude
-   --autocompact` is a real, working flag (used directly in finding #16's own probe), but nothing
+--autocompact` is a real, working flag (used directly in finding #16's own probe), but nothing
    confirms the spawning mechanism (however `Agent`/Task actually launches a child under the hood)
    exposes it as a settable parameter, and the `Agent` tool's own visible parameters (`subagent_type`,
    `model`, `isolation`, `prompt`, `description`) list nothing like it. Not a strict blocker the way
    #1 is — the child forks at roughly the trigger point, which by construction still has
-   `2·large_request` of headroom in front of it before the *parent's* ceiling — but unconfirmed
+   `2·large_request` of headroom in front of it before the _parent's_ ceiling — but unconfirmed
    whether that leftover cushion is enough for the child's own write, or whether the child faces the
    same completion-before-compaction race the whole mechanism exists to move off the parent.
 3. **Token cost of issuing the spawn call itself**, on the parent side — needed to tighten the
@@ -1736,8 +1737,8 @@ it is a separate track, not a refinement of 1-4):
    worst-case tool call `large_request` bounds (it doesn't echo a large file back), so a
    purpose-specific bound could shrink the margin below `2·large_request`. A refinement, not a
    blocker — falls out for free from whichever of the above probes actually issues a spawn call.
-4. *(folded into #1 above — listed here only because it was raised as its own question: fork vs
-   plain Task.)*
+4. _(folded into #1 above — listed here only because it was raised as its own question: fork vs
+   plain Task.)_
 5. **A different trigger entirely: `PreCompact` spawns the fork, instead of the
    `PostToolUse`/`Stop` polling trigger reaching it.** This is "Route 4" (`docs/design.md:948-952`,
    D17), previously rejected — but Route 4 evaluated running the **full authoring turn synchronously
@@ -1748,7 +1749,7 @@ it is a separate track, not a refinement of 1-4):
    never actually compacts (finding #13, observed twice identically — one wasted firing, then a real
    one at the same resident size), so this needs the same one-shot latch already used elsewhere, and
    it is untested whether that double-firing is always exactly one wasted firing or can chain further
-   (finding #13's own open item). Kept last and separate because it changes *which hook* triggers the
+   (finding #13's own open item). Kept last and separate because it changes _which hook_ triggers the
    fork, not a tightening of the `PostToolUse`/`Stop` design items 1-3 refine.
 
 Each probe gets its own finding number (#21 onward) as it actually runs; this entry is the
@@ -1760,7 +1761,7 @@ pre-registration, not a substitute for them.
 
 **Question.** Probe #1 from the queued list above: does a background `Task`/`Agent` spawned before
 the parent session's own auto-compaction keep running, and does its completion reach/wake the
-*same* session *after* compaction has pruned it — not merely across `/clear` (F10,
+_same_ session _after_ compaction has pruned it — not merely across `/clear` (F10,
 `docs/design.md:1502-1527`, confirmed) and not merely `session_id` surviving alone (finding #16,
 confirmed), neither of which tested a live in-flight background task crossing a real compaction
 boundary. Folded in per the queued item's own note: which spawn form is actually callable at all
@@ -1773,7 +1774,7 @@ technique as finding #16, giving hard evidence of real compaction rather than an
 base64-random filler piped via **stdin** (an argv prompt that size hits "Argument list too long" on
 Windows — hit this for real, switched to stdin, no such limit there) to push resident to ~109k in
 one call. A background agent was then instructed to run a chain of short `sleep 10`s (a single
-*leading* sleep of 60s+ is blocked by the Bash tool's own safety rule — hit this for real too, on
+_leading_ sleep of 60s+ is blocked by the Bash tool's own safety rule — hit this for real too, on
 the first attempt at a plain `sleep 70`) totaling ~50-80s, then write a marker file, so its
 completion would fall well after the point the parent had already crossed the autocompact
 threshold. Persisted as `mission_control/tools/probe-fork-survival.js` (per this repo's own
@@ -1786,18 +1787,18 @@ script reproduces the manual result, not just describes it.
 
 1. **Real compaction, confirmed directly, not inferred.** The `SessionStart` hook log showed
    `source=compact` firing at essentially the same resident figure as the immediately preceding
-   reading (~110k, matching finding #16's "no async gap" behaviour exactly), and the *next* call's
+   reading (~110k, matching finding #16's "no async gap" behaviour exactly), and the _next_ call's
    `source=resume` reading was genuinely smaller (e.g. 110,018 → 32,080 in the clean re-run) —
    real compaction, not merely a label.
 2. **A background `Agent` spawned before that compaction did complete for real, and its completion
    was delivered as a genuine `<task-notification>` record in the transcript** — but the whole
-   spawn→completion→delivery cycle happened *within the one originating `claude -p` process*, not
+   spawn→completion→delivery cycle happened _within the one originating `claude -p` process_, not
    across a process boundary. Told explicitly "reply immediately with just the task id, do not wait,
    do not poll," the CLI (not the model choosing to disobey — no polling tool call appears in the
    transcript between spawn and the notification) kept that single invocation open for the task's
-   full real duration and delivered the notification into the *same* turn before it returned. This
+   full real duration and delivered the notification into the _same_ turn before it returned. This
    was reproduced identically across four separate attempts.
-3. **So the load-bearing question — does the notification survive the spawning *process* actually
+3. **So the load-bearing question — does the notification survive the spawning _process_ actually
    exiting before the task finishes — is NOT cleanly answered, and what was checked pointed the
    wrong way.** A hard kill (`SIGKILL`) of the spawning process 12 seconds into an 80-second spawned
    task destroyed the in-flight work outright: the marker file it was supposed to write never
@@ -1815,15 +1816,15 @@ name `"Task"` visible in a session's own `system/init` tool list is not directly
 prompt that just says "use the Task tool" produces a model that gets confused between `TaskCreate`/
 `TaskList`/etc. and never calls anything. (b) **`TaskOutput` is deprecated** — confirmed via a live
 `deferred_tools_record` transcript attachment, and via a live call: querying it for a task whose
-completion had *already* been delivered returned `<tool_use_error>No task found with ID: ...
+completion had _already_ been delivered returned `<tool_use_error>No task found with ID: ...
 </tool_use_error>`, which looks exactly like "the task vanished" to a probe that doesn't know
 better. The real, current delivery path is the Agent tool's own spawn result (carries an
 `output_file` path) plus an unprompted later `<task-notification>` transcript record — never poll
 `TaskOutput` to check on one.
 
-**What this does not settle.** Whether a spawning turn *can* be made to return immediately (as
+**What this does not settle.** Whether a spawning turn _can_ be made to return immediately (as
 literally instructed, several phrasings tried) while the task keeps running independently, and if
-so whether *that* independent survival crosses a real compaction+process boundary, is untested —
+so whether _that_ independent survival crosses a real compaction+process boundary, is untested —
 every attempt that got as far as a real spawn stayed open until the notification arrived, and the
 one clean test of "the process disappears mid-task" (a hard kill) came back negative. Whether
 `subagent_type:"fork"` specifically (full context inheritance, this session's own `Agent` tool
@@ -1862,19 +1863,19 @@ call2-spawn  (returns after the spawned Agent + wait resolves): resident 32,045
 call3-followup (separate later call): resident 34,930
 ```
 
-The `SessionStart` hook log pins why call2 comes back *lower*, not higher: `source=compact` fired
+The `SessionStart` hook log pins why call2 comes back _lower_, not higher: `source=compact` fired
 at resident 109,758 — essentially unchanged from call1 — **while call2 was still in flight**,
 consistent with finding #13's already-established "compaction fires mid-request, not only between
 requests" behaviour, just now confirmed to also fire while the model is mid-tool-call, blocked
 waiting on a spawned agent. So in this run the parent's own token growth during the "stays open"
-wait was not authoring_turn-shaped at all — real compaction happened *inside* the blocking call and
+wait was not authoring_turn-shaped at all — real compaction happened _inside_ the blocking call and
 shrank things before it returned, rather than the parent accumulating a large new delta on top of
 its pre-spawn peak.
 
 This narrows, rather than overturns, the verdict above: "the invocation does not return early" is
 confirmed and real, but whether that costs Route 5 anything depends on whether it manifests as
-*wall-clock unavailability* (confirmed: the session is unresponsive for the spawn's whole duration)
-or as *resident-token growth racing the ceiling* (this one run: no, compaction absorbed it first).
+_wall-clock unavailability_ (confirmed: the session is unresponsive for the spawn's whole duration)
+or as _resident-token growth racing the ceiling_ (this one run: no, compaction absorbed it first).
 n=1 for this specific angle, and the overlap between "how long the spawn took" and "when
 mid-request compaction happened to fire" was a property of this run's own calibration (filler sized
 to sit near the threshold, sleep-chain long enough to still be running when the next compaction
@@ -1891,7 +1892,7 @@ issued" and "ceiling reached" before treating this as settled either way.
 (`ToolSearch` + the `Agent` tool call + receiving the completion notification back), needed to
 judge whether a purpose-specific bound could shrink Route 5's trigger margin below
 `2·large_request` (finding #20) the way `large_request` itself shrank `fat_turn`. Finding #21's
-own addendum touched this but was confounded: real compaction happened to fire *inside* that
+own addendum touched this but was confounded: real compaction happened to fire _inside_ that
 run's own spawn call, so its `call1`/`call2` resident readings mix spawn cost with
 compaction shrinkage and can't isolate one from the other.
 
@@ -1936,7 +1937,7 @@ trigger prices) rather than the CLI's own cost-accounting figure, is **~6.7k-7.9
 — well under finding #20's within-turn `large_request` p99 (19,654) and roughly a third of its
 p99 combined figure, the qualitative result probe #3 was pre-registered to look for: a
 purpose-specific bound on the spawn round trip alone could plausibly tighten Route 5's margin
-below the generic `large_request` bound, *if* the mechanism's kill-switch problem (finding #21:
+below the generic `large_request` bound, _if_ the mechanism's kill-switch problem (finding #21:
 the call doesn't return early) is ever resolved. n=2, one machine, one `--autocompact` setting
 each; not varied across model/prompt-length.
 
@@ -1947,7 +1948,7 @@ share of the child's own separate consumption. Every prior probe in this queue (
 `large_request`, #21's own table) either didn't involve a spawn at all or cross-checked against
 the `SessionStart` hook's transcript-read resident directly rather than trusting `r.usage`
 alone (finding #21's own "109,758... essentially unchanged" claim came from the hooklog, not
-`r2.usage`) — so nothing already published is contaminated by this, but a *future* probe or a
+`r2.usage`) — so nothing already published is contaminated by this, but a _future_ probe or a
 real implementation that reads `claude -p --output-format json`'s own `usage` field to size a
 trigger, the way it's tempting to since it's right there in the result, would be measuring the
 wrong quantity the moment a spawn is involved.
@@ -1976,7 +1977,7 @@ node tools/probe-fork-survival.js --autocompact 900000 --filler-bytes 100 --slee
 auto-compact ceiling? The `Agent` tool's own schema (`subagent_type`, `description`, `prompt`,
 `model`, `isolation`) already showed no such parameter by inspection (the dead end recorded in
 the prior handoff); this probe was meant to go further and check live whether the child
-undergoes *any* compaction-relevant lifecycle event at all, and if so at what size.
+undergoes _any_ compaction-relevant lifecycle event at all, and if so at what size.
 
 **Method.** Same extension to `tools/probe-fork-survival.js` as finding #22, plus
 `--child-filler-bytes` (`tools/probe-fork-survival.js:263-269`): writes a filler file the
@@ -1984,7 +1985,7 @@ spawned child is instructed to read via the `Read` tool before running its sleep
 independent of the parent's own `--filler-bytes`. The shared `.claude/settings.json` now
 registers `PreCompact` alongside `SessionStart` on the SAME hook script
 (`tools/probe-fork-survival.js:230-237`), tagging each line with its own `hook_event_name` and
-`session_id`, so a child that fired either event under a *different* `session_id` would show up
+`session_id`, so a child that fired either event under a _different_ `session_id` would show up
 as a `foreignSessionLines` entry distinct from the parent's own fixed session id. Two runs:
 `--child-filler-bytes 72000` then `--child-filler-bytes 115000` (both with `--autocompact 900000
 --filler-bytes 100 --sleep-chain 1 --keep --json`, to isolate the child-only question from
@@ -1995,7 +1996,7 @@ finding #22's own concerns).
 1. **`foreignSessionLines` was empty in both runs — no `SessionStart` or `PreCompact` fired
    under any session_id but the parent's, no matter the child's own filler size.** The spawned
    child's own transcript exists (confirmed directly: `<session_id>/subagents/agent-
-   <task_id>.jsonl`, a real file, per finding #22's own discovery) but nothing about creating or
+<task_id>.jsonl`, a real file, per finding #22's own discovery) but nothing about creating or
    growing it triggered the project's registered hooks the way the top-level session's own
    lifecycle does. This is consistent with the child not being a `claude` CLI process going
    through the same session-lifecycle event system at all (it has no visible `--autocompact`
@@ -2058,7 +2059,7 @@ hook (the already-rejected form, `docs/design.md` D17, confirmed blocking 65s+ w
 ceiling, finding #13) — actually non-blocking in practice, and does the detached background work
 it starts survive independent of the hook script's own short-lived process? Independent of
 whether the `PostToolUse`/`Stop`-polling-based fork idea (probes #1-#3 above) is viable at all —
-this changes *which hook* triggers a spawn, not whether spawning itself blocks (finding #21's own
+this changes _which hook_ triggers a spawn, not whether spawning itself blocks (finding #21's own
 note).
 
 **Method.** New script, `tools/probe-precompact-async-spawn.js` (mirrors finding #13's own
@@ -2112,7 +2113,7 @@ marker on disk after outer      TRUE         TRUE
    outright — the mechanics are different enough (a plain OS-level backgrounded shell process
    launched from a short-lived hook script, vs. an `Agent`-tool subagent tied to its spawning
    CLI invocation) that the two findings do not contradict each other; if anything this is
-   suggestive of *why* they differ: by the time the outer kill happens here, the hook's own
+   suggestive of _why_ they differ: by the time the outer kill happens here, the hook's own
    `bash.exe` instance (the immediate parent Windows would need for `taskkill /T`'s tree-walk to
    reach the detached grandchild) has itself already exited, breaking the parent-child chain
    `taskkill` walks — untested directly, offered as the likely mechanism, not confirmed.
@@ -2132,13 +2133,13 @@ background process has no equivalent built-in notification path back into the tr
 would need to write something (a file, a sidecar) that a LATER hook firing reads, which is
 exactly the read-leg pattern D17 already uses for the synchronous case and should carry over
 unchanged, but that carry-over itself is untested here. n=2, one machine, `--autocompact 100000`
-only, `sleep`-based dummy work only (not a real handoff-authoring turn) — whether a *real*
+only, `sleep`-based dummy work only (not a real handoff-authoring turn) — whether a _real_
 authoring turn can itself be backgrounded this way (as opposed to a trivial shell command) is a
 materially different, unanswered question: the real work Route 5 would want to background is an
 LLM turn, not a shell script, and nothing here establishes that an LLM turn can be started
 detached from a hook in the first place (the `Agent` tool is the only demonstrated way to start
-one, and finding #21 already showed that route blocks). This finding shows the *hook* half
-works; it does not show the *what gets spawned* half does.
+one, and finding #21 already showed that route blocks). This finding shows the _hook_ half
+works; it does not show the _what gets spawned_ half does.
 
 ### Reproduction
 
@@ -2174,7 +2175,7 @@ evidence now stands so it isn't scattered across four findings.
   LLM turn that writes a real handoff — be started this way at all," since the `Agent` tool is
   the only demonstrated way to start a backgroundable LLM turn and finding #21 already showed
   that route blocks. Closing that gap (can a `PreCompact` hook's `block`-style output, the same
-  mechanism [O10](../../docs/design.md#o10) already validated for `PostToolUse`, get a *later*
+  mechanism [O10](../../docs/design.md#o10) already validated for `PostToolUse`, get a _later_
   hook or read-leg to pick up and complete an authoring turn asynchronously, without going
   through the `Agent` tool at all) is the natural next probe if this route is picked back up —
   not queued as one of the original five, since it only became askable once #24 closed out #5.
@@ -2210,7 +2211,7 @@ block) gives the real sequence, which split differently across the two `-c` call
 script's own per-call token/resident accounting first suggested — worth stating plainly since it
 took cross-checking the raw transcript to see: call2 (`"Reply with just the word CONTINUE"`)
 completed normally and fast (prompt 13:37:41.689 → response 13:37:42.971, ~1.3s), landing
-between the session crossing the `--autocompact` threshold and only the FIRST, *wasted*
+between the session crossing the `--autocompact` threshold and only the FIRST, _wasted_
 `PreCompact` firing (finding #13's own "fires once with no compaction behind it" pattern) — no
 compaction happened during call2 at all. Call3 (`"Reply with just the word CHECK"`) is the one
 that actually hit real compaction: its own prompt landed at 13:37:46.393, the SECOND (real)
@@ -2219,7 +2220,7 @@ from a previous conversation..."` summary user-turn was inserted at 13:38:01.939
 unambiguous evidence of real compaction, not merely a source label), the compact-triggered
 `SessionStart` hook then polled the full **65 of 65 requested iterations** (entry 13:38:02.254 →
 exit 13:39:08.565, marker never appeared, exactly as configured) with **no cutoff, no kill, no
-truncated iteration count** — and only *after* that hook exited did call3's real response
+truncated iteration count** — and only _after_ that hook exited did call3's real response
 (`"CHECK"`) finally land, at 13:39:10.431 — call3's own measured wall-clock (87,529ms) matches
 this span almost exactly. The harness produced a normal, correct final response; nothing errored
 or hung indefinitely.
@@ -2254,7 +2255,7 @@ fallback covers the case it's exceeded), so the exact ceiling — if one exists 
 matters insofar as the chosen timeout needs to sit under it, and 65s-with-no-cutoff already
 supports a modest bound (order 90-120s) with reasonable confidence. Separately: whether polling
 every 1s (versus a longer interval) matters to any ceiling that does exist elsewhere is untested.
-And this probe's own script initially *looked* like it had a measurement bug (call2's
+And this probe's own script initially _looked_ like it had a measurement bug (call2's
 script-reported wall-clock, 4,687ms, seemed wildly inconsistent with the hook's own 65s+ block)
 until cross-checked against the raw transcript directly — worth flagging as a trap in its own
 right: **when a hook-driven turn can split unpredictably across which physical `-c` invocation
@@ -2287,7 +2288,7 @@ return near-instantly, surviving independent of the hook's own process and even 
 process tree being killed — but the spawned "work" there was a dummy shell `sleep`, never a real
 LLM turn. The `Agent` tool is the only previously-demonstrated way to start a backgroundable LLM
 turn, and finding #21 already showed that route blocks (the spawning call doesn't hand off
-control early). So: can the *same* detached-spawn mechanism start a REAL `claude -p` authoring
+control early). So: can the _same_ detached-spawn mechanism start a REAL `claude -p` authoring
 turn — actual model inference over a prompt, not a shell command — with no `Agent` tool involved
 at all?
 
@@ -2336,7 +2337,7 @@ iterations needed                  "Complete" when it started
    hook's detached spawn, with no `Agent` tool anywhere in the path.** Both runs' result text is
    substantive, on-topic, and phrased differently between runs (not a cached or canned string) —
    confirmed by real `total_cost_usd` and token usage in each run's captured `--output-format
-   json`, including genuine thinking tokens. This directly answers the designated question: yes.
+json`, including genuine thinking tokens. This directly answers the designated question: yes.
 2. **The detached `claude -p` call exited cleanly on its own both times** — `rc=0` in both runs,
    meaning the `timeout 80` wrapper never had to fire. This contrasts with the existing,
    established trap (`tools/lib/worktree-probe.js`'s own header, reused by every earlier probe in
@@ -2380,7 +2381,7 @@ unaddressed question. The clean-exit contrast with the established Node-child_pr
 (point 2 above) is offered as a plausible mechanism, not confirmed — no probe here isolated the
 stdin-pipe-vs-argv variable from the Node-spawn-vs-detached-bash variable to say which one (or
 both) actually matters. n=2, one machine, one prompt, `--autocompact 100000` only, and the
-read-leg's actual *wait* behavior (point 4) is n=1, not n=2 — run 2's real compaction never
+read-leg's actual _wait_ behavior (point 4) is n=1, not n=2 — run 2's real compaction never
 landed within the probe's own call window at all, consistent with finding #13's already-
 documented variability, not a new problem.
 
@@ -2433,6 +2434,7 @@ landed. Two runs.
 Run 1: `rc=0`, ~7.9s wall clock (`$0.0239`, 415 output tokens incl. 179 thinking),
 `permission_denials: []`, and the handoff file WAS written with genuine, on-topic, correctly-
 shaped content:
+
 ```
 # Handoff: Migration of Authentication Service
 
@@ -2443,6 +2445,7 @@ provider. ...
 
 Coordinate with the DevOps team to schedule the production deployment for Thursday morning, ...
 ```
+
 `resultText: "DONE"`.
 
 Run 2: `rc=1`, ~1.9s wall clock, `total_cost_usd: 0`, every `usage` field zero,
@@ -2477,6 +2480,9 @@ cause too, not only slowness. Separately, still open from finding #26: whether a
 real-sized authoring turn (not a trivial two-paragraph stand-in) behaves the same way in this
 exact spawn shape. No further runs attempted this session given the account-level limit; re-run
 after the stated reset if more confirmation of the success case is wanted.
+
+User note: Run 2 failed because it hit the session limit. Somehow the parent session was still
+able to author this paragraph above before also hitting the session limit.
 
 ### Reproduction
 
