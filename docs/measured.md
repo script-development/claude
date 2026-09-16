@@ -2275,3 +2275,226 @@ node tools/probe-sessionstart-compact-block.js --poll-seconds 65 --keep --json
 #    else (if (.message.content|type)=="string" then .message.content
 #          else (.message.content[0].type // "?") end) end)] | @tsv' <session>.jsonl
 ```
+
+---
+
+## Finding #26, 2026-09-16 — a `PreCompact` hook CAN start a real `claude -p` authoring turn via a detached OS-level spawn, entirely without the `Agent` tool: it completes in ~5s, exits cleanly on its own (rc=0, no forced kill needed), and produces genuine on-topic content
+
+**Question.** The single remaining unknown the predecessor handoff (key
+`context-economy-main-3033326a`) designated as THE next step, above every other open thread:
+finding #24 showed a `PreCompact` hook can issue a detached, OS-level background spawn and
+return near-instantly, surviving independent of the hook's own process and even the outer
+process tree being killed — but the spawned "work" there was a dummy shell `sleep`, never a real
+LLM turn. The `Agent` tool is the only previously-demonstrated way to start a backgroundable LLM
+turn, and finding #21 already showed that route blocks (the spawning call doesn't hand off
+control early). So: can the *same* detached-spawn mechanism start a REAL `claude -p` authoring
+turn — actual model inference over a prompt, not a shell command — with no `Agent` tool involved
+at all?
+
+**Method.** New script, `tools/probe-precompact-real-turn.js`, combining finding #24's
+detached-spawn `PreCompact` hook with finding #25's polling `SessionStart(source:"compact")`
+read leg, changing WHAT gets spawned. The one-shot-latched `PreCompact` hook backgrounds
+`tools/probe-precompact-real-turn.js`'s own `async_turn.sh` (written per-run into the scratch
+project), which runs `timeout 80 "$CLAUDE_ABS_PATH" -p "In exactly one sentence, state the
+primary purpose of a PreCompact hook in Claude Code." --model claude-haiku-4-5-20251001
+--output-format json`, then writes `Status: Complete|Failed rc=... start=... end=...` to a status
+file — the same `Status` field name the read-leg design (`docs/design.md` D17) already uses.
+Two deliberate departures from every prior probe's `claude -p` invocation, both explained under
+**What this does not settle**: the prompt is passed as a CLI argument, not piped over stdin, and
+`claude`'s absolute path (`bash -lc 'which claude'`, resolved once at script start) is used
+instead of a bare name, since the hook's own spawning context was untested for PATH resolution.
+`SessionStart(source:"compact")` polls the status file for a non-`"Running"` value up to
+`--poll-seconds` (100, comfortably past the 80s inner timeout), mirroring finding #25's loop
+exactly. Two runs, default flags.
+
+**Result, both runs:**
+
+```
+                                    run 1                          run 2
+PreCompact firings                 2 (1 spawned, 1 skipped)        1 (1 spawned, 0 skipped)
+detached claude -p call            rc=0, 13:57:41.840->13:57:47.215 rc=0, 13:58:54.936->13:58:59.721
+                                    (~5.4s)                        (~4.8s)
+real result text                   "A PreCompact hook executes    "A PreCompact hook runs before
+                                    before the conversation        Claude Code automatically
+                                    context is compressed,         compresses the conversation
+                                    allowing you to save state,    context, allowing you to save
+                                    create handoffs, or persist    work or clean up state before
+                                    information that would         the summary occurs."
+                                    otherwise be lost..."
+real cost / tokens                 $0.012289, 218 output          $0.011824, 125 output
+                                    (174 thinking)                 (89 thinking)
+SessionStart(compact) fired?       yes, 13:58:03.906 (~16.7s      no — real compaction did not
+                                    after the detached call had    land within this run's 3-call
+                                    already finished)               window at all (finding #13's
+                                                                     own noted variability)
+SessionStart(compact) poll         0 (Status was already          n/a
+iterations needed                  "Complete" when it started
+                                    polling)
+```
+
+1. **A genuinely real, on-topic LLM turn ran to completion, started entirely from a `PreCompact`
+   hook's detached spawn, with no `Agent` tool anywhere in the path.** Both runs' result text is
+   substantive, on-topic, and phrased differently between runs (not a cached or canned string) —
+   confirmed by real `total_cost_usd` and token usage in each run's captured `--output-format
+   json`, including genuine thinking tokens. This directly answers the designated question: yes.
+2. **The detached `claude -p` call exited cleanly on its own both times** — `rc=0` in both runs,
+   meaning the `timeout 80` wrapper never had to fire. This contrasts with the existing,
+   established trap (`tools/lib/worktree-probe.js`'s own header, reused by every earlier probe in
+   this series including finding #24's own predecessor script): `claude -p --output-format json`
+   does not exit on its own when spawned from a plain Node `child_process` with piped stdio,
+   which is why every other probe in this repo watches stdout for the final JSON and then force-
+   kills the tree. This probe's spawn shape differs in two ways from that established pattern —
+   the prompt is passed as a CLI argument rather than piped over stdin, and the process is
+   launched from a detached bash script (real file-redirected stdout/stderr, no Node-owned pipe
+   handles) rather than from Node's own `child_process.spawn`. Either or both are a plausible
+   explanation for the clean exit; not root-caused here, offered as the likely mechanism only.
+3. **The one-shot latch and double-firing pattern behaved exactly as finding #24 already
+   established** (run 1: fired twice, correctly absorbed to one spawn; run 2: fired only once) —
+   no new behavior here, just a second confirmation on a different payload shape.
+4. **In run 1, the real turn finished (~5.4s) well before real compaction happened at all**
+   (`SessionStart(source:"compact")` didn't fire until ~16.7s after the detached call had already
+   written `Status: Complete`) — so the read-leg's poll loop found the answer already sitting
+   there and needed zero iterations. This is the best-case timing for the design (finding #24's
+   own worry: real compaction can land before a real authoring turn finishes), not yet a test of
+   the worse case where the read leg actually has to wait.
+
+**What this settles.** The core premise the handoff named as the single remaining unknown: a
+`PreCompact` hook's detached-spawn mechanism (finding #24) CAN start a real, model-generated
+authoring turn, not just a shell command, with no `Agent` tool in the path at all — n=2, both
+clean. Combined with finding #25 (the read-leg can block long enough to wait for one) and finding
+#24 (the hook itself doesn't block and the spawn survives independent of the outer process), the
+three pieces of Route 5's fork idea that were each open before this session now each have a live,
+positive result on their own terms.
+
+**What this does not settle.** Both runs used a trivial, single-sentence generation prompt
+(~125-218 output tokens) — far smaller than a real handoff-authoring turn (finding #14's corpus:
+13.7k-64.6k tokens, plausibly tens of seconds to a few minutes). Whether a real, much larger
+authoring turn still exits cleanly on its own from this exact spawn shape, and still completes
+within a plausible real-compaction window, is untested — a bigger turn is a materially different
+question than a bigger `sleep`. **No tool use was tested inside the detached turn** — this probe
+only exercised plain text generation; a real handoff-authoring turn needs at minimum a `Write`
+call to produce the handoff file, and whether a headless, detached `claude -p` invocation can use
+tools at all in this spawn shape (permission prompts, `--dangerously-skip-permissions` or an
+allowlist, MCP server startup inside a detached background process) is a wholly separate,
+unaddressed question. The clean-exit contrast with the established Node-child_process trap
+(point 2 above) is offered as a plausible mechanism, not confirmed — no probe here isolated the
+stdin-pipe-vs-argv variable from the Node-spawn-vs-detached-bash variable to say which one (or
+both) actually matters. n=2, one machine, one prompt, `--autocompact 100000` only, and the
+read-leg's actual *wait* behavior (point 4) is n=1, not n=2 — run 2's real compaction never
+landed within the probe's own call window at all, consistent with finding #13's already-
+documented variability, not a new problem.
+
+### Reproduction
+
+```
+node tools/probe-precompact-real-turn.js --keep --json
+node tools/probe-precompact-real-turn.js --json
+# then inspect the kept run's own artifacts directly:
+# cat <scratch>/status.txt
+# cat <scratch>/async_turn.out.json | jq -r .result
+# cat <scratch>/hooklog.jsonl
+```
+
+---
+
+**Bearing on Route 5's fork idea, updated.** The gap the prior synthesis (above, before finding
+#25) named as "the natural next probe if this route is picked back up" — can a `PreCompact`
+hook's detached spawn start a real authoring turn at all, without the `Agent` tool — is now
+closed, positively, by this finding. Not a Decision: whether Route 5's fork idea gets built, and
+in what shape, is still explicitly left open for a future session, now with all three of its load-
+bearing mechanism questions (hook non-blocking + spawn survival, read-leg blocking duration, and
+now real-turn spawning) answered live rather than just reasoned about. The two things a future
+design session would still need before treating this as implementation-ready are named above
+under **What this does not settle**: a real (not trivial) authoring turn's behavior in this spawn
+shape, and whether the detached turn can use tools at all.
+
+---
+
+## Finding #27, 2026-09-16 — the detached `PreCompact`-spawned turn CAN execute the actual operation Route 5 needs: `Write`-ing a real handoff-shaped file, under least-privilege `--allowedTools Write` — but it draws from the SAME account usage budget as the interactive session, and can fail outright (immediate `api_error`, zero tokens spent) if that budget is exhausted
+
+**Question.** Direct follow-up to finding #26, narrowed at the user's own suggestion: rather than
+probe generic tool use, test the actual thing Route 5's fork idea needs to do — can the detached,
+`PreCompact`-spawned `claude -p` turn (finding #26's mechanism) use the `Write` tool to produce a
+real handoff-shaped file, under the least-privilege permission configuration a real production
+hook would actually want to ship (`--allowedTools Write`, not `--dangerously-skip-permissions`)?
+
+**Method.** New script, `tools/probe-precompact-write-turn.js`, reusing finding #26's
+detached-spawn `PreCompact` hook and `Status`-file convention unchanged. The payload prompt
+instructs the model to use the `Write` tool to create a two-section handoff-shaped markdown file
+(a one-paragraph summary plus a `## Next` section listing one item) at a known path, then reply
+`DONE`. Three permission configurations are supported via `--allow-mode`
+(`scoped`/`acceptEdits`/`skip`); this run used the default, `scoped` — `--allowedTools Write`
+only, nothing broader. Ground truth is the file's actual presence and content on disk, not the
+model's claimed success in its text reply — a model can say DONE without the tool call having
+landed. Two runs.
+
+**Result.**
+
+Run 1: `rc=0`, ~7.9s wall clock (`$0.0239`, 415 output tokens incl. 179 thinking),
+`permission_denials: []`, and the handoff file WAS written with genuine, on-topic, correctly-
+shaped content:
+```
+# Handoff: Migration of Authentication Service
+
+We've completed the refactoring of the legacy authentication middleware to use the new OAuth2
+provider. ...
+
+## Next
+
+Coordinate with the DevOps team to schedule the production deployment for Thursday morning, ...
+```
+`resultText: "DONE"`.
+
+Run 2: `rc=1`, ~1.9s wall clock, `total_cost_usd: 0`, every `usage` field zero,
+`terminal_reason: "api_error"`, `resultText: "You've hit your session limit · resets 6pm
+(Europe/Amsterdam)"`. The handoff file was NOT written. `permission_denials: []` here too — this
+was not a permission failure; the call never reached the model at all.
+
+**What this settles.** On the run that actually reached the model, the detached,
+`PreCompact`-spawned turn CAN use the `Write` tool under least-privilege `--allowedTools Write` —
+no permission prompt, no hang, no denial — and produce a real, correctly-shaped handoff file on
+disk. This closes the "can it use tools at all" gap finding #26 left open, specifically for the
+actual operation Route 5 needs, not tool use in the abstract, and specifically under the
+scoped permission configuration a real implementation would actually ship (not the broader
+`--dangerously-skip-permissions` escape hatch).
+
+**What this does not settle, and a new consideration raised by run 2.** n=1 for the success case,
+not n=2 — run 2 failed before reaching the model at all, for a reason unrelated to the mechanism
+under test: this machine's account-level usage cap was hit between the two runs, plausibly driven
+by this session's own extensive probing today (findings #21-#27 collectively represent many real
+`claude -p` invocations) compounding with the live interactive session's own usage. This is itself
+a real, load-bearing fact for Route 5's design, not just a probe artifact: **a detached background
+authoring turn draws from the SAME account usage budget as the interactive session it is meant to
+serve**, and can fail outright — not hang, not silently degrade, an immediate `api_error` with
+zero tokens spent — if that budget is exhausted. A production implementation would need to treat
+this as a real failure mode of the async writer, distinct from [D17](../../docs/design.md#d17)'s
+existing "likely-undocumented" timeout fallback (which covers the read leg giving up after a
+bounded wait, not the writer never having started at all) — a read-leg poll that never sees
+`Status: Complete` because the writer never got scheduled by the API is indistinguishable, from
+the read leg's own vantage point, from a writer that is merely slow, so this doesn't invalidate
+[D17](../../docs/design.md#d17)'s fallback design, it just means the fallback needs to cover this
+cause too, not only slowness. Separately, still open from finding #26: whether a much larger,
+real-sized authoring turn (not a trivial two-paragraph stand-in) behaves the same way in this
+exact spawn shape. No further runs attempted this session given the account-level limit; re-run
+after the stated reset if more confirmation of the success case is wanted.
+
+### Reproduction
+
+```
+node tools/probe-precompact-write-turn.js --keep --json
+node tools/probe-precompact-write-turn.js --json
+# inspect directly:
+# cat <scratch>/handoff-output.md
+# cat <scratch>/async_turn.out.json | jq '.total_cost_usd, .terminal_reason, .permission_denials'
+```
+
+---
+
+**Bearing on Route 5's fork idea, updated again.** Of the two things the prior update (above)
+named as still needed before treating this route as implementation-ready, one is now closed with
+a caveat: the detached turn CAN use `Write` under least-privilege permissions (n=1, clean) — the
+caveat being account-usage-budget contention, a genuinely new risk this session's own probing
+surfaced rather than reasoned about in advance. Still open: a real, not trivial, authoring turn's
+behavior in this exact spawn shape. Still not a Decision — Route 5's fate remains for a future
+session to choose, now against a fuller and slightly less rosy evidence picture than finding #26
+alone left it.
