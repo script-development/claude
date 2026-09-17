@@ -2920,3 +2920,101 @@ HANDOFF_STORE_DIR=<scratch dir> CTX_FORK_TIMEOUT_SECONDS=400 \
 # wait for $HOME/.claude/state/handoff-fork/log.txt to show rc=0, then:
 bash lib/verify-handoff.sh <scratch dir>/<repo>-<branch>-<hash8>.md <checkout>
 ```
+
+---
+
+## Finding #32, 2026-09-17 — a real, decision-rich transcript produces a genuinely good handoff, not just a passing one: this is the run that closes D22's open verification question
+
+**Question.** Finding #31 confirmed the pipeline end to end, but on a degenerate 9-line transcript
+with nothing to get wrong. Does the same hook produce quality authoring — real Decisions naming
+what they beat, real Dead ends, real Traps — against a transcript that actually has a story to
+reconstruct?
+
+**Method.** A 72KB, 35-line prefix truncated from a real 242KB session transcript already known to
+hold substantive content (the same one finding #33 used in full and failed against). Real hook, real
+spawn, `HANDOFF_STORE_DIR` pointed at a disposable test store, no other change from finding #31's
+recipe.
+
+**Result.** `rc=0` in 180s. `terminal_reason: "completed"`. The turn's own Step 3 self-report:
+`step3_exit=0`. An independent re-run of `lib/verify-handoff.sh` by hand, against the real checkout,
+confirmed exit=0 — all 3 citations resolved (`skills/handoff/SKILL.md:12`, `:320`, `:332`). Six WARN
+lines fired, all benign and already anticipated by the skill's own contract: prose mentions of a
+bare path or directory (not a `path:line`) are correctly unchecked, and pointers whose exact
+`path:line` string doesn't recur verbatim in prose (the document instead describes the cluster in a
+`#` comment above the block) are correctly flagged as unreferenced rather than silently accepted —
+WARN lines never affect the exit code, and none of these needed fixing.
+
+**What the content itself looked like.** The source transcript recorded an earlier session
+investigating "can `/handoff --read` actually be used" that ran out its budget mid-investigation,
+never reaching a verdict. The produced handoff:
+- Recorded three real Decisions, each naming what it beat — e.g. trusting the project-local
+  `SKILL.md` over the plugin-cache copy because it was the newer of the two by mtime, not a default
+  assumption.
+- Recorded one real Dead end: a `grep` meant to confirm the plugin was enabled matched only the
+  opening `"enabledPlugins": {` line and could not, by construction, confirm or deny anything about
+  the plugin actually named inside that block — recorded as unresolved, not glossed over.
+- Recorded a Trap directly analogous to finding #33's own root cause: the plugin cache had moved
+  from `0.1.0` (what the source session inspected) to `0.3.1` (what this session was actually
+  handed), and flagged that anything concluded against the old cache needs re-checking.
+- Used `## Unverifiable` correctly for genuine cross-checkout paths (`~/.claude/settings.json`,
+  the plugin-cache paths) that the gate cannot resolve from this checkout — not padding, not
+  omitted, correctly separated from the citable Pointers.
+
+**What this settles.** D22's authoring turn now has one clean run against degenerate content
+(finding #31) and one clean run against real, decision-bearing content (this one). The remaining
+open question from D22 — "does it produce a *good* handoff, not just a passing one" — is answered:
+yes, on this evidence. Not yet tested: a transcript large enough to risk the same `api_error` finding
+#33 hit partway through a full 242KB run: this run's 72KB slice completed in 180s, well inside every
+timeout used so far, so it says nothing about whether the fifth run's failure was itself a function
+of length/duration or an unrelated transient.
+
+### Reproduction
+
+```
+head -n 35 <full 242KB transcript>.jsonl > small-transcript.jsonl   # any real, decision-bearing prefix works
+HANDOFF_STORE_DIR=<scratch dir> CTX_FORK_TIMEOUT_SECONDS=400 \
+  bash hooks/handoff-fork-write.sh <<< '{"session_id":"...","transcript_path":"<small-transcript.jsonl>","cwd":"<real checkout>"}'
+# wait for $HOME/.claude/state/handoff-fork/log.txt to show rc=0, then:
+bash lib/verify-handoff.sh <scratch dir>/<repo>-<branch>-<hash8>.md <checkout>
+```
+
+---
+
+## Finding #33, 2026-09-17 — a real 242KB transcript triggered a mid-run `api_error`; the gate's own `exit=1` on the partial output was correct behaviour, not a mechanism bug
+
+**Question.** Does the fork mechanism hold up against a large, genuinely decision-rich real
+transcript (242KB, 83 turns, real project-setup discussion), the kind finding #31 explicitly did not
+test?
+
+**Method.** Same hook, same recipe as finding #31, against the full untruncated transcript instead
+of a slice.
+
+**Result.** `rc=1`. `turn.out.json` showed `terminal_reason: "api_error"` after real substantial
+work — 215545ms duration, 20806 output tokens (13228 of them thinking), $0.71 cost, 1,305,246
+cache-read input tokens — not an immediate or zero-token failure. A real 60-line file still landed
+on disk. Re-running `lib/verify-handoff.sh` independently against it returned exit=1: 3 of 10
+citations MISSING, 4 of 10 CHANGED, summarised by the gate itself as "3 of 10 citations do not
+resolve. 4 of 10 citations resolve but no longer say what they were cited for."
+
+**Why this is not a mechanism failure.** Every MISSING/CHANGED citation traced to real content the
+transcript's own era actually contained, that has since moved: a `plugin.json` version bump past
+`"version": "0.1.0"`, `hooks/handoff-inject.sh` lines refactored since, a settings file that no
+longer contains `CLAUDE_PROJECT_DIR`, and (most tellingly) a pre-[D21](design.md) handoff path under
+the old `~/.claude/context-economy/handoffs/` root that this same day's store migration made
+genuinely gone. The gate is supposed to report exactly this — real content that rotted between when
+it was cited and when it was checked — and did. Finding #32's own Traps section (written by a
+*different* run, on a *different* slice of this same transcript) independently surfaced the same
+underlying drift (plugin cache `0.1.0` → `0.3.1`), which corroborates that the source material
+really did describe a now-stale era, not that either run fabricated anything.
+
+**What is still unresolved.** The `api_error` itself was not root-caused — not reproduced on the
+next attempt (finding #32, a smaller slice of the same material, completed cleanly), and not chased
+further since finding #32 already answered the more important open question (authoring quality on
+real content). Whether `api_error` here was a function of the transcript's size/duration or an
+unrelated transient on the API side remains an open question if it recurs.
+
+### Reproduction
+
+Not preserved verbatim — this was run against the full, untruncated 242KB transcript with
+`HANDOFF_STORE_DIR` pointed at a disposable store, same shape as finding #31/#32's reproduction
+blocks above. The specific transcript and scratch directory from this run were not kept.

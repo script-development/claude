@@ -1399,6 +1399,31 @@ traps to reconstruct — the one case this run happened to draw was the easiest 
 get right by writing `None.` A richer transcript is the next thing worth running this against, not
 a re-run of what this already confirmed.
 
+**A fifth real run, against a genuinely large (242KB, decision-rich) transcript, ended in
+`terminal_reason: "api_error"` mid-run** — `rc=1` after 215s and substantial real work (20806
+output tokens, 1.3M cache-read tokens, $0.71), not an immediate or zero-token failure like finding
+#27's pattern. A 60-line file still landed on disk despite the error. Re-running the gate against
+it independently returned exit=1 with real, non-fabricated verdicts: 3 of 10 citations MISSING, 4
+of 10 CHANGED — all against paths and content from an era before this transcript's own later
+`0.1.0` → later-version cache migration, not phantom citations. This is the gate doing its job
+against stale content, not a mechanism defect, but it left the "does authoring quality hold on a
+real, decision-rich transcript" question formally unanswered, since the run never reached a clean
+finish to judge that against. See finding #32 for the run that closed it. The `api_error`'s own
+cause was not investigated further — not reproduced on the next attempt, and not chased given the
+next run answered the actual open question.
+
+**Sixth real run, a smaller-but-real slice of that same decision-rich transcript (72KB, a
+truncated prefix, not degenerate) — clean finish, and the first one to test authoring quality
+against actual content.** `rc=0`, `terminal_reason: "completed"`, the turn's own Step 3 self-report
+`step3_exit=0`, and an independent re-run of the gate by hand confirmed exit=0 with all 3 citations
+resolving. See finding #32 for the full account — this is the run that answers what the fourth run
+(degenerate, 9-line transcript) structurally could not: real Decisions each naming what they beat,
+a real Dead end recorded as unresolved rather than papered over, real Traps (including a version-
+drift observation directly analogous to the fifth run's own stale-citation cause), and correct use
+of `## Unverifiable` for genuinely cross-checkout paths the gate cannot resolve. **This closes D22's
+open verification question**: the mechanism produces a quality handoff, not just a passing one, on
+real non-trivial content.
+
 ---
 
 ## Open questions
