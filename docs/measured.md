@@ -2710,3 +2710,30 @@ one-time, mechanical one — not a reason to keep treating this as an open probe
 `--dangerously-skip-permissions` for Route 5's writer specifically, or try the untested
 `settings.json` permission-rule route first, is for a future session to choose — this correction
 only removes the false premise that the first option was foreclosed.
+
+### Addendum, 2026-09-17 — `~/.context-economy/` (same structure, `.claude/` dropped) checked directly, clean
+
+The correction above named `~/.context-economy/` as the likely replacement root — same
+`handoffs/`/`compactions/` structure as today, just one level up from under `.claude` — but flagged
+it as unverified: everything tested so far was either `.claude` itself (blocked) or a bare non-dot
+temp path (fine), neither of which rules out the guard keying on "any dot-prefixed directory" rather
+than the specific name `.claude`. Checked directly, same isolated single-call shape as the `.claude`
+repro:
+
+```
+target: $HOME/.context-economy/handoffs/probe-newroot-repro-<n>.md
+--allowedTools Write, model claude-haiku-4-5-20251001, n=2
+run 1: result "DONE", permission_denials: [], file written, content "NEWROOT1"
+run 2: result "DONE", permission_denials: [], file written, content "NEWROOT2"
+```
+
+Both clean — no denial, no "sensitive directory" text, ground truth confirmed on disk both times
+(content matched exactly, not just presence). This settles the one open question the correction
+left: the guard is specific to `.claude` by name, not to dot-prefixing generally, so `~/.context-economy/`
+is a live candidate for the relocated root, not merely an untested guess. Probe artifacts (the
+`handoffs/` test files and the directory itself) were deleted immediately after; nothing was left
+in place, since this checked the location, not yet the migration.
+
+Migration itself — updating `lib/handoff-store.sh`'s default, `hooks/handoff-inject.sh`, and
+whatever else resolves `handoff_store_dir()`, plus moving the eight real handoffs already in the
+current store — was not attempted here and remains the next actual step, not a probe.
