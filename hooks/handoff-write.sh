@@ -224,12 +224,12 @@ if [ -e "$latch" ]; then
                 # unrelated branch's document, and misreading its mtime as THIS session's write
                 # would poison the sidecar with a figure that describes someone else's work.
                 #
-                # `-ge`, not `-gt`: both timestamps are second-granularity (`stat -c %Y`, same as
-                # every other mtime comparison in this bundle), and a fast write can land in the
-                # same second the latch did. Treating a tie as "written" is the safe direction --
-                # the alternative is silently never recording a sidecar for a handoff that (by
-                # every other signal) is clearly this session's own.
-                latch_mtime=$(stat -c %Y "$latch" 2>/dev/null); latch_mtime=${latch_mtime:-0}
+                # `-ge`, not `-gt`: both timestamps are second-granularity (`handoff_store_mtime`,
+                # same as every other mtime comparison in this bundle), and a fast write can land
+                # in the same second the latch did. Treating a tie as "written" is the safe
+                # direction -- the alternative is silently never recording a sidecar for a handoff
+                # that (by every other signal) is clearly this session's own.
+                latch_mtime=$(handoff_store_mtime "$latch" 2>/dev/null); latch_mtime=${latch_mtime:-0}
                 if [ "$HANDOFF_PICK" = exact ] && [ -n "$HANDOFF_FILE" ] && [ -n "$HANDOFF_MTIME" ] \
                    && [ "$HANDOFF_MTIME" -ge "$latch_mtime" ]; then
                     written_resident=$(resident_from_transcript "$transcript")

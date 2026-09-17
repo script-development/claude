@@ -241,8 +241,9 @@ never execution — an unverified handoff is worth far more than no handoff.
 
 If `handoff=STORE-LIB-MISSING`, the install is incomplete — `lib/handoff-store.sh` never reached
 the place the hooks look for it. Write to `~/.claude/context-economy/handoffs/<repo>-<slug>-<hash>.md` with
-`hash` = the first 8 characters of `printf '%s' "$main" | md5sum`, say in `status:` that the name was
-built by hand, and flag the install — a name built by hand is exactly the failure the paragraph
+`hash` = the first 8 characters of `printf '%s' "$main" | md5sum` (or, where `md5sum` does not
+exist — stock macOS ships none — `printf '%s' "$main" | md5 -q`), say in `status:` that the name
+was built by hand, and flag the install — a name built by hand is exactly the failure the paragraph
 above describes.
 
 ## Write mode — Step 2: compose

@@ -64,12 +64,49 @@ put() {
     printf '%s' "$path"
 }
 
+# --- portable md5 / mtime ---------------------------------------------------
+#
+# Smoke tests only, on whichever implementation this machine actually has (md5sum/`stat -c` on
+# every platform this suite has run on so far). They do not exercise the BSD/macOS fallback branch
+# -- reliably forcing `command -v md5sum` to fail while leaving the rest of this script's own
+# tooling (cut, cat, mkdir...) on PATH is not worth the fragility it would add, and a stub `md5`
+# would only prove this code calls a command named `md5`, not that BSD's actually behaves the way
+# the comment above handoff_store_md5 assumes. That assumption is implemented, not measured --
+# see handoff_store_md5's and handoff_store_mtime's own comments in the subject.
+
+# Act & Assert
+hash_out=$(printf '%s' fixture-string | handoff_store_md5)
+case "$hash_out" in
+    [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f])
+        pass 'handoff_store_md5 returns 32 lowercase hex characters' ;;
+    *) fail 'handoff_store_md5 returns 32 lowercase hex characters' "got [$hash_out]" ;;
+esac
+
+assert_eq 'handoff_store_md5 is deterministic for the same input' \
+    "$hash_out" "$(printf '%s' fixture-string | handoff_store_md5)"
+
+# Arrange — a file whose mtime is known exactly, not merely recent.
+mtime_fixture="$fixture/mtime-probe"
+: > "$mtime_fixture"
+known_epoch=$(( $(date +%s) - 12345 ))
+touch -d "@$known_epoch" "$mtime_fixture" 2>/dev/null \
+    || touch -t "$(date -d "@$known_epoch" +%Y%m%d%H%M.%S)" "$mtime_fixture"
+# Act & Assert
+assert_eq 'handoff_store_mtime reads back a known mtime' "$known_epoch" "$(handoff_store_mtime "$mtime_fixture")"
+assert_eq 'handoff_store_mtime is empty, not fabricated, for a missing file' \
+    '' "$(handoff_store_mtime "$fixture/does-not-exist")"
+
 # --- s1 — the filename contract --------------------------------------------
 
 # Act & Assert — the subject is called inline; each case's arrange is its arguments.
+#
+# The oracle goes through handoff_store_md5 too, not a hardcoded `md5sum` call: the subject now
+# tries `md5` as a BSD/macOS fallback when `md5sum` is absent (see handoff_store_md5's own
+# comment), and a test that computed its expected value a different way than the code under test
+# would silently stop meaning anything on a machine that takes the fallback branch.
 name=$(handoff_store_name /c/checkouts/emmie EMMIE-0477)
 assert_eq 'the name carries the repo basename, the slug and a hash' \
-    "emmie-EMMIE-0477-$(printf '%s' /c/checkouts/emmie | md5sum | cut -c1-8).md" "$name"
+    "emmie-EMMIE-0477-$(printf '%s' /c/checkouts/emmie | handoff_store_md5 | cut -c1-8).md" "$name"
 
 a=$(handoff_store_name /c/one/emmie main)
 b=$(handoff_store_name /c/two/emmie main)

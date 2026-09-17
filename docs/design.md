@@ -1095,6 +1095,75 @@ plus a wording fork inside it, not four.
 
 ---
 
+### D20 — `md5sum` and `stat -c` are GNU-only; the store and its consumers now try a BSD/macOS fallback too
+
+Found 2026-09-17, prompted by a direct question during the Route 5 detached-spawn investigation
+(`docs/measured.md` findings #28 and its corrections/addenda): *"is there anything in the skill
+beyond paths that depends on OS, or is this it?"* A static audit of the shipped `hooks/`, `lib/`
+and `skills/handoff/SKILL.md` — not a live probe, this bundle runs on Windows and cannot exercise
+a real BSD/macOS system directly — turned up two GNU-coreutils-only commands, used nowhere near
+each other's call sites but sharing one property: `2>/dev/null` on every call already suppresses
+the "command not found" error, so the failure mode was never a crash, only a silent behavior
+change nobody would see without looking for it.
+
+**`md5sum`.** Four sites: `lib/handoff-store.sh` (`handoff_store_name`'s filename hash),
+`hooks/handoff-inject.sh` and `hooks/session-end-marker.sh` (both hash `$main` for the `/clear`
+marker's key, independently of the store), and `skills/handoff/SKILL.md`'s own documented
+STORE-LIB-MISSING fallback instructions. Stock macOS ships no `md5sum` at all — BSD's `md5`
+instead, different flags, different output shape. Traced through, the failure is not a clean
+degrade: `handoff_store_name`/`handoff_store_path` return empty rather than failing loudly, so the
+write leg's Step 1 snippet would print `handoff=` (an EMPTY path, not `STORE-LIB-MISSING`) for
+`$(handoff_store_path ...)` to receive nothing back; `handoff_store_resolve`'s own exact-match
+check (`exact=$(handoff_store_path ...)`) would silently never match, degrading every read to
+"most recent candidate" regardless of whose branch it is; and `session-end-marker.sh`'s own
+`[ -n "$key" ] || exit 0` means the ENTIRE `/clear` marker write becomes a silent no-op — not
+degraded, absent.
+
+**`stat -c %Y`.** Six sites: `lib/handoff-store.sh` (twice, inside `handoff_store_resolve`'s
+candidate scan), `hooks/handoff-inject.sh` (the handoff's displayed age), `hooks/handoff-write.sh`
+(the `written_at_tokens` sidecar's tie-break against the arming latch), `hooks/session-end-marker.sh`
+(the marker's `handoff_mtime` field). BSD/macOS `stat` uses `-f` with different format codes.
+Every site already has an explicit `case "${mtime:-}" in ''|*[!0-9]*) ...` guard, so this one fails
+SAFE — no wrong number is ever fabricated — but it fails silent: age would always report "unknown",
+the store's recency tie-break would degrade to whatever order the glob happens to iterate rather
+than real recency, and `handoff-write.sh`'s `[ -n "$HANDOFF_MTIME" ]` check for the sidecar would
+never be true, so that sidecar would never populate at all.
+
+For contrast: `readlink -f` was already deliberately avoided elsewhere in this bundle, specifically
+because it is "absent on BSD/older macOS" (see the build note above, ~line 1436) — so this class of
+gap was known to matter and had already been dodged once. `md5sum`/`stat -c` were not caught the
+same way; neither appears anywhere else in this document before now.
+
+**The fix.** Two portable helpers, added once to `lib/handoff-store.sh` (already the one file every
+consumer sources) rather than duplicated at each call site: `handoff_store_md5` (tries `md5sum`,
+falls back to `md5 -q`) and `handoff_store_mtime` (tries `stat -c %Y`, falls back to `stat -f %m`).
+Both keep every existing caller's contract unchanged — empty output on failure or when neither
+command exists, never a fabricated hash or a wrong number — so no caller needed its own logic
+changed beyond swapping which command it calls. This also removed three duplicated inline
+`md5sum` calls and six duplicated inline `stat -c` calls down to one definition each.
+`skills/handoff/SKILL.md`'s STORE-LIB-MISSING fallback text — the one place this can't route
+through the shared functions, since by definition the lib failed to load — now names the `md5 -q`
+alternative directly in prose.
+
+**Verified: the existing test suites, not a new capability.** `lib/handoff-store.test.sh` (now 24
+assertions, four new ones smoke-testing the two helpers directly), `hooks/handoff-inject.test.sh`
+(76) and `hooks/session-end-marker.test.sh` (32) all pass clean after the change.
+`hooks/handoff-write.test.sh` has 7 of 47 failures — confirmed, via `git stash` on just that file,
+to be PRE-EXISTING and unrelated: identical failures with this change fully reverted, all about
+ceiling/`1M beta` detection and `PostToolUse` decline behavior, nothing touching `mtime` or the
+hash. Not fixed here — out of scope for this decision, and flagged rather than folded in silently
+so it isn't mistaken for something this change caused.
+
+**What is not verified.** `md5 -q`'s bare-stdin-digest behavior and `stat -f %m`'s format code are
+long-stable, well-documented BSD userland syntax, but this bundle has no way to run either on a
+real BSD/macOS machine from here. Per the same assert-vs-measure discipline `docs/measured.md`
+applies throughout: treat this fix as implemented, not measured, until it actually runs there — the
+smoke tests added confirm the GNU branch still works and the helpers' *contract* (empty on
+failure, deterministic, no fabricated numbers), not that the untested branch's real-world behavior
+matches what the comments assume.
+
+---
+
 ## Open questions
 
 Genuinely unresolved. Recorded so that "was more design interrogation worthwhile" is answered by

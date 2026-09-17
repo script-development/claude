@@ -69,12 +69,44 @@ handoff_store_slugify() {
     printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '_'
 }
 
+# handoff_store_md5 [-> 32 hex chars of MD5(stdin)]
+#
+# Portable MD5 hex digest of stdin. `md5sum` is GNU coreutils, present on Linux and on Windows
+# through Git Bash's own coreutils -- but NOT on stock macOS, which ships no md5sum at all (BSD's
+# `md5` instead, different flags, different output shape: `md5 -q` prints the bare digest the same
+# way `md5sum | cut -c1-32` does here). Every caller already treats an empty result as "hash
+# unavailable, degrade" (`handoff_store_name` below, and the two `/clear`-marker keys in
+# handoff-inject.sh / session-end-marker.sh that hash `$main` for an unrelated file), so this
+# degrades the same way when NEITHER exists: no output, not a fabricated or zero hash.
+#
+# Not independently verified on a real BSD/macOS machine -- this repo runs on Windows. `md5 -q`'s
+# behavior (bare stdin digest, no filename/dash suffix) is long-stable, well-documented BSD
+# userland syntax, but treat this branch as implemented-not-measured until it is actually run
+# there, the same distinction this bundle draws everywhere else between asserting and checking.
+handoff_store_md5() {
+    if command -v md5sum >/dev/null 2>&1; then
+        md5sum 2>/dev/null | cut -c1-32
+    elif command -v md5 >/dev/null 2>&1; then
+        md5 -q 2>/dev/null
+    fi
+}
+
+# handoff_store_mtime <file> [-> epoch seconds]
+#
+# Portable mtime. GNU `stat -c %Y` (Linux, Git Bash on Windows) first; BSD/macOS `stat -f %m`
+# otherwise -- same flag divergence as handoff_store_md5, same "empty on failure, never a
+# fabricated number" contract every caller already relies on (an unreadable mtime must render as
+# "unknown", not as a confident but wrong age). Same not-independently-verified-on-macOS caveat.
+handoff_store_mtime() {
+    stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null
+}
+
 # handoff_store_name <target-main-worktree> <branch-slug>
 # The canonical filename for one target. Empty on failure, never a partial name -- a name
 # missing its hash would collide with a different repository of the same basename.
 handoff_store_name() {
     local main=$1 slug=$2 hash base
-    hash=$(printf '%s' "$main" | md5sum 2>/dev/null | cut -c1-8)
+    hash=$(printf '%s' "$main" | handoff_store_md5 | cut -c1-8)
     [ -n "$hash" ] || return 1
     base=$(handoff_store_slugify "$(basename "$main")")
     slug=$(handoff_store_slugify "$slug")
@@ -144,7 +176,7 @@ handoff_store_resolve() {
     # data the OTHERS lines are built from -- so the listing can never disagree with the pick.
     for f in "$dir"/*.md; do
         [ -r "$f" ] && [ -s "$f" ] || continue
-        mtime=$(stat -c %Y "$f" 2>/dev/null)
+        mtime=$(handoff_store_mtime "$f")
         case "${mtime:-}" in ''|*[!0-9]*) mtime="" ;; esac
 
         if [ -n "$exact" ] && [ "$f" = "$exact" ]; then
@@ -166,7 +198,7 @@ handoff_store_resolve() {
     for f in "$dir"/*.md; do
         [ -r "$f" ] && [ -s "$f" ] || continue
         [ "$f" = "$best" ] && continue
-        mtime=$(stat -c %Y "$f" 2>/dev/null)
+        mtime=$(handoff_store_mtime "$f")
         case "${mtime:-}" in ''|*[!0-9]*) mtime=0 ;; esac
         branch=$(handoff_store_field "$f" branch)
         checkout=$(handoff_store_field "$f" checkout)

@@ -163,7 +163,10 @@ handoff_present=false
 handoff_mtime=null
 if [ -r "$handoff_path" ] && [ -s "$handoff_path" ]; then
     handoff_present=true
-    m=$(stat -c %Y "$handoff_path" 2>/dev/null)
+    # 2>/dev/null on the whole substitution: handoff_store_mtime is only defined when the lib was
+    # readable (handoff_path can be set via the pre-store fallback too), and an undefined-function
+    # error would otherwise leak to this hook's own stderr.
+    m=$(handoff_store_mtime "$handoff_path" 2>/dev/null)
     case "${m:-}" in ''|*[!0-9]*) handoff_mtime=null ;; *) handoff_mtime=$m ;; esac
 fi
 
@@ -181,7 +184,9 @@ trigger_fired=false
 state_dir="${LAST_CLEAR_STATE_DIR:-$HOME/.claude/state/last-clear}"
 mkdir -p "$state_dir" 2>/dev/null || exit 0
 
-key=$(printf '%s' "$main" | md5sum 2>/dev/null | cut -c1-32)
+# 2>/dev/null on the whole substitution: handoff_store_md5 is only defined when the lib was
+# readable, and an undefined-function error would otherwise leak to this hook's own stderr.
+key=$(printf '%s' "$main" | handoff_store_md5 2>/dev/null)
 [ -n "$key" ] || exit 0
 marker="$state_dir/$key-$slug.json"
 

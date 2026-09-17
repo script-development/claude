@@ -182,7 +182,10 @@ if [ "$source_kind" = clear ]; then
     # again at the next clear would be noise, and worse, would attribute an old loss to a new
     # event.
     state_dir="${LAST_CLEAR_STATE_DIR:-$HOME/.claude/state/last-clear}"
-    key=$(printf '%s' "$main" | md5sum 2>/dev/null | cut -c1-32)
+    # 2>/dev/null on the whole substitution, not just inside the function: handoff_store_md5 is
+    # only defined when the lib above was readable, and an undefined-function error would
+    # otherwise leak to this hook's own stderr in the degraded install case.
+    key=$(printf '%s' "$main" | handoff_store_md5 2>/dev/null)
     marker=""
     [ -n "$key" ] && marker="$state_dir/$key-$slug.json"
 
@@ -369,7 +372,10 @@ if [ "$handoff_present" = true ]; then
     # An unreadable mtime prints "unknown", never a number. Falling back to 0 would have rendered as
     # a confident "20000 day(s) ago" -- a fabricated fact, and this is a document whose entire job is
     # telling a reader what to trust. An admitted gap is always cheaper than an invented figure.
-    mtime=$(stat -c %Y "$handoff" 2>/dev/null)
+    # 2>/dev/null on the whole substitution: handoff_store_mtime is only defined when the lib was
+    # readable (handoff_present can be true via the pre-store fallback path too), and an
+    # undefined-function error would otherwise leak to this hook's own stderr.
+    mtime=$(handoff_store_mtime "$handoff" 2>/dev/null)
     case "${mtime:-}" in
         ''|*[!0-9]*) age_phrase="at an unknown time (mtime unreadable)" ;;
         *) age_phrase="$(( ( $(date +%s) - mtime ) / 86400 )) day(s) ago" ;;
