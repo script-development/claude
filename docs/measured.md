@@ -2504,3 +2504,155 @@ surfaced rather than reasoned about in advance. Still open: a real, not trivial,
 behavior in this exact spawn shape. Still not a Decision — Route 5's fate remains for a future
 session to choose, now against a fuller and slightly less rosy evidence picture than finding #26
 alone left it.
+
+---
+
+## Finding #28, 2026-09-17 — the detached turn CAN run the real handoff skill's write-mode mechanics end to end and produce a genuinely gate-passing file, but the real production store path is blocked outright by a previously-undiscovered "sensitive directory" guard that survives both `--allowedTools Write` and `--permission-mode acceptEdits`
+
+**Question.** Direct follow-up to finding #27, closing the one item it left explicitly open: "whether
+a real, not trivial, authoring turn behaves the same way in this exact spawn shape." Finding #27's
+stand-in was a two-paragraph toy file. This asks whether the detached, `PreCompact`-spawned turn can
+run the ACTUAL thing Route 5 exists to produce — a handoff satisfying `skills/handoff/SKILL.md`'s own
+format contract, composed from a hypothetical prior session's decisions/dead-ends/traps without
+reading anything (the skill's own "do not re-derive" rule), that then passes the real gate,
+`lib/verify-handoff.sh` — inside the same detached spawn shape as findings #24–27.
+
+**Method.** New script, `tools/probe-precompact-handoff-turn.js` (mission_control). Three additions
+over finding #27's script: (1) a disposable fixture git repo (`target-repo`, two real source files,
+committed) so the handoff's Pointers cite real `path:line` fragments the gate can actually resolve;
+(2) `step1.sh`, a near-verbatim port of `SKILL.md`'s own "Write mode — Step 1" orientation snippet,
+run BOTH by the detached turn (to locate the real handoff-store path, checkout and gate) AND
+independently by the harness script afterward, against the identical script and target, so the
+expected path is known from the same resolution the turn used, not merely asserted; (3) the prompt
+hands the turn a fully-specified hypothetical scenario (Decisions/Dead ends/Traps/Next/Pointers,
+citations pre-verified against the fixture) and instructs it to run the skill's actual three
+write-mode steps — orient (Bash), compose (Write), verify (Bash, the real gate) — then report a
+one-line `RESULT` summary. Ground truth is independent of the turn's self-report in two ways: the
+file's presence/content on disk, and a SEPARATE run of `lib/verify-handoff.sh` by the harness script
+against whatever the turn produced, not the turn's own Step-3 exit code. `--allowedTools "Bash Write"`
+(scoped, the same least-privilege shape as finding #27), model `claude-haiku-4-5-20251001` for the
+detached turn, per this series' convention.
+
+**Deliberate scope boundary, stated so it doesn't read as an omission.** This is NOT `/handoff`
+invoked as a slash command — the scratch driver project has no plugin/marketplace install, so
+skill-*triggering* itself is untested here, same boundary finding #26 already drew for its own
+prompt. What IS tested is whether the detached turn can execute the skill's own mechanics faithfully.
+
+**Result, part 1 — the real store path is blocked, reproducibly, independent of permission mode.**
+The first full run targeted the real store (`$HOME/.claude/context-economy/handoffs/`, no override).
+`rc=0`, but the file was NOT written: `permission_denials` shows two `Write` attempts (the turn
+retried once), both denied, and the turn's own final text explained why — *"I'm blocked on Step 2 —
+the Write tool needs permission to create the handoff file. Since this is a non-interactive session,
+I cannot obtain that permission directly."* Isolated outside the full probe, with minimal single-call
+tests to separate the mechanism from everything else in the spawn shape:
+
+- `--allowedTools Write` only, target `~/.claude/context-economy/handoffs/probe-boundary-test.md`:
+  denied. The model's own text names the cause directly — *"needs permission... since it's in a
+  sensitive directory (`.claude`)."* Reproduced twice more (n=3 total, scoped mode): *"sensitive
+  directory (`.claude/context-economy/handoffs/`)"*, *"requires permission to write to that sensitive
+  path."* Three different phrasings of the same underlying block, not three different causes.
+- `--permission-mode acceptEdits`, same target: also denied — *"blocking the write... as a security
+  precaution."* AcceptEdits does not bypass this guard either.
+- A control, same session, target OUTSIDE `cwd` but with no `.claude` segment in the path: not
+  blocked by this guard (see part 2 below for what happened instead) — isolating that the trigger is
+  the literal `.claude` path segment, not "outside the project directory" generally.
+- `--dangerously-skip-permissions`: **not tested.** Attempting to run it via this session's own Bash
+  tool was itself refused by this session's own auto-mode classifier (*"Create Unsafe Agents"*) before
+  the command executed at all — a decision this report respects rather than works around. Whether
+  skip-mode bypasses the `.claude` guard is the one permission configuration left genuinely open.
+
+**This is a new, structural finding, and it lands on the exact path Route 5 needs.** The real
+handoff store — the path `skills/handoff/SKILL.md`'s own "Where the file goes" section requires,
+for the reasons argued there (centralised, enumerable, survives its own worktree) — is
+`$HOME/.claude/context-economy/handoffs/`. That path is `.claude`-prefixed by construction, which is
+exactly the prefix this guard blocks, under the two permission configurations
+(`--allowedTools Write`, `--permission-mode acceptEdits`) a real production hook would plausibly ship.
+Unlike finding #27's account-budget-exhaustion failure — an external resource limit, orthogonal to
+the mechanism — this is the mechanism refusing the specific operation Route 5 exists to perform, at
+the specific location it has to perform it.
+
+**Result, part 2 — with the store path relocated (the library's own documented test seam), every
+other part of the real mechanism worked cleanly, n=1.** `lib/handoff-store.sh` already documents
+`HANDOFF_STORE_DIR` as overridable "for tests." Re-running the full probe with
+`HANDOFF_STORE_DIR` exported into the detached turn's own environment (and into the harness's
+independent `step1.sh` re-run, identically) isolates the store-path block from everything else:
+
+```
+rc=0, $0.043, 1801 output tokens (773 thinking)
+resultText: "RESULT handoff=<path> step3_exit=0 gate_used=<path>"
+permission_denials: []
+```
+
+The self-reported `RESULT` line parsed cleanly and named `step3_exit=0`. The harness's OWN
+independent re-run of the real gate against the produced file — not trusting that self-report —
+agrees exactly: `exit code: 0`, *"All 3 citations resolve,"* against a checkout correctly read from
+the file's own `checkout:` header (`[from argument]` in the gate's own output, since the harness
+passed it explicitly, matching write-mode Step 3's contract). The file itself: all four header
+fields present, all three `### ` subsections non-empty and substantive (not `None.` — genuine
+fictional content), `## Next` with three concrete items, a properly fenced `## Pointers` block with
+three citations, all three resolving. `size 1716 chars ≈ 640 tokens ≈ 0.3 turns of work` per the
+gate's own report — smaller than the real handoffs already in the store (4–12 KB, per a plain listing
+of `~/.claude/context-economy/handoffs/*.md`), a real scale caveat: this fixture's Decisions/Dead
+ends/Traps are each one paragraph, where a real session's might run longer.
+
+**A smaller, positive side-finding: the msys/Windows path split resolved itself without incident.**
+`step1.sh`'s `handoff=` line comes out in Git Bash's own `$HOME`-derived msys form (`/c/Users/...`),
+which Node's `fs.*` cannot read directly — the harness script has to convert it
+(`msysToWin()`) before checking ground truth. The MODEL, given that same msys-form path in its
+prompt, converted it correctly on its own every time: every `Write` `tool_input.file_path` across
+every run in this finding, blocked and successful alike, came out Windows-native
+(`C:\\Users\\Bart\\...`), never the raw msys string. Not a designed test — noticed because the
+ground-truth check needed the same conversion independently and the two agreed every time.
+
+**A separate reliability wrinkle, noted but not chased — the exact failure mode this series exists to
+catch, caught.** In the isolating control above (target outside `.claude`), one run reported
+`result: "DONE"`, `permission_denials: []`, yet the file was NOT written — `num_turns: 2`, most of
+the output budget spent on `thinking`, consistent with the model composing an answer without ever
+issuing the `Write` call at all. Not a permission denial (none was recorded) and not this finding's
+`.claude` guard (the path had no `.claude` segment) — a plain claimed-success-without-a-landed-call,
+exactly the failure mode `SKILL.md` itself warns about (*"a model can say DONE without the tool call
+having actually landed"*) and exactly why this probe's ground truth is the file on disk, never the
+turn's own text. n=1, not reproduced deliberately (the budget went to the load-bearing runs above),
+and plausibly a `claude-haiku-4-5-20251001` trait rather than a property of the detached spawn shape
+— every other finding in this series that used a bigger, more structured prompt (this one included)
+did not exhibit it.
+
+**What this settles.** The gap finding #27 left open — whether a real, structured authoring turn
+(not a trivial stand-in) can execute the skill's actual multi-step write mechanics inside this exact
+detached spawn shape — is closed, positively, once the store-path question is factored out: orient,
+compose-to-format, and self-verify against the real gate all worked, n=1 clean.
+
+**What this does not settle.** n=1 for the clean success in part 2, same caveat every finding in this
+series states for its positive result. Whether `--dangerously-skip-permissions` bypasses the
+`.claude` guard is untested (see above). Whether a persistent `settings.json` permission RULE —
+distinct from `--allowedTools`, and not tried here — could pre-authorize a specific path pattern
+(e.g. `Write(~/.claude/context-economy/handoffs/**)`) for a headless invocation is a live question
+this finding did not test and is the natural next check. And this is still not `/handoff` invoked as
+a real skill trigger (see the scope boundary above) — only its mechanics.
+
+**Bearing on Route 5's fork idea, updated again.** The item finding #27 left open — a real authoring
+turn's behavior in this exact spawn shape — is now answered, cleanly, positively. But this finding
+replaces it with a more concrete blocker than either prior open item: not a resource limit
+(finding #27's account-budget exhaustion) but the permission model itself refusing the one write
+Route 5 exists to perform, at the one path `SKILL.md`'s own design requires it to use. Route 5 is
+not implementation-ready against the real store as configured today under either `--allowedTools
+Write` or `--permission-mode acceptEdits`. Still not a Decision — but the next probe this route
+needs is no longer "does the mechanism work" (answered, yes) — it is "can anything short of
+`--dangerously-skip-permissions` write to `~/.claude/...` from a detached headless turn at all,"
+and if the answer stays no, whether Route 5 accepts that broader privilege for this one path,
+relocates its target outside `.claude`, or is rejected on this basis alone.
+
+### Reproduction
+
+```
+node tools/probe-precompact-handoff-turn.js --keep --keep-handoff              # targets the REAL store; reproduces the block
+node tools/probe-precompact-handoff-turn.js --keep --store-dir <scratch-path>  # isolates the rest of the mechanism
+```
+
+Lives in mission_control at `tools/probe-precompact-handoff-turn.js`, same location as every other
+probe in this series (not shipped in this bundle, per the convention `toolsearch-cache-probe.js`
+already set). The isolated single-call tests in "Result, part 1" were ad hoc `claude -p` invocations,
+not saved as a script — re-derive by piping a `Use the Write tool to create a file at exactly this
+path: <path under $HOME/.claude/...>` prompt into `claude -p --output-format json --allowedTools
+Write` (or `--permission-mode acceptEdits`) and reading `permission_denials` plus the file's actual
+presence on disk.
