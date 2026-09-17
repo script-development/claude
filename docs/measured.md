@@ -2656,3 +2656,57 @@ not saved as a script — re-derive by piping a `Use the Write tool to create a 
 path: <path under $HOME/.claude/...>` prompt into `claude -p --output-format json --allowedTools
 Write` (or `--permission-mode acceptEdits`) and reading `permission_denials` plus the file's actual
 presence on disk.
+
+---
+
+## Correction, 2026-09-17 — finding #28 overstated the blocker: `.claude` is today's default, not a requirement of Route 5 or of `SKILL.md`
+
+Raised by the user, immediately after finding #28 was written, from a plain reading of the finding's
+own evidence: *"If `.claude` is a sensitive directory, and a 'sensitive directory' is all that blocks
+this route, then why not choose a different directory that is not sensitive? … I think Route 5 only
+requires a directory that is not on the worktree the session is working in."* Correct, and the
+finding already contained the disproof of its own closing line without drawing the conclusion.
+
+**The overstated claim**, verbatim from finding #28's "Bearing on Route 5's fork idea, updated
+again": *"the permission model itself refusing the one write Route 5 exists to perform, at the one
+path `SKILL.md`'s own design requires it to use."* False in its second half. `SKILL.md`'s own "Where
+the file goes" section states three requirements for the store, none of which name `.claude`: not
+derived from cwd (so a sibling-checkout run cannot key two tickets' handoffs to the same wrong
+repository), centrally enumerable (the read leg is a `SessionStart` hook that "knows its cwd and
+nothing else," so only a listable known root can be found), and outside every worktree (so a
+throwaway worktree's deletion cannot take the handoff with it). `~/.claude/context-economy/` is where
+`lib/handoff-store.sh` happens to default that root — its own header comment calls this a "published
+contract," *"DECLARED here rather than merely observed"* because other consumers depend on the
+literal path, which is a statement about implementation stability, not an argument that the root has
+to sit under `.claude` specifically.
+
+**The finding already contained the disproof.** "Result, part 2" ran the full probe with
+`HANDOFF_STORE_DIR` pointed at `C:/Users/Bart/AppData/Local/Temp/handoff-store-test-1789632676/`
+— outside `.claude`, outside any worktree, exactly the class of location `SKILL.md` actually asks
+for — and `Write` succeeded cleanly: `permission_denials: []`, `rc=0`, ground truth confirmed on
+disk, gate exit 0. That was framed as "the library's own documented test seam" to isolate the
+mechanism from the store-path question. It is that, but it is also a direct, already-executed
+demonstration that a non-`.claude` root sidesteps the guard entirely — not an inference from the
+`.claude`-specific denial messages (part 1) alone, a second, independent confirmation from the
+opposite direction.
+
+**What is still true, unchanged.** The guard is real, reproducible (n=3), keys specifically on
+`.claude` appearing in the path, and survives both `--allowedTools Write` and `--permission-mode
+acceptEdits` — none of that is walked back, only the conclusion drawn from it.
+
+**What changes.** Route 5 is not blocked by the permission model in any general sense — it is
+blocked only for as long as its writer targets today's `~/.claude/...` default. The actual remaining
+question is narrower and cheaper than "does anything short of `--dangerously-skip-permissions` let a
+detached turn write under `.claude`": it is whether to relocate `handoff_store_dir()`'s root to a
+non-`.claude` directory at all, and that is bounded, ordinary engineering, not a further capability
+probe. Per `lib/handoff-store.sh`'s own comment, *"Renaming the root is a MIGRATION, not a
+rename"* — everything that resolves the root has to move together (the write leg, the `SessionStart`
+read-leg hook, `session-end-marker.sh`), and the real handoffs already sitting in the current store
+(eight files, per the plain listing this session already took of `~/.claude/context-economy/handoffs/`)
+would need migrating or would stop being found by an unchanged reader. A real cost, but a
+one-time, mechanical one — not a reason to keep treating this as an open probe.
+
+**Still not a Decision.** Whether to relocate the root, keep it under `.claude` and accept
+`--dangerously-skip-permissions` for Route 5's writer specifically, or try the untested
+`settings.json` permission-rule route first, is for a future session to choose — this correction
+only removes the false premise that the first option was foreclosed.
