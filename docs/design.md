@@ -1375,6 +1375,30 @@ named but explicitly NOT fixed yet (`timeout`'s unreliability — left open on i
 decision on the right kill mechanism for this platform). The next real verification attempt should
 be expected to get further than these three did, not assumed to.
 
+**Fourth real run, with both fixes in place — a clean, independently-verified success.** Same
+production hook (not a hand-built duplicate), a real 22KB transcript, `HANDOFF_STORE_DIR` pointed at
+a disposable test store. Completed in ~2 minutes (`rc=0`), `permission_denials: []`, a real file on
+disk, and `lib/verify-handoff.sh` re-run independently by hand against it (not trusting the turn's
+own self-report) confirmed exit 0. This is the first clean end-to-end completion of the mechanism.
+
+The chosen transcript turned out, unintentionally, to be an accidental stress test: 9 lines, no
+user or assistant turn at all — a session that only fired `/clear` against a standing handoff and
+did nothing else. Rather than fabricating content to fill the required sections, the turn wrote
+honest `None.` for Decisions and Dead ends, and used Traps productively for two things worth
+knowing: that the store it resolved to was the disposable test path, not the usual default (stated
+as a fact, not investigated — the tangent fix held), and that a real, unrelated standing handoff
+existed describing genuine pending work this session never touched, explicitly distinguished from
+"nothing to resume here." This is exactly the behaviour the prompt's anti-fabrication instruction
+was written to produce, on a case that gave it every opportunity to pad instead.
+
+**What this does and does not establish.** It confirms the pipeline works end to end on this
+machine, with both fixes, for at least one real (if degenerate) transcript: spawn, orient (correct
+gate/store/path resolution), read the real transcript, compose honestly, verify, land on disk. It
+does **not** yet test authoring quality against a transcript with real decisions, dead ends and
+traps to reconstruct — the one case this run happened to draw was the easiest possible content to
+get right by writing `None.` A richer transcript is the next thing worth running this against, not
+a re-run of what this already confirmed.
+
 ---
 
 ## Open questions

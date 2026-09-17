@@ -2880,3 +2880,43 @@ now. The next attempt is the actual test of that.
 Not preserved — `HANDOFF_STORE_DIR=<scratch dir> claude -p --output-format stream-json --verbose
 --allowedTools "Bash Write" --strict-mcp-config < <hooks/handoff-fork-write.sh's generated prompt>`,
 against any real transcript under `~/.claude/projects/*/`.
+
+---
+
+## Finding #31, 2026-09-17 — with both fixes from finding #30 in place, the real production hook completes cleanly end to end: spawn, orient, read a real transcript, compose, verify, land on disk
+
+**Question.** With `--strict-mcp-config` and the anti-tangent prompt instruction both shipped, does
+`hooks/handoff-fork-write.sh` (not a hand-built stand-in — the actual committed hook) complete a
+real run end to end?
+
+**Method.** The real hook, invoked exactly as `PreCompact` would, with a real 22KB transcript from
+this same project and `HANDOFF_STORE_DIR` pointed at a disposable directory.
+
+**Result.** `rc=0` in ~2 minutes. `permission_denials: []`. A file landed on disk at the path Step 1
+computed. `lib/verify-handoff.sh`, re-run independently by hand (not the turn's own Step 3
+self-report), confirmed exit 0. First clean completion of this mechanism.
+
+**An accidental stress test.** The chosen transcript, picked by file size alone rather than
+content, turned out to hold no user or assistant turn at all — 9 lines, a `/clear` against a
+standing handoff and nothing else. The turn did not fabricate Decisions or Dead ends to fill the
+required, non-empty subsections; it wrote `None.` for both, honestly, and used Traps for two real
+observations instead: that the resolved store was the disposable test path rather than the usual
+default (stated as fact, not investigated — finding #30's tangent fix held under a real case that
+could have triggered it again), and that a genuine, unrelated standing handoff existed describing
+real pending work this session never touched, explicitly distinguished from "nothing to resume."
+Exactly the behavior the prompt's anti-fabrication instruction exists to produce, on a case that
+gave it every opportunity to pad instead.
+
+**What this does not settle.** Authoring quality against a transcript with real decisions, dead
+ends and traps to reconstruct is still untested — this run's content was the easiest possible case
+to get right (there was nothing to get wrong). A richer real transcript is the natural next check,
+not a repeat of this one.
+
+### Reproduction
+
+```
+HANDOFF_STORE_DIR=<scratch dir> CTX_FORK_TIMEOUT_SECONDS=400 \
+  bash hooks/handoff-fork-write.sh <<< '{"session_id":"...","transcript_path":"<real transcript>","cwd":"<real checkout>","trigger":"auto"}'
+# wait for $HOME/.claude/state/handoff-fork/log.txt to show rc=0, then:
+bash lib/verify-handoff.sh <scratch dir>/<repo>-<branch>-<hash8>.md <checkout>
+```
