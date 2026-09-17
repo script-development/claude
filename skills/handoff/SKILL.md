@@ -53,9 +53,11 @@ reading is the entire job there.
 
 ## Where the file goes
 
-`~/.claude/context-economy/handoffs/<repo>-<branch>-<hash8>.md` — a machine-local store outside
-every checkout, keyed by the **target**: the repository and branch the work is in, never the
-repository the session happens to be sitting in. Step 1 computes the name; don't hand-build it.
+`${XDG_DATA_HOME:-$HOME/.local/share}/context-economy/handoffs/<repo>-<branch>-<hash8>.md` — a
+machine-local store outside every checkout, keyed by the **target**: the repository and branch the
+work is in, never the repository the session happens to be sitting in. Step 1 computes the name;
+don't hand-build it. (Note for anyone building this path by hand in a real shell command: `~` does
+not expand inside `${VAR:-~/...}` — use `$HOME`, not `~`, in the fallback.)
 
 Three things forced this, in order of how expensive getting them wrong was:
 
@@ -240,7 +242,8 @@ If `gate=NONE`, **write the handoff anyway** and mark it unverified in `status:`
 never execution — an unverified handoff is worth far more than no handoff.
 
 If `handoff=STORE-LIB-MISSING`, the install is incomplete — `lib/handoff-store.sh` never reached
-the place the hooks look for it. Write to `~/.claude/context-economy/handoffs/<repo>-<slug>-<hash>.md` with
+the place the hooks look for it. Write to
+`${XDG_DATA_HOME:-$HOME/.local/share}/context-economy/handoffs/<repo>-<slug>-<hash>.md` with
 `hash` = the first 8 characters of `printf '%s' "$main" | md5sum` (or, where `md5sum` does not
 exist — stock macOS ships none — `printf '%s' "$main" | md5 -q`), say in `status:` that the name
 was built by hand, and flag the install — a name built by hand is exactly the failure the paragraph
@@ -338,7 +341,7 @@ Locate by **listing the store**, not by deriving a path — the handoff you want
 sibling checkout, and nothing about the session you are in can name it:
 
 ```bash
-ls -t ~/.claude/context-economy/handoffs/*.md 2>/dev/null \
+ls -t "${XDG_DATA_HOME:-$HOME/.local/share}/context-economy/handoffs/"*.md 2>/dev/null \
   | while read -r f; do
         printf '%s\t%s\t%s\n' "$f" \
             "$(grep -m1 '^branch:' "$f" | cut -d' ' -f2-)" \

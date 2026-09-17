@@ -2737,3 +2737,41 @@ in place, since this checked the location, not yet the migration.
 Migration itself — updating `lib/handoff-store.sh`'s default, `hooks/handoff-inject.sh`, and
 whatever else resolves `handoff_store_dir()`, plus moving the eight real handoffs already in the
 current store — was not attempted here and remains the next actual step, not a probe.
+
+### Addendum, 2026-09-17 — `~/.local/share/context-economy/` (the XDG data-home shape) also checked directly, clean
+
+The addendum above settled that the guard keys on `.claude` by name, not on dot-prefixing in
+general, and left `~/.context-economy/` as a verified candidate. Raised next: given the store root
+has to move anyway, and `$XDG_DATA_HOME` (default `~/.local/share`) is the conventional place a
+CLI tool's own data belongs rather than an arbitrary new dotdir, is there a cost to preferring it?
+The prior framing in this thread had conflated two different things under "XDG" — true per-OS
+paths (`~/Library/Application Support/…` on macOS, `%LOCALAPPDATA%\…` on Windows, a real 3-way
+branch with its own test surface) versus simply *respecting `$XDG_DATA_HOME`* with the spec's own
+fallback, which is one parameter expansion (`${XDG_DATA_HOME:-$HOME/.local/share}`), no branching,
+same shape as `HANDOFF_STORE_DIR`'s existing override pattern. Only the first one was ever
+expensive; the second was priced as if it were the first.
+
+That still left the same open question the correction above raised for `~/.context-economy/`:
+`.local` is exactly the kind of name — like `.config`, `.ssh`, `.gnupg` — a security-conscious
+permission layer might also flag, so it needed the same direct check, not an inference from the
+`.claude`-specific denial text. Checked, same isolated single-call shape as both prior reproductions:
+
+```
+target: $HOME/.local/share/context-economy/handoffs/probe-xdg-repro-<n>.md
+--allowedTools Write, model claude-haiku-4-5-20251001, n=2
+run 1: result "DONE", permission_denials: [], file written, content "XDG1"
+run 2: result "DONE", permission_denials: [], file written, content "XDG2"
+```
+
+Both clean — no denial, ground truth confirmed on disk both times (content matched exactly).
+`~/.local/share/context-economy/` is therefore also a live, checked candidate, on the same footing
+as `~/.context-economy/`: neither is a guess. Probe directory removed immediately after
+(`~/.local/share/context-economy/`, recursively — nothing else lived under `~/.local/share/` on this
+machine to disturb).
+
+This result, plus the cost correction above, is what `design.md`'s new decision (`D21`) acts on:
+`${XDG_DATA_HOME:-$HOME/.local/share}/context-economy/handoffs` becomes the new default, and the
+migration (updating `handoff_store_dir()`, its test fixtures, and the skill/docs prose, plus moving
+the eight real handoffs) was carried out in the same pass rather than deferred again — see `D21` for
+the full account, including what this decouples (`compactions/`, owned by an external, unmigrated
+hook) and what remains unverified (this machine is still the only platform anything here has run on).

@@ -63,7 +63,7 @@ git -C "$repo" commit -q -m init
 # The store, isolated by `run`'s HOME redirect. Same formula as handoff-inject.test.sh, written out
 # by hand for the same reason: the filename is the CONTRACT between the write leg, that hook and
 # this one, so a test that derived it from the function under test would ratify any change to it.
-store="$home/.claude/context-economy/handoffs"
+store="$home/.local/share/context-economy/handoffs"
 mkdir -p "$store"
 main_git=$(git -C "$repo" worktree list | head -1 | awk '{print $1}')
 store_name() {  # store_name <target-main> <slug>
@@ -85,7 +85,9 @@ payload() {  # payload <reason> [cwd] [session_id]
 }
 
 run() {  # run <payload>
-    printf '%s' "$1" | env HOME="$home" LAST_CLEAR_STATE_DIR="$state" bash "$subject" 2>/dev/null
+    # XDG_DATA_HOME explicitly cleared for the same reason as handoff-inject.test.sh's run(): an
+    # ambient value would leak past this HOME redirect and point handoff_store_dir() elsewhere.
+    printf '%s' "$1" | env HOME="$home" XDG_DATA_HOME= LAST_CLEAR_STATE_DIR="$state" bash "$subject" 2>/dev/null
 }
 
 # The hook keys on the MAIN worktree, resolved through git, so the expected filename is computed

@@ -71,7 +71,7 @@ git -C "$repo" commit -q -m init
 # The store lives under the redirected HOME, so it is isolated for free -- but only because
 # `run` redirects HOME. Stated rather than assumed: without that redirect these cases would
 # enumerate the developer's real handoffs, and the suite's verdicts would depend on the machine.
-store="$fixture/home/.claude/context-economy/handoffs"
+store="$fixture/home/.local/share/context-economy/handoffs"
 mkdir -p "$store"
 
 # Both asked of git rather than reused from `$repo`, for the reason spelled out at i1 below: on
@@ -154,7 +154,11 @@ payload() {  # payload <source> [cwd] [session_id] [transcript_path]
 # quietly pass the "no gate" case by using it.
 run() {  # run <payload> [env...]
     local p="$1"; shift
-    printf '%s' "$p" | env HOME="$fixture/home" "$@" bash "$subject" 2>/dev/null
+    # XDG_DATA_HOME explicitly cleared, not just left to the outer shell: handoff_store_dir()
+    # now checks it before falling back to HOME, so a leaked ambient value would point the
+    # store somewhere this redirect never touches and silently break the isolation this
+    # fixture depends on.
+    printf '%s' "$p" | env HOME="$fixture/home" XDG_DATA_HOME= "$@" bash "$subject" 2>/dev/null
 }
 
 assert_silent() {  # assert_silent <label> <payload> [env...]

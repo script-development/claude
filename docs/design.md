@@ -1164,6 +1164,89 @@ matches what the comments assume.
 
 ---
 
+### D21 — The store root moves from `~/.claude/context-economy/` to `$XDG_DATA_HOME` (default `~/.local/share/context-economy/`)
+
+`docs/measured.md`'s finding #28 and its correction established that Claude Code refuses `Write`
+to any `.claude`-containing path under a headless turn's least-privilege permission grants — a
+product-layer "sensitive directory" guard, not anything this bundle controls — and that nothing in
+`SKILL.md`'s actual requirements (not derived from cwd, centrally enumerable, outside every
+worktree) ties the store to `.claude` specifically. Two addenda then checked two replacement
+candidates directly rather than arguing from the `.claude` denial text alone: `~/.context-economy/`
+and `~/.local/share/context-economy/` both took a clean `Write` (n=2 each, `permission_denials: []`,
+content verified on disk). This decision picks the second and executes the move — the root had to
+change either way, so the question was only which shape to change it to.
+
+**Why the XDG shape, given both were equally clear of the guard.** A cost question raised along the
+way turned out to rest on a conflation this decision corrects: "true" per-OS native paths — macOS's
+`~/Library/Application Support/…`, Windows' `%LOCALAPPDATA%\…`, Linux's XDG directories all
+different — really is a 3-way branch with its own test surface, and that framing was priced
+correctly earlier in this document's history. But *respecting* `$XDG_DATA_HOME` is a different,
+much smaller thing: the spec is one env var with one documented fallback
+(`${XDG_DATA_HOME:-$HOME/.local/share}`), the same shape `HANDOFF_STORE_DIR`'s own override already
+uses, applied identically on every OS — no `uname`, no branching, no new test arm. It costs exactly
+what the flat `~/.context-economy/` alternative costs. Between two options at equal cost, the one
+that is a published, documented convention rather than a bundle-invented dotdir is the better
+default: a user who already sets `$XDG_DATA_HOME` for their other tools gets this store's data
+alongside them for free, and `~/.local/share/<app>/` reads as intentional to anyone who knows the
+convention, where `~/.context-economy/` reads as this bundle's own invention.
+
+**What this does not do.** It does not add per-OS branching, and it does not make this bundle XDG
+Base Directory Specification-*compliant* in the full sense (that spec also covers `$XDG_CONFIG_HOME`,
+`$XDG_CACHE_HOME`, and is nominally a Linux/freedesktop convention rather than a macOS or Windows
+one) — it adopts the one piece of that convention relevant here, at zero marginal cost over an
+arbitrary path, and ships it on every platform including Windows, where plenty of cross-platform
+CLI tools already do the same rather than maintaining three native conventions for a headless tool
+with no GUI-integration reason to.
+
+**What this decouples.** `lib/handoff-store.sh`'s header comment previously declared `handoffs/`
+and `compactions/` as siblings under one root "for the same reason" — both outside every checkout,
+both holding candid conversation content. `compactions/` is written by an external, out-of-repo
+hook (`compaction-capture.sh`, registered on `PostCompact`, configured via its own
+`COMPACTION_CORPUS_DIR`) that this bundle has never owned and does not migrate. After this change
+the two no longer sit beside each other on disk: `handoffs/` moves to
+`~/.local/share/context-economy/handoffs/`, `compactions/` stays wherever that external hook's own
+config points it (`~/.claude/context-economy/compactions/`, unchanged, on this machine). Reuniting
+them, if wanted, is a change to that personal hook's config, not to this bundle.
+
+**What was executed, not just decided.**
+
+- `lib/handoff-store.sh`: `handoff_store_dir()`'s default changed to
+  `${HANDOFF_STORE_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/context-economy/handoffs}`; the header
+  comment's "published contract" section rewritten to name the new root and explain the `$XDG_DATA_HOME`
+  fallback instead of asserting `~/.claude/context-economy/` as fact.
+- `hooks/handoff-inject.test.sh` and `hooks/session-end-marker.test.sh`: the fixture store path
+  each test builds by hand (`$fixture/home/.claude/context-economy/handoffs` and
+  `$home/.claude/context-economy/handoffs`) updated to the new shape, since both tests exercise the
+  *real* default-resolution path (no `HANDOFF_STORE_DIR` override) under a redirected `$HOME` — an
+  unchanged fixture path would have the store and the code disagree about where files live and the
+  suite would fail for the right reason but the wrong-sounding one. Both `run()` helpers also now
+  explicitly clear `XDG_DATA_HOME` for the subprocess, so the isolation the tests' own comments
+  claim ("isolated for free... only because `run` redirects HOME") stays true regardless of whatever
+  the *outer* shell's environment happens to have set — it was unset on the machine this ran on, so
+  today this is a latent-bug fix, not a repro of an observed failure.
+- `skills/handoff/SKILL.md` (three mentions: the "Where the file goes" section, the STORE-LIB-MISSING
+  fallback instructions, and the `ls -t` example) and `skills/handoff/handoff-improvement-feedback.md`
+  (one mention): path literal updated to match.
+- The eight real handoffs sitting in the old store
+  (`~/.claude/context-economy/handoffs/*.md`) copied to the new location, verified present and
+  byte-identical, then the old copies removed. The old `~/.claude/context-economy/handoffs/`
+  directory itself was left in place empty (not deleted) — `compactions/` is a sibling under the
+  same `~/.claude/context-economy/` parent and is still live there.
+
+**Verified: the same existing test suites.** `lib/handoff-store.test.sh` (24), `hooks/handoff-inject.test.sh`
+(76) and `hooks/session-end-marker.test.sh` (32) all still pass after the fixture-path update, run
+against the changed default. `hooks/handoff-write.test.sh`'s pre-existing 7/47 failures (identified
+as unrelated under `D20`) are unaffected by this change and were not re-investigated here.
+
+**What is not verified.** Everything in this decision has run on exactly one machine — this
+Windows/Git-Bash one. `~/.local/share/` being clear of the sensitive-directory guard is checked on
+Windows only; there is no way from here to confirm it, or the reverse (some other name tripping the
+guard instead), on macOS or Linux. Flagged per the same assert-vs-measure discipline as `D20`'s
+BSD-fallback caveat, and for the same reason: no non-Windows machine has been available to this
+bundle's development so far.
+
+---
+
 ## Open questions
 
 Genuinely unresolved. Recorded so that "was more design interrogation worthwhile" is answered by

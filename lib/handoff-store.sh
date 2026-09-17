@@ -31,14 +31,26 @@
 #
 # ── THE STORE ROOT IS A PUBLISHED CONTRACT ─────────────────────────────────────────────────
 #
-# `~/.claude/context-economy/` is this bundle's data root, and it is depended on from OUTSIDE the
-# bundle -- so it is DECLARED here rather than merely observed. Two subdirectories, two owners:
+# `${XDG_DATA_HOME:-$HOME/.local/share}/context-economy/` is this bundle's data root, and it is
+# depended on from OUTSIDE the bundle -- so it is DECLARED here rather than merely observed. One
+# parameter expansion, not an OS branch: it is the same shape as HANDOFF_STORE_DIR's own override
+# below, applied uniformly on every platform this runs on, including Windows.
 #
-#   handoffs/     written and read by this bundle. Resolved below; HANDOFF_STORE_DIR overrides it
-#                 for tests.
-#   compactions/  RESERVED. Never touched by this bundle. Written by an external capture hook via
-#                 its own COMPACTION_CORPUS_DIR. It sits here because the argument above applies
-#                 to it identically, not because this bundle manages it.
+# It used to be `~/.claude/context-economy/` -- moved because Claude Code's own permission layer
+# refuses `Write` to any `.claude`-containing path for a headless/least-privilege turn (see
+# `docs/measured.md` finding #28 and its correction), which blocked exactly the write this store
+# exists to receive. `~/.local/share/` was checked directly and found clear of that guard (see
+# `docs/measured.md`'s 2026-09-17 XDG addendum); see `docs/design.md`'s `D21` for the full account,
+# including what this move does NOT do (it is not full per-OS-native pathing, and not the complete
+# XDG Base Directory spec -- just the one env var, at zero cost over an arbitrary path).
+#
+# handoffs/     written and read by this bundle. Resolved below; HANDOFF_STORE_DIR overrides it
+#               for tests.
+# compactions/  NOT under this root any more. It was RESERVED space here for an external capture
+#               hook (`compaction-capture.sh`, its own COMPACTION_CORPUS_DIR) that this bundle
+#               never wrote to -- the move above only relocates what this bundle owns, so
+#               compactions/ was left wherever that hook's own config already points it, `D21`
+#               decouples the two rather than migrating something it does not own.
 #
 # Renaming the root is a MIGRATION, not a rename. Handoffs are found by ENUMERATING this
 # directory, so a changed root resolves to an empty store and every lookup reports "no handoff"
@@ -59,7 +71,7 @@
 # The root. Overridable for tests, like LAST_CLEAR_STATE_DIR before it, and for the same
 # reason: a test that writes into the real store corrupts the thing under test.
 handoff_store_dir() {
-    printf '%s' "${HANDOFF_STORE_DIR:-$HOME/.claude/context-economy/handoffs}"
+    printf '%s' "${HANDOFF_STORE_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/context-economy/handoffs}"
 }
 
 # Anything outside this set becomes `_`. Repository directories and branch names are freer
