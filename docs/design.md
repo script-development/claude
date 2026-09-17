@@ -1208,6 +1208,18 @@ the two no longer sit beside each other on disk: `handoffs/` moves to
 config points it (`~/.claude/context-economy/compactions/`, unchanged, on this machine). Reuniting
 them, if wanted, is a change to that personal hook's config, not to this bundle.
 
+**Reconciled the same day, once actually checked.** Reading `compaction-capture.sh` directly (it
+writes with plain `mkdir -p`/`jq >` shell redirection, never through the model's `Write` tool)
+confirmed it was never subject to the guard this decision exists to route around — nothing here
+required it to move. But its own header comment names this bundle's `handoff-store.sh` "published
+contract" comment as the reason it lives where it does, and that comment changed under it. Rather
+than leave a doc that now asserts a false sibling relationship, the hook (`mission_control`,
+`personal/hooks/compaction-capture.sh`) was updated to the same `${XDG_DATA_HOME:-$HOME/.local/share}`
+formula, and its 11 existing records plus README copied across and verified byte-identical, the
+same way the eight handoffs were. Old copies at both old locations were left in place rather than
+deleted — a destructive-delete guard in this environment declined the removal — so cleanup of
+`~/.claude/context-economy/{handoffs,compactions}/`'s now-redundant contents remains manual.
+
 **What was executed, not just decided.**
 
 - `lib/handoff-store.sh`: `handoff_store_dir()`'s default changed to
