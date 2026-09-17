@@ -5,6 +5,36 @@ incrementally — see `RELEASING.md` for why. Format follows [Keep a Changelog](
 versioning follows [Semantic Versioning](https://semver.org/), scoped to this plugin's own
 convention in `RELEASING.md`.
 
+## [0.4.0] - 2026-09-17
+
+### Changed
+
+- **The automatic write leg no longer runs in-band.** `hooks/handoff-fork-write.sh`, registered on
+  `PreCompact`, spawns a detached, headless `claude -p` turn that reads the session's own
+  transcript (`transcript_path`) and authors the handoff completely out of band — its tokens never
+  touch the interactive session's own context window (`docs/design.md` D22). This replaces
+  `handoff-write.sh`'s `Stop`/`PostToolUse` in-band trigger entirely, per the explicitly stated
+  intent that this release supersede that mechanism rather than ship alongside it (`O12`).
+  `handoff-write.sh` is left in the repo, unregistered, as a possible future backstop — not deleted.
+- **The handoff store root moved from `~/.claude/context-economy/` to
+  `${XDG_DATA_HOME:-~/.local/share}/context-economy/`** (`docs/design.md` D21) — a breaking
+  file-layout change, forced by a permission-layer guard on `.claude` paths that refused the real
+  automatic write outright (`docs/measured.md` finding #28). The 8 real handoffs on this machine
+  were migrated; `lib/handoff-store.sh`, its test fixtures, `SKILL.md`'s path literals, and the
+  sibling `compaction-capture.sh` hook were all updated to match.
+
+### Added
+
+- `lib/handoff-store.sh`: portable `handoff_store_md5`/`handoff_store_mtime` helpers, fixing a
+  silent failure on non-GNU (BSD/macOS) systems where `md5sum`/`stat -c` don't exist (`docs/design.md`
+  D20).
+- `docs/measured.md` findings #28-#33 and `docs/design.md` D20-D22: the full, unvarnished account
+  of building and verifying the detached-spawn mechanism above, including real blockers found and
+  fixed along the way (the `.claude` guard, ~15 MCP servers initializing on a bare headless spawn,
+  an unprompted environment-investigation tangent) and confirmation — against a real, decision-rich
+  transcript, not just a degenerate one — that the mechanism produces a genuinely good handoff, not
+  merely a passing one.
+
 ## [0.3.1] - 2026-09-14
 
 ### Fixed
