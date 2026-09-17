@@ -1493,10 +1493,14 @@ this list rather than by recollection.
      unmeasured. **Done — replace, not alongside.** No advantage was found in running both triggers
      as separate systems with their own margins; `Stop` stays registered, but only as the
      zero-tool-call-turn backstop running the *same* check against the *same* constant and latch as
-     `PostToolUse`, not a second system (see `context-thresholds.sh`'s arming block). Shipped as
-     v0.4: `hooks/hooks.json` registers both events on `handoff-write.sh`; tail-bounded transcript
-     reads (`RESIDENT_TAIL_BYTES`) keep the added `PostToolUse` frequency cheap instead of a
-     full-file `jq` scan on every tool call.
+     `PostToolUse`, not a second system (see `context-thresholds.sh`'s arming block). Merged, not
+     released: `hooks/hooks.json` registers both events on `handoff-write.sh` and tail-bounded
+     transcript reads (`RESIDENT_TAIL_BYTES`) keep the added `PostToolUse` frequency cheap instead
+     of a full-file `jq` scan on every tool call, but the plugin manifest is still at `0.3.1` — no
+     `v0.4.0` tag has been cut. ("Shipped as v0.4" appeared here before; wrong on both counts, no
+     v0.4.0 exists and this was never released under any version.) The next release is intended to
+     ship Route 5's fork idea (above) as a *replacement* for this `PostToolUse` mechanism, not
+     alongside it — see [O12](#o12).
 
   **Constants set, not derived (2026-09-16).** Both `CTX_LARGE_REQUEST_TOKENS` and
   `CTX_AUTHORING_TURN_TOKENS` were taken at a corpus max on the theory that a worst-case bound is
@@ -1564,6 +1568,19 @@ this list rather than by recollection.
   to Kendo's independent copy of this script (`mission_control`'s `upstream-feedback/kendo.md`, the
   same mechanism [O8](#open-questions) used for the prior gap) — a follow-up, not done as part of
   this fix.
+- **O12 — Does Route 5's fork idea replace `PostToolUse` outright, or need it as a backstop?**
+  Stated intent (2026-09-17): the next release ships the fork idea (a detached, `PreCompact`-spawned
+  turn that authors the handoff itself) *in place of* the `PostToolUse`/`Stop` mechanism [D18](#d18)
+  and [O10](#o10) built and merged, not alongside it — so this repo's actual next release is the fork
+  idea, not the already-merged `PostToolUse` swap, which stays unreleased. What is not yet decided:
+  whether replacement is total (the fork idea's own trigger condition subsumes everything
+  `PostToolUse`/`Stop` currently arm on) or whether one of them keeps a narrower role as a backstop
+  for the cases finding #26/#28 left unmeasured — a real-sized authoring turn's behavior in this exact
+  spawn shape, and whether it reliably completes inside a real compaction window are both still open
+  (see finding #26's "What this does not settle" and the correction/addenda under finding #28). A
+  fork-idea write that silently fails to complete in time, with nothing else armed, would be a
+  regression from what is already merged. Not resolved here — recorded so the next session building
+  this does not have to re-derive that the question exists.
 
 ---
 
