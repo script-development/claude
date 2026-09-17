@@ -11,24 +11,13 @@
         ]
       }
     ],
-    "Stop": [
+    "PreCompact": [
       {
         "matcher": "",
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}\"/hooks/handoff-write.sh"
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}\"/hooks/handoff-write.sh"
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}\"/hooks/handoff-fork-write.sh"
           }
         ]
       }

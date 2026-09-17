@@ -2775,3 +2775,108 @@ migration (updating `handoff_store_dir()`, its test fixtures, and the skill/docs
 the eight real handoffs) was carried out in the same pass rather than deferred again — see `D21` for
 the full account, including what this decouples (`compactions/`, owned by an external, unmigrated
 hook) and what remains unverified (this machine is still the only platform anything here has run on).
+
+---
+
+## Finding #29, 2026-09-17 — the installed plugin cache is a real snapshot of the last tagged release, not a live view of this repo; every fix landed today (D20, D21) is invisible to an actual skill invocation until a release is cut
+
+**Found while building `hooks/handoff-fork-write.sh` (D22),** verifying it end to end before
+trusting it. The new hook resolves `SKILL.md`/`lib/handoff-store.sh`/`lib/verify-handoff.sh` the
+same way `SKILL.md`'s own Step 1 does: probe
+`$HOME/.claude/plugins/cache/*/context-economy/*/` first, this checkout's own `lib`/`skills`
+second. A dry run pointed at this real repo resolved to
+`~/.claude/plugins/cache/mission-control/context-economy/0.3.1/skills/handoff/SKILL.md` — and
+`diff` against this repo's own copy showed it is the **pre-D21 text**, still `~/.claude/context-economy/handoffs/...`
+throughout, not the `${XDG_DATA_HOME:-$HOME/.local/share}/...` form committed hours earlier
+(`b51ffa2`\* / `1a7c3a4`). The cache is a real, non-symlinked file (`readlink -f` reports itself,
+not a link target) versioned as a literal `0.3.1` directory, matching `.claude-plugin/plugin.json`'s
+current, un-bumped version — confirming what `O10`'s correction already established from the tag
+history: nothing merged today has been released, and the plugin cache tracks releases, not this
+working tree.
+
+**Why this matters beyond bookkeeping.** It is not only a documentation-freshness footnote — it
+means the exact bug D21 fixed (`.claude`'s sensitive-directory guard blocking the real store write)
+is **still live for any actual skill invocation on this machine right now**, `/handoff` included,
+because `/handoff` also resolves through the plugin cache first. D21's own migration (moving the
+real 8 handoffs, updating the code) only changed what the checkout's own copy does — the thing every
+real session actually runs still points at the pre-fix path until a release is cut and reinstalled.
+This was not caught earlier because every D20/D21 verification ran library functions and hook
+scripts directly against this checkout's files, never through the plugin-cache resolution path a
+live skill invocation actually takes.
+
+**What this means for verifying D22.** `HANDOFF_STORE_DIR` is a documented override inside
+`lib/handoff-store.sh` regardless of which copy of the library loaded it, so it lets a test isolate
+"does the mechanism work" from "is the release current" the same way finding #28's probes already
+did — that seam was reused rather than rebuilt. It does not fix the underlying gap: without an
+explicit override, a real fork-spawned write today would still hit the `.claude` guard, for the same
+reason a live `/handoff` invocation would.
+
+**Not fixed here.** Cutting a release and reinstalling the plugin cache is an ordinary release-process
+step (see `RELEASING.md`), not a probe finding, and doing it correctly (bumping `plugin.json`,
+writing `CHANGELOG.md` from `git log`, tagging) is out of scope for the moment this was noticed. Named
+here because a future session should not re-discover it the hard way: **verifying a fix by reading
+this checkout's files is not the same as verifying what a real session actually runs**, and the two
+diverge for as long as commits sit unreleased.
+
+\* commit hash as recorded in this repo's own log at the time this finding was written; not re-verified
+against `git log` here since the point is the plugin cache's staleness, not the exact commit.
+
+---
+
+## Finding #30, 2026-09-17 — three real end-to-end runs of `hooks/handoff-fork-write.sh` (D22) each surfaced a real upstream gap before ever reaching the gate; none confirms or refutes the mechanism itself yet
+
+**Question.** Does the built fork-idea hook actually work end to end against a real transcript:
+spawn, orient, compose, verify, land a gate-passing handoff on disk?
+
+**Method.** Three `claude -p` runs against two real project transcripts (a 1.3MB one, then a 22KB
+one, both real prior sessions in this same project), using the exact prompt `hooks/handoff-fork-write.sh`
+generates. `HANDOFF_STORE_DIR` overridden to a disposable directory throughout — isolating "does the
+mechanism work" from finding #29's plugin-cache staleness, same seam finding #28's probes used.
+
+**Result 1 — contaminated, not a measurement.** First run (`rc=124` at 400s) coincided with
+`hooks/handoff-fork-write.test.sh` being run in parallel; its own `/tmp/handoff-fork.*` cleanup step
+deleted the first run's scratch directory (same naming pattern, no run-level uniqueness beyond
+`mktemp`'s random suffix) while it was still writing to files inside it. Discarded outright.
+
+**Result 2 — looked hung, was not.** Re-run cleanly, still `rc=124` at 400s, zero bytes in either
+`stdout`/`stderr`. Traced to `--output-format json` (the hook's own default) printing nothing at all
+until the turn fully finishes — a genuinely in-progress run is indistinguishable from a hung one in
+that mode. A parallel run with `--output-format stream-json` on the small transcript confirmed real
+progress: `Read` on `SKILL.md`, several `Bash` calls exploring the transcript, and a correct Step 1
+orientation result (`handoff=`, `checkout=`, `branch=main`, `gate=` resolved to the real plugin-cache
+path) — cut off mid-extended-thinking by the timeout, not stuck. That same stream also showed the
+real cost this session's account setup adds: the init event listed ~15 configured MCP servers
+(Slack, Gmail, Kendo, Atlassian, ...), all attempting to initialize on a bare headless spawn despite
+none being needed by this prompt — `--allowedTools` scopes tool permission, not MCP startup, so it
+does nothing about this. Fixed going forward: `--strict-mcp-config` (no `--mcp-config` given, so
+zero MCP servers load) added to the hook's own invocation.
+
+**Result 3 — a real, different problem: an unbounded tangent, and an unenforced timeout.** Third
+run, `--strict-mcp-config` added, `stream-json`, 280s bound. Inspection at the 8-minute mark (well
+past its bound) showed the model had started investigating *why* `HANDOFF_STORE_DIR` pointed at a
+test directory — grepping `.bashrc`/`.bash_profile`/`.profile`, querying Windows environment
+variables via `PowerShell`, reading the plugin-cache's own `lib/handoff-store.sh` — instead of
+trusting Step 1's output and proceeding to Step 2. An unprompted, open-ended tangent with no natural
+stopping point. Separately, and regardless of the tangent: `timeout 280` did not actually kill the
+process at 280s — it was still alive and producing new tool calls minutes past that bound, the same
+category of problem `docs/measured.md`'s own probes hit before and solved with `taskkill /PID ...
+/T /F` rather than a plain kill signal (`killTree()` in `tools/probe-precompact-handoff-turn.js`).
+Two `claude.exe` processes were left running rather than force-killed blind — both predated this
+specific run and could not be positively attributed to it, so killing either risked terminating
+something unrelated for no confirmed benefit.
+
+**Fixed from this finding:** `--strict-mcp-config` on the turn invocation; the prompt now explicitly
+instructs trusting Step 1's values and never investigating the environment to explain them.
+**Deliberately not fixed:** the `timeout` unreliability, on explicit instruction — recorded rather
+than silently patched, pending a decision on the right kill mechanism for this platform.
+
+**What this does not settle.** Whether the mechanism, run again with both fixes in place, actually
+reaches Step 3's gate and lands a real, verified handoff on disk. Zero clean completions exist yet
+— this finding is entirely about what stood in the way, not a demonstration that the path is clear
+now. The next attempt is the actual test of that.
+
+### Reproduction
+
+Not preserved — `HANDOFF_STORE_DIR=<scratch dir> claude -p --output-format stream-json --verbose
+--allowedTools "Bash Write" --strict-mcp-config < <hooks/handoff-fork-write.sh's generated prompt>`,
+against any real transcript under `~/.claude/projects/*/`.

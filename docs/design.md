@@ -1259,6 +1259,124 @@ bundle's development so far.
 
 ---
 
+### D22 — Route 5's fork idea, built: `hooks/handoff-fork-write.sh`, a `PreCompact` hook that spawns a detached turn to author the handoff, replacing `PostToolUse`/`Stop`'s in-band write entirely
+
+Built 2026-09-17, on explicit instruction ("let's build the fork version, the open questions can be
+answered by putting it into practise") — after `O12` recorded that the intended next release
+replaces the merged-but-unreleased `PostToolUse` mechanism ([O10](#o10)) rather than running
+alongside it. This is that replacement.
+
+**The mechanism.** `hooks/hooks.json` registers `PreCompact` on the new hook, and no longer
+registers `Stop`/`PostToolUse` on `handoff-write.sh` at all — that file is left in the repo,
+unregistered, not deleted, in case practice says one of them needs to come back as a backstop
+(`O12`'s still-open half). The new hook does two things, in order:
+
+1. **Fast and synchronous.** Reads the `PreCompact` payload (`session_id`, `transcript_path`,
+   `cwd`), checks a short dedup lock, resolves the gate/store/skill paths the same three-way probe
+   `SKILL.md`'s own Step 1 uses (plugin-cache, then this checkout, then `~/.claude`), writes a
+   prompt file, and launches the detached child with the proven `nohup ... & disown` recipe
+   (`docs/measured.md` findings #24/#26). Nothing here blocks — this step returns in well under a
+   second on every run so far.
+2. **Detached and asynchronous.** A `claude -p --allowedTools "Bash Write"` turn, given the prompt
+   file, runs completely independently of the interactive session — its tokens are charged to the
+   same account usage budget (finding #27) but never touch the interactive session's own context
+   window. That is the entire point of building this at all: the mechanism it replaces cost the
+   interactive session `authoring_turn` worth of its own context on every write; this costs it
+   nothing.
+
+**Why no token-threshold arming, unlike the mechanism this replaces.** `handoff-write.sh`'s
+`trigger = ceiling - 2*large_request - authoring_turn` exists to predict compaction far enough
+ahead to still have in-band room to author. This hook authors out of band, so there is nothing to
+predict — it fires on the signal that compaction is actually imminent (`PreCompact` itself), and
+the detached turn's own runtime does not compete with the interactive session's budget at all. The
+entire `CTX_LARGE_REQUEST_TOKENS`/`CTX_AUTHORING_TURN_TOKENS`/`CTX_COMPACT_THRESHOLD_TOKENS`
+apparatus in `context-thresholds.sh` becomes unnecessary for this write path — it is simpler by
+construction, not by omission, and none of it was ported.
+
+**Why a short dedup lock, not a once-per-session latch.** `docs/measured.md` finding #13:
+`PreCompact` can fire once with no compaction behind it, then fire again moments later for the
+compaction that actually happens — observed twice, back to back, same session. A once-per-session
+latch (`handoff-write.sh`'s own shape, built for a mechanism where firing twice cost real context)
+would be as likely to catch the wasted firing as the real one and then never fire again for that
+session's real compactions — worse than no latch at all. What actually needs preventing is two
+spawns racing to write the same target file within the same few seconds; a
+`CTX_FORK_DEDUP_WINDOW_SECONDS` (default 90) cooldown does that without foreclosing later real
+compactions in a long session, each of which now gets a fresh write essentially for free.
+
+**Why the detached turn reads the transcript, against the skill's own headline rule.**
+`SKILL.md`'s "write from what is already in context; do not read, grep, or list anything to author
+it" assumes a live session with real context to draw on. A freshly spawned `claude -p` process has
+none — there is no "already in context" for it to write from. The prompt explicitly overrides that
+one rule and points the turn at `transcript_path` instead: the one thing a detached spawn has that
+the rule was written to make unnecessary for a live session. Every other part of the contract
+(format, gate, where the file goes) applies unchanged, and the prompt points the turn at `SKILL.md`
+itself rather than restating its rules inline, so a future edit to the skill cannot silently drift
+out of sync with a second, paraphrased copy embedded in this hook.
+
+**What was deliberately not built.** `handoff-write.sh`'s `written_at_tokens` sidecar (feeds
+`handoff-inject.sh`'s precise staleness-gap check, [D17](#d17)) is not written by this path.
+`handoff-inject.sh`'s own fallback for a missing sidecar — the fixed `CTX_HANDOFF_ACCEPTABLE_GAP_TOKENS`
+constant — already degrades gracefully, and the fork mechanism's own structure narrows the case
+that check exists for anyway: a fork-written handoff is authored from the transcript at the exact
+moment compaction becomes imminent, not proactively ahead of it the way the old trigger's margin
+was, so the gap between write and compaction should tend toward small by construction rather than
+by measurement. Recorded as a conscious scope cut, not an oversight — a precise sidecar for
+fork-written handoffs is cheap to add later if practice shows the fallback constant is misleading.
+
+**A real gap this surfaced, not fixed here: the plugin cache is stale.** Verifying this hook before
+trusting it found that a real skill invocation resolves `SKILL.md`/the libraries through
+`~/.claude/plugins/cache/.../0.3.1/`, a literal snapshot of the last tagged release — not this
+checkout. `D21`'s own fix is invisible to any real invocation until a release is cut. See
+`docs/measured.md` finding #29 for the full account; this decision's own verification below used
+`HANDOFF_STORE_DIR` (the library's documented test seam) to isolate "does the mechanism work" from
+"is the release current," the same way finding #28's probes already did.
+
+**Verified so far — the synchronous half only.** `hooks/handoff-fork-write.test.sh` (9 assertions):
+every guard declines correctly, the dedup lock fires and resets as designed, a different
+`session_id` gets its own lock. None of this spawns a real turn (see that file's own header for
+why stubbing `claude` was rejected the same way `lib/handoff-store.test.sh` rejected stubbing
+`md5`).
+
+**Not yet cleanly verified — the detached authoring turn itself.** Three real runs against real
+transcripts (1.3MB and 22KB) all failed to reach a clean, confirmed finish, and none was a
+correctness failure of the mechanism itself — each surfaced a real gap upstream of it:
+
+1. First real run (production shape, no `--strict-mcp-config` yet): `rc=124` at its 400s bound —
+   but a parallel test-suite run's own `/tmp/handoff-fork.*` cleanup deleted its scratch directory
+   out from under it mid-flight. Contaminated, not a measurement of anything.
+2. Second real run, re-done cleanly: also `rc=124` at 400s, zero bytes of output either way. Traced
+   to `--output-format json` printing nothing until the turn fully finishes — a genuinely
+   in-progress run and a hung one are indistinguishable in that mode. Switching to `--output-format
+   stream-json` for a third run confirmed it was NOT hung: it read `SKILL.md`, explored the
+   transcript, and completed Step 1's real orientation correctly (resolved the real plugin-cache
+   gate, computed the right handoff path) before the timeout cut it off mid-extended-thinking.
+   That run also revealed the account's ~15 configured MCP servers all attempting to initialize on
+   a bare headless spawn — real, unnecessary overhead, fixed by adding `--strict-mcp-config` (see
+   the hook's own header).
+3. Third real run, with `--strict-mcp-config` and a 280s bound: went well past its bound (still
+   producing new tool calls past 8 minutes), and inspection showed why — the model started
+   investigating *why* `HANDOFF_STORE_DIR` pointed at a test directory (grepping shell profiles,
+   reading Windows environment variables, reading the plugin-cache library) instead of trusting
+   Step 1's output and proceeding to Step 2. An unprompted, unbounded tangent, not the intended
+   task. Fixed in the prompt: it now explicitly says to trust Step 1's values and not investigate
+   the environment. This run was also the one that surfaced that `timeout ${timeout_s}` is **not
+   reliably enforced** on this Windows/Git-Bash machine — the process was still alive well past its
+   supposed kill point. Two unidentified `claude.exe` processes were left running rather than
+   force-killed blind, since they predated this specific test and could not be positively
+   attributed to it — a judgement call to avoid a destructive action on an unidentified process,
+   not a resolution of whatever they were.
+
+**What this means for D22's status.** The mechanism's *fast half* (guards, dedup, path resolution,
+prompt construction, detach-and-return) is verified. The *detached authoring turn* has never yet
+been observed reaching Step 3's gate and producing a confirmed on-disk handoff — every real attempt
+so far surfaced and fixed an upstream problem before getting there. Two real fixes shipped from
+this (`--strict-mcp-config`, the "trust Step 1, do not investigate" instruction); one real gap is
+named but explicitly NOT fixed yet (`timeout`'s unreliability — left open on instruction, pending a
+decision on the right kill mechanism for this platform). The next real verification attempt should
+be expected to get further than these three did, not assumed to.
+
+---
+
 ## Open questions
 
 Genuinely unresolved. Recorded so that "was more design interrogation worthwhile" is answered by
@@ -1581,6 +1699,14 @@ this list rather than by recollection.
   fork-idea write that silently fails to complete in time, with nothing else armed, would be a
   regression from what is already merged. Not resolved here — recorded so the next session building
   this does not have to re-derive that the question exists.
+
+  **Built, 2026-09-17, [D22](#d22) — total replacement chosen, not a backstop.** `hooks/hooks.json`
+  no longer registers `Stop`/`PostToolUse` on `handoff-write.sh` at all; only `PreCompact` on the
+  new `handoff-fork-write.sh`. The file that would have been the backstop is left in the repo,
+  unregistered rather than deleted, specifically so this choice is reversible if practice disagrees
+  with it. The sub-question this entry actually turned on — real-sized authoring behavior and
+  reliable completion time — is what D22's own verification is answering, per instruction, by
+  running the mechanism rather than probing it further first.
 
 ---
 

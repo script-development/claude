@@ -1,5 +1,13 @@
 #!/bin/bash
 #
+# RETIRED 2026-09-17, unregistered from hooks.json ([D22](../docs/design.md#d22)) — replaced, not
+# run alongside, by `hooks/handoff-fork-write.sh`'s detached `PreCompact` spawn, per the total-
+# replacement branch of [O12](../docs/design.md#o12). Left in the repo, with its tests, in case
+# practice shows one of `Stop`/`PostToolUse` needs to come back as a backstop — see D22's own
+# "what was deliberately not built" for why that was not assumed necessary up front. The rest of
+# this header describes the mechanism as it worked while it was registered; none of it is wrong,
+# it is simply no longer wired to anything.
+#
 # PostToolUse AND Stop hook: the WRITE leg of the automated handoff cycle (build-order item 4;
 # moved onto PostToolUse as well as Stop by Route 5, [O10](../docs/design.md#o10), 2026-09-16).
 #
