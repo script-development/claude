@@ -1,6 +1,16 @@
 # Claude Code Skills & Agents
 
-Shared library of reusable Claude Code skills and agents.
+Shared library of reusable Claude Code skills and agents, plus a growing set of installable
+plugins.
+
+## Two distribution models
+
+- **The catalog below** (`skills/`, `agents/`) is copy-and-generalize: consumers hold their own
+  copy of a skill or agent, not a symlink or an installed dependency. See `CLAUDE.md` for how
+  changes propagate.
+- **`plugins/`** holds self-contained, versioned Claude Code plugins, installable via this repo's
+  marketplace (`.claude-plugin/marketplace.json`) with `/plugin marketplace add` and
+  `/plugin install`.
 
 ## Skills Catalog
 
@@ -54,6 +64,14 @@ For any project using [Kendo](https://kendo.dev) for issue tracking. Requires th
 | [lint-issues](skills/lint-issues/) | Audit every To Do / In Progress issue against the issue-writing standard via parallel issue-linter agents; post a summary on an audit issue |
 | [prepare-issue](skills/prepare-issue/) | Prepare a kendo issue: assign, branch, link, move to In Progress |
 | [triage-reports](skills/triage-reports/) | Walk pending Kendo reports one-by-one; promote, combine, park, or dismiss with a logged reason |
+
+## Plugins
+
+Installed via this repo's marketplace, not copied.
+
+| Plugin | Skills | Description |
+|--------|--------|-------------|
+| [context-economy](plugins/context-economy/) | [handoff](plugins/context-economy/skills/handoff/) | Handoffs that survive a context reset: writes and verifies them, plus hooks that automate the write/inject cycle |
 
 ## Agents Catalog
 
