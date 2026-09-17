@@ -10,8 +10,7 @@ plugins.
   changes propagate.
 - **`plugins/`** holds self-contained, versioned Claude Code plugins, installable via this repo's
   marketplace (`.claude-plugin/marketplace.json`) with `/plugin marketplace add` and
-  `/plugin install`. `context-economy` is the first; new plugins land here going forward, and
-  existing catalog skills may be converted into plugins over time (starting with `handoff`).
+  `/plugin install`.
 
 ## Skills Catalog
 
@@ -65,6 +64,14 @@ For any project using [Kendo](https://kendo.dev) for issue tracking. Requires th
 | [lint-issues](skills/lint-issues/) | Audit every To Do / In Progress issue against the issue-writing standard via parallel issue-linter agents; post a summary on an audit issue |
 | [prepare-issue](skills/prepare-issue/) | Prepare a kendo issue: assign, branch, link, move to In Progress |
 | [triage-reports](skills/triage-reports/) | Walk pending Kendo reports one-by-one; promote, combine, park, or dismiss with a logged reason |
+
+## Plugins
+
+Installed via this repo's marketplace, not copied.
+
+| Plugin | Skills | Description |
+|--------|--------|-------------|
+| [context-economy](plugins/context-economy/) | [handoff](plugins/context-economy/skills/handoff/) | Handoffs that survive a context reset: writes and verifies them, plus hooks that automate the write/inject cycle |
 
 ## Agents Catalog
 
