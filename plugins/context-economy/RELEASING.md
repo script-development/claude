@@ -11,8 +11,10 @@ How versions of this plugin get cut, and what was deliberately decided against.
 4. Add a `## [X.Y.Z] - YYYY-MM-DD` entry to `CHANGELOG.md` summarizing what changed, written
    from the git log in step 2 — not maintained incrementally as commits land.
 5. Commit the version bump and changelog entry together as the release commit.
-6. `claude plugin tag --dry-run` to preview, then `claude plugin tag --push` to create and push
-   the `context-economy--vX.Y.Z` tag.
+6. From the repo root, `claude plugin tag plugins/context-economy --dry-run` to preview, then
+   `claude plugin tag plugins/context-economy --push` to create and push the
+   `context-economy--vX.Y.Z` tag (equivalently, `cd plugins/context-economy` and drop the path
+   argument).
 
 ## Version bump rule
 
@@ -23,9 +25,10 @@ How versions of this plugin get cut, and what was deliberately decided against.
 
 ## Staying pre-1.0
 
-Stays `0.x.y` indefinitely by default. `1.0.0` is reserved for if/when this repo moves under an
-organization — not a fixed date, and not required to ever happen. Nothing above depends on
-which one occurs.
+Stays `0.x.y` indefinitely by default. `1.0.0` was earmarked for if/when this plugin moved under
+an organization — as of the `script-development/claude` migration, that's now true, but the bump
+itself is still a separate, deliberate decision, not automatic. Nothing above depends on which
+version line is current.
 
 ## Deliberately deferred, and why
 
@@ -37,10 +40,10 @@ which one occurs.
   time, not derived from commit prefixes.
 - **No GitHub Releases page.** Cosmetic only — has no effect on Claude Code's own update
   mechanics. Add it later if a nicer browse/download experience is wanted.
-- **No `marketplace.json`.** Not needed while this plugin is installed by direct git checkout /
-  `--plugin-dir`. Only add one if `/plugin marketplace add` support or being depended on by
-  another plugin's `dependencies` list becomes a real need — see
-  [plugin dependencies](https://code.claude.com/docs/en/plugin-dependencies), which is also
-  where `context-economy--vX.Y.Z` tags actually get consumed (version-constraint resolution
-  for dependents), not from the update-detection path, which uses `plugin.json`'s `version`
-  field directly.
+- **`marketplace.json` lives one level up, not here.** Added once `/plugin marketplace add`
+  support became a real need (the `script-development/claude` migration) — see
+  `.claude-plugin/marketplace.json` at the repo root. It's shared across every plugin that repo
+  hosts, so it isn't this plugin's file to own. `context-economy--vX.Y.Z` tags are what
+  version-constraint resolution for dependents actually consumes — see
+  [plugin dependencies](https://code.claude.com/docs/en/plugin-dependencies) — not the
+  update-detection path, which reads `plugin.json`'s `version` field directly.

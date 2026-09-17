@@ -1,6 +1,17 @@
 # Claude Code Skills & Agents
 
-Shared library of reusable Claude Code skills and agents.
+Shared library of reusable Claude Code skills and agents, plus a growing set of installable
+plugins.
+
+## Two distribution models
+
+- **The catalog below** (`skills/`, `agents/`) is copy-and-generalize: consumers hold their own
+  copy of a skill or agent, not a symlink or an installed dependency. See `CLAUDE.md` for how
+  changes propagate.
+- **`plugins/`** holds self-contained, versioned Claude Code plugins, installable via this repo's
+  marketplace (`.claude-plugin/marketplace.json`) with `/plugin marketplace add` and
+  `/plugin install`. `context-economy` is the first; new plugins land here going forward, and
+  existing catalog skills may be converted into plugins over time (starting with `handoff`).
 
 ## Skills Catalog
 
