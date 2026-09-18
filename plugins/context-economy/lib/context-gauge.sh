@@ -8,7 +8,7 @@
 #   * Ship them statusline.sh. Wrong unit -- it also renders repo, branch, dev URL and
 #     listening ports, which are this machine's concerns and nobody else's. A reader who
 #     wants the gauge has to dissect the file, and what they extract is a fork.
-#   * Tell them the rule in prose ("go yellow at 120k, red at 200k"). This invites the
+#   * Tell them the rule in prose ("go yellow at 200k, red at 300k"). This invites the
 #     reader to restate the numbers in their own statusline, which is the exact second copy
 #     context-thresholds.sh exists to prevent -- and it is the worst kind, because it is a
 #     copy in someone else's repo where our correction can never reach it.
@@ -51,7 +51,7 @@ context_gauge() {
   # Colours are function-locals, not globals, and are duplicated from statusline.sh rather
   # than shared with it. That duplication is deliberate and is the opposite of the
   # thresholds rule: `\033[31m` is red on every terminal ever built and cannot drift or go
-  # stale, whereas 200000 is a research finding that can. What CAN break is a consumer that
+  # stale, whereas 300000 is a research finding that can. What CAN break is a consumer that
   # sources this file and happens to render its own output with a variable named RED, so
   # self-containment wins here and hoisting does not.
   local yellow=$'\033[33m' red=$'\033[31m' bold=$'\033[1m' reset=$'\033[0m'

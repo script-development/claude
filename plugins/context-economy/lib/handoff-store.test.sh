@@ -55,7 +55,7 @@ assert_eq() {  # assert_eq <label> <expected> <actual>
 put() {
     local target=$1 slug=$2 branch=$3 checkout=$4 offset=${5:-0} path
     path="$(handoff_store_path "$target" "$slug")"
-    printf '# Handoff — fixture\nbranch: %s\ncheckout: %s\ncompacted: no\nstatus: x\n' \
+    printf '# Handoff — fixture\nbranch: %s\ncheckout: %s\nstatus: x\n' \
         "$branch" "$checkout" > "$path"
     if [ "$offset" -ne 0 ]; then
         touch -d "@$(( $(date +%s) - offset ))" "$path" 2>/dev/null \
@@ -214,7 +214,7 @@ esac
 # is the READ leg's half: it flips `progress:` after a document has actually been shown to someone.
 
 skel="$fixture/skeleton.md"
-printf '# Handoff — old real content\nbranch: old\ncheckout: /c/old\ncompacted: no\nstatus: ok\nprogress: complete\n\nstale body\n' > "$skel"
+printf '# Handoff — old real content\nbranch: old\ncheckout: /c/old\nstatus: ok\nprogress: complete\n\nstale body\n' > "$skel"
 # Act
 handoff_store_write_skeleton "$skel" /c/checkouts/target feature/x
 # Assert

@@ -95,7 +95,6 @@ canonical() {
 # Handoff — type the mailables
 branch: $branch
 checkout: $fixture
-compacted: no
 status: Invoice done; Reminder not started.
 
 ## Do not re-derive
@@ -210,13 +209,8 @@ assert_exit 2 'a missing branch: field fails' \
     "$(write no_branch <<<'/^branch:/d')"
 assert_exit 2 'a missing status: field fails' \
     "$(write no_status <<<'/^status:/d')"
-# Ungated, this field is simply omitted -- and omission is the one answer that
-# tells the reader nothing about whether the expensive half is first-hand.
-assert_exit 2 'a missing compacted: field fails' \
-    "$(write no_compacted <<<'/^compacted:/d')"
-# Same argument one step further: compacted: says whether to trust the expensive
-# half, checkout: says which tree the cheap half refers to at all. Omitted, the
-# tool guesses $PWD and reports a page of MISSING that reads as citation rot.
+# checkout: says which tree the cheap half refers to at all. Omitted, the tool
+# guesses $PWD and reports a page of MISSING that reads as citation rot.
 assert_exit 2 'a missing checkout: field fails' \
     "$(write no_checkout <<<'/^checkout:/d')"
 assert_exit 2 'a missing Do not re-derive heading fails' \

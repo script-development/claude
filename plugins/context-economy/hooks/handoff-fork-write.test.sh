@@ -169,7 +169,7 @@ esac
 # Unconditional overwrite: a REAL, already-complete handoff sitting at this path must still be
 # replaced by the placeholder on the next firing -- D23's whole point is that the reset cannot be
 # contingent on anything, including what was there before.
-printf '# Handoff — real work\nbranch: main\ncheckout: %s\ncompacted: no\nstatus: ok\nprogress: complete\n\nreal content nobody should lose silently, but D23 accepts they will\n' \
+printf '# Handoff — real work\nbranch: main\ncheckout: %s\nstatus: ok\nprogress: complete\n\nreal content nobody should lose silently, but D23 accepts they will\n' \
     "$main_git" > "$skeleton_path"
 run "$(payload "skel2-$$" "$transcript" "$repo")" CTX_FORK_TIMEOUT_SECONDS=1 HANDOFF_STORE_DIR="$store" >/dev/null
 case "$(cat "$skeleton_path" 2>/dev/null)" in

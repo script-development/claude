@@ -165,10 +165,9 @@ handoff_store_write_skeleton() {
         printf '# Handoff — (placeholder: a fresh write is in progress)\n'
         printf 'branch: %s\n' "$branch"
         printf 'checkout: %s\n' "$checkout"
-        printf 'compacted: unknown\n'
         printf 'status: placeholder -- not yet authored\n'
         printf 'progress: writing\n'
-        cat <<'BODY'
+        cat <<BODY
 
 ## Do not re-derive
 
@@ -179,17 +178,19 @@ None.
 None.
 
 ### Traps
-This is a placeholder, not a handoff. A detached process is authoring the real one; if this file
-still says `progress: writing` a long time from now, that authoring run likely died before
-finishing -- treat it as abandoned rather than waiting on it forever.
+This is a placeholder, not a handoff -- see \`## Next\` before acting on anything else here.
 
 ## Next
-None.
+1. Wait for this file's \`progress:\` field to flip from \`writing\` to \`complete\` before treating
+   it as a real handoff. If it still says \`writing\` more than ${CTX_FORK_TIMEOUT_SECONDS:-600}
+   seconds after this file's own mtime, the detached authoring run most likely died before
+   finishing -- treat it as abandoned rather than waiting on it forever, and run \`/handoff\`
+   yourself instead.
 
 ## Pointers
 
-```
-```
+\`\`\`
+\`\`\`
 BODY
     } > "$tmp" 2>/dev/null && mv -f "$tmp" "$path" 2>/dev/null
 }

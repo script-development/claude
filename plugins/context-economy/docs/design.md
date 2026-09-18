@@ -1876,6 +1876,214 @@ a new step ahead of all of them without yet having watched it survive contact wi
 runs. The mechanism is verified in isolation (three suites, above); it has not yet been verified
 in the wild the way D22 eventually was.
 
+---
+
+### D24 — `compacted:` dropped entirely: gated for presence, never for value, so the field was pure ceremony
+
+Decided 2026-09-18, on explicit instruction, after tracing every consumer of the field to answer
+one question: does anything actually act on it? The answer, checked in `lib/verify-handoff.sh`,
+`skills/handoff/SKILL.md`, and `hooks/handoff-inject.sh`, was no in every case that matters.
+`verify-handoff.sh` only ever checked *presence* (`grep -qE '^compacted:'`) — never that the value
+was one of the three documented states (`no | yes | unknown`), and the gate's exit code never
+depended on it. Both places that mentioned the value at all (`SKILL.md`'s Read mode Step 2 and
+`handoff-inject.sh`'s composed reader instructions) did nothing but repeat the same one-line prose
+reminder for whichever model was reading — no branch, no reordering, no discount applied to
+anything downstream. [D16](#d16) gated it "because ungated it would simply be omitted" — true, but
+true of nothing an omission would have cost: the field's entire mechanical contribution was forcing
+a line to exist, never using what was on it.
+
+Considered and rejected: folding the concern into `status:` (a free-text note the author writes
+when the format failed to hold something, the same pattern the skill's feedback section already
+uses). Rejected on explicit instruction — dropped without folding in anywhere, not migrated to a
+softer, optional home. If a session's own decisions really were reconstructed from a lossy
+compaction summary, that is exactly the kind of thing `### Traps` already exists to record in
+prose, with the reason attached, rather than a gated enum whose values nothing reads.
+
+**What changed.** The field is gone from the format contract (`SKILL.md`), the gate
+(`lib/verify-handoff.sh`, both the presence check and its comment), the skeleton
+(`lib/handoff-store.sh`), and the composed read-time instructions (`hooks/handoff-inject.sh`). Two
+comments that referenced `compacted: yes` as shorthand for "authored from a summary, not
+first-hand" (`hooks/handoff-write.sh`, `lib/context-economy/context-thresholds.sh`) were reworded
+to describe the degradation directly instead of naming a field that no longer records it. Every
+fixture across `lib/verify-handoff.test.sh`, `lib/handoff-store.test.sh`,
+`hooks/handoff-fork-write.test.sh`, and `hooks/handoff-inject.test.sh` dropped the line; the two
+assertions that specifically exercised the field (`'a missing compacted: field fails'`, `'the
+reader is told to check compacted:'`) were removed rather than repointed, since there was nothing
+left for them to assert.
+
+**Leaves stale prose behind, on purpose, not by oversight.** [D16](#d16)'s own text and D23's
+"checkout:/compacted: apparatus" (above) and its "compare checkout:/compacted:/branch:/status:,
+which ARE gate-required" list still name the field as current. Left as written rather than edited,
+per this document's own practice of recording decisions rather than rewriting them once
+superseded — D16's `compacted:` and D23's mentions of it now read as history, not as the current
+contract; this entry is the pointer that says so. The current contract is
+`branch: / checkout: / status: / progress:`, four fields, not five.
+
+---
+
+### D25 — The advisory grid moves up one step: NOTICE 120k→200k, URGE 200k→300k
+
+Decided 2026-09-18, on explicit instruction ("the 120 and 200k thresholds area bit too low for
+actual work these days"): `CTX_NOTICE_TOKENS` and `CTX_URGE_TOKENS`
+(`lib/context-economy/context-thresholds.sh`) move from 120,000/200,000 to 200,000/300,000. Both
+remain advisory-only, per the file's own CONSEQUENCE note — neither gates the automatic write
+trigger (that trigger is derived from the compaction ceiling, D18), so this changes only when the
+statusline gauge turns yellow/red and when a human is invited to run `/handoff` by hand, not
+anything the harness enforces on its own.
+
+**Not a re-measurement — the same judgement call, moved to the next pair the existing grid
+already supports.** `docs/measured.md` finding #7 priced a reset discipline's savings at four
+fixed points: 77% at 120k, 66% at 200k, 55% at 300k, 45% at 400k. D18 picked the first two of
+those points as NOTICE/URGE; this entry picks the next two instead — 200k/300k — on the instruction
+that real sessions today routinely carry more resident context before 120k stops being premature to
+act on than the grid's own selection anticipated at the time D18 was labelled. The finding itself is
+unchanged and not re-run: it was already dense enough to support this move without a new
+simulation, and the same discipline that kept D18 from being read as *derived* rather than *bound*
+applies here too — 200k/300k is exactly as much a judgement call as 120k/200k was, just a judgement
+that today's sessions run deeper before the same advisory value applies.
+
+**What changed.** The two constants
+(`lib/context-economy/context-thresholds.sh:61-62`); the file's own rationale comment, reworded to
+name the new pair as current and the old one as D18's superseded choice (same "leave history,
+point forward" pattern D24 used for `compacted:`, not a rewrite of D18's own text); two illustrative
+mentions of the old numbers in `lib/context-gauge.sh`'s header comment (a rejected-alternative
+example and a "this can drift" aside — both illustrations of a general point, not decisions, so
+updated rather than left as history); and `lib/context-gauge.test.sh`'s explicit trip-wire
+(`[ "$CTX_NOTICE_TOKENS" = "120000" ]` etc.), which exists precisely to force this — a threshold
+change breaks that assertion on purpose, per its own comment, rather than silently reinterpreting
+what the surrounding cases mean. Every boundary case keyed to the old pair (exactly-at-notice,
+one-below-urge, exactly-at-urge, the default-resolution case against the real file) moved to the
+new one; cases using their own self-contained fixture thresholds (`hooks/handoff-write.test.sh`,
+and `context-gauge.test.sh`'s own HALF_THRESHOLDS/URGE_ONLY/ABORTING/NOISY fixtures) were left
+untouched on purpose — their own comments already say the suite "must not change its verdict when
+the real numbers are retuned," which this move exercises for the first time since D18.
+
+---
+
+### D26 — The read leg now waits for the fork before continuing, on explicit instruction reversing D19's "insurance, not a checkpoint" framing for this one case — implemented as an executable poll the model runs, never as a block inside the hook itself
+
+Decided 2026-09-18, on explicit instruction, after a direct challenge to D19: *"the value of the
+handoff is in preventing context growth post-compaction by compensating for compaction's lossy
+summary. If we do not let the main session wait for its handoff, is it not almost certainly going
+to re-derive things the handoff would have prevented?"* Yes — and D19's "an automatic handoff is
+insurance against real auto-compaction, not a checkpoint to pause at" was written for the *write*
+leg's own Step 4 (whether to tell a human to `/clear`), not a considered claim that the *read* leg
+should never block. Extending it to mean "the post-compaction session should just keep going
+without the handoff" was, on the record, an oversight, not a reasoned position — carried forward
+by `SKILL.md`'s Read mode Step 1 ("say so and stop here... proceed as if no handoff exists") and
+`hooks/handoff-inject.sh`'s `writing_active` message ("check back later"), both of which decline
+rather than wait.
+
+**Where the wait does NOT live: not inside the `SessionStart` hook.** The first design considered —
+have `hooks/handoff-inject.sh` itself sleep-poll on `progress:` before returning — was rejected
+after measurement, not on suspicion. Finding #34 (`docs/measured.md`) found a `SessionStart` hook
+survives at least 65s (matching finding #13's own result for `PreCompact` at the same duration) but
+gets killed somewhere before ~605s, with no `EXIT` logged and no `additionalContext` delivered at
+all — worse than today's decline, which at least says something. The real ceiling was never pinned
+down (probing was interrupted deliberately once the better question below made it moot), and
+chunking a long sleep into repeated short ones would not obviously help: if the kill is a flat
+elapsed-time bound (consistent with all data so far), the total time before the same absolute kill
+point is identical whether it is one sleep or ten.
+
+**Where it does live: the model's own next turn, via an executable instruction the hook injects.**
+The question that made the ceiling moot: *does the waiting mechanism need to be part of the
+`SessionStart` hook at all?* No — the Bash tool a model calls in its own turn has an explicit,
+documented timeout of up to 600000ms, or `run_in_background` for longer, which is completely
+different, better-understood infrastructure than whatever killed the hook in finding #34. So the
+hook stays exactly as fast and non-blocking as before — no change to its own execution model — and
+instead of "check back later" prose, its `writing_active` message now composes a concrete, bounded
+poll loop (`until grep -qm1 '^progress: complete' ...; sleep 10; done`, capped at whatever remains
+of `CTX_FORK_TIMEOUT_SECONDS` since the skeleton's own mtime) and tells the model to run it now, as
+its own first tool call, with the Bash tool's `timeout` parameter set to cover the wait. The model
+blocks on that tool call exactly the way the instruction wants — work does not continue past it —
+without the harness's hook-execution path being involved at all. Both outcomes verified directly
+(not just read): a synthetic run of the injected loop logic detected a mid-poll flip to `complete`
+within 2s of it happening, and separately detected and reported a timeout correctly when the file
+never flipped.
+
+**Why the manual path gets the same fix, not a different one.** Raised and initially disputed: "on
+the manual path the handoff is written before the human clears, so the human never runs the read
+leg against a `writing` placeholder — the situation never occurs." True for that one round trip
+(`SKILL.md` Step 2 always writes `progress: complete` in one call, never leaves `writing` behind),
+but Read mode Step 1 is not scoped to only that round trip — it locates by **listing the whole
+store**, specifically because "the handoff you want may belong to a sibling checkout." A human or
+orchestrator can legitimately run `/handoff --read` against a *different* branch whose own
+automatic `PreCompact` trigger fired moments earlier and is still mid-write. So `SKILL.md`'s Read
+mode Step 1 gets the identical poll-then-act treatment, not the weaker decline it had, for the same
+reason and via the same snippet shape (computing the deadline directly from `$handoff`'s own mtime
+each iteration, rather than precomputing a remaining budget the way the hook does, since the model
+runs this live rather than a hook computing it ahead of time for text it hands off).
+
+**What changed.** `hooks/handoff-inject.sh`'s `writing_active` branch (composes the poll snippet and
+Bash-timeout instruction instead of "check back later"; the `writing_abandoned` branch and its
+message are unchanged — that decision was already made once, correctly, by the hook itself before
+the model ever sees it). `skills/handoff/SKILL.md`'s Read mode Step 1 `writing` bullet (same poll
+shape, referencing this entry). `docs/measured.md` finding #34 (the `SessionStart` timeout probe
+that motivated moving the mechanism out of the hook). `hooks/handoff-inject.test.sh`'s existing
+85 assertions were re-run rather than rewritten — the header phrase ("is being authored") and the
+unchanged abandoned-branch text both survived the rewrite, so no assertion needed to change to keep
+passing, which is itself a useful (if accidental) signal that the visible framing did not regress.
+
+**What is still unresolved.** The `SessionStart` hook's own real timeout ceiling (finding #34) —
+not load-bearing for this design, but a real gap for whoever next wants a hook itself to block for
+a long time on purpose, for a different reason than this one.
+
+---
+
+### D27 — `hooks/handoff-write.sh` deleted outright, not merely left unregistered; and the dead read-side signal that decision exposed
+
+Decided 2026-09-18, during a full audit pass over this plugin for code left over from the design
+this replaced. D22 kept `handoff-write.sh` in the repo, unregistered, "specifically so this choice
+is reversible if practice disagrees with it" — a deliberate backstop, not an oversight. On explicit
+instruction during this pass, that reversibility was traded away: the file, its test suite, and the
+~190-line ceiling-detection/trigger-derivation block in `lib/context-economy/context-thresholds.sh`
+that only it consumed (`CTX_COMPACT_THRESHOLD_TOKENS`, `CTX_LARGE_REQUEST_TOKENS`,
+`CTX_AUTHORING_TURN_TOKENS`, `CTX_1M_COMPACT_THRESHOLD_TOKENS`) were removed entirely. `CTX_NOTICE_
+TOKENS`/`CTX_URGE_TOKENS` were left untouched — confirmed live via this machine's own
+`~/.claude/statusline.sh`, which sources `lib/context-gauge.sh` for the display-only advisory,
+unrelated to the removed trigger math.
+
+**The removal surfaced a real bug, not just dead weight.** `hooks/handoff-inject.sh`'s `compact`
+branch and `hooks/session-end-marker.sh` both read a latch/sidecar under `$HOME/.claude/state/
+handoff-trigger/` that only `handoff-write.sh` ever wrote — and had not been updated when D22
+retired that write leg 2026-09-17. With the latch never written, `trigger_ever_fired` was `false`
+on every single automatic compaction, so the injected text unconditionally opened with "the write
+trigger never armed this session… there may be nothing below that covers the work just
+summarised" — directly above the real handoff the current `PreCompact` mechanism had just
+produced. Self-contradictory on the plugin's primary automatic path, and present since D22, not
+introduced by today's deletion; deleting the dead latch only made the staleness impossible to miss.
+
+**The fix: key off what the current write leg actually creates.** `hooks/handoff-fork-write.sh`
+drops a per-session dedup lock (`$HOME/.claude/state/handoff-fork/$session_id.lock`) the first
+time it fires, win or lose, and never removes it — the only evidence on disk, under the current
+design, that a write was attempted for a session. Both consumers now key off that lock instead,
+under a new field, `write_attempted`, which replaces the retired `trigger_fired`/`urge_fired` pair
+outright rather than joining it as a further rename: the question changed ("was a write attempted"
+vs. "did an in-band threshold arm"), so no legacy-key fallback was added, unlike the genuine
+`urge_fired` → `trigger_fired` rename `handoff-inject.sh` used to carry. The token-distance gap
+arithmetic (`written_at_tokens`/`expected_gap_tokens`), which existed only to judge an
+automatically-written handoff's staleness against the old in-band trigger's own reserved margin,
+was dropped with it — nothing computes that margin any more, and the handoff's own mtime
+(`age_phrase`, already generic to every `handoff_present` case) carries the freshness judgement
+instead.
+
+**Also fixed in the same pass, same root cause:** `skills/handoff/SKILL.md`'s Write mode Step 4
+still carried a case for being "fired by the Stop hook itself" — the in-band mechanism D22 retired.
+Nothing registers `Stop` on this skill any more, so that case could never fire; replaced with a
+note that the automatic (detached-fork) path skips Step 4 entirely, per that spawn's own prompt.
+
+**What changed:** `hooks/handoff-write.sh` and `hooks/handoff-write.test.sh` deleted.
+`lib/context-economy/context-thresholds.sh` and its test, trimmed. `hooks/handoff-inject.sh`,
+`hooks/session-end-marker.sh`, and both their test suites, rewritten around `write_attempted`.
+`skills/handoff/SKILL.md` Step 4. `tools/measure-large-request.js` deleted too, same reasoning:
+its sole subject (`large_request`) no longer exists anywhere in the codebase, and the one finding
+it produced (`docs/measured.md` finding #20) already preserves the result. All suites re-run and
+green except the one pre-existing, unrelated `tests/gate.sh` AAA-label failure on
+`hooks/handoff-fork-write.test.sh` (confirmed via `git stash` before this session's edits; tracked
+for the release after v1.0.0).
+
+---
+
 1. ~~`verify-citations` generalisation~~ — **done**, 2026-08-21. `tools/verify-citations.sh` +
    `tools/verify-citations.test.sh`, 50 assertions passing. Scope per [D4](#d4), layout per
    [D9](#d9), three outcomes per [D5](#d5). Flowed back via `upstream-feedback/kendo.md`, which also

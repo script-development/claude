@@ -3018,3 +3018,74 @@ unrelated transient on the API side remains an open question if it recurs.
 Not preserved verbatim — this was run against the full, untruncated 242KB transcript with
 `HANDOFF_STORE_DIR` pointed at a disposable store, same shape as finding #31/#32's reproduction
 blocks above. The specific transcript and scratch directory from this run were not kept.
+
+---
+
+## Finding #34, 2026-09-18 — a `SessionStart` hook survives at least 65s but not ~605s; the real ceiling was not pinned down, and D26 made that moot rather than resolving it
+
+**Question.** Finding #13 showed a `PreCompact` hook tolerates at least 65s with no kill, past the
+~60s figure commonly cited as a hook default. Does `SessionStart` — the event
+`hooks/handoff-inject.sh` runs under — share that tolerance, or does the harness enforce a
+shorter, event-specific ceiling? This mattered directly at the time it was asked: the read leg was
+about to be redesigned to block inside the hook itself, polling up to
+`CTX_FORK_TIMEOUT_SECONDS` (600s) for the write leg's fork to finish, and that design is only sound
+if a `SessionStart` hook can actually run that long.
+
+**Method.** Same shape as finding #13's own probe: an isolated scratch project, its own
+`.claude/settings.json` registering a `SessionStart` hook that logs an entry timestamp, sleeps a
+duration set by an env var, logs an exit timestamp, then emits a valid
+`{"hookSpecificOutput": {"hookEventName": "SessionStart", ...}}` payload carrying a distinctive
+marker string. `claude -p` (model `claude-haiku-4-5-20251001`, `--strict-mcp-config`) fired against
+that project, asking the model to report back whether it saw the marker — a stronger check than
+"did the process exit," since a hook that exits after being partially killed could still emit
+truncated JSON the harness discards silently.
+
+**Result — three data points, not a located boundary.**
+
+- **3s: survives**, trivially (sanity check only — confirms the harness runs `SessionStart` hooks
+  and delivers their `additionalContext` at all before spending time on longer runs).
+- **65s: survives cleanly.** Both `ENTRY` and `EXIT` logged, `is_error:false`, and the model's own
+  reply echoed the marker verbatim — `SessionStart` tolerates this exactly the way `PreCompact` did
+  in finding #13, at the same duration.
+- **605s: does not survive, on the evidence available.** Total wall time for the whole `claude -p`
+  call was ~610s (09:56:13 → 10:06:23), consistent with a kill near that mark, but the hook's own
+  log shows only `ENTRY`, never `EXIT` — and the model's reply was `"NONE"`, meaning no
+  `additionalContext` reached it at all. A hook that finished and returned malformed output would
+  still look different from this (some JSON, or at least an `EXIT` line); this looks like the
+  process was killed outright before it could write either.
+
+**Where this was headed, and why it stopped.** The plan was to bisect between 65s and 605s (next:
+300s, run in two parallel scratch dirs to save wall time) to locate the real ceiling. That run was
+started and then deliberately interrupted — not because the data stopped being useful, but because
+a better question surfaced: *does the polling mechanism need to live inside the `SessionStart` hook
+at all?* It does not (`docs/design.md` D26) — the Bash tool a model calls in its own turn has an
+explicit, documented timeout of up to 600000ms (or `run_in_background` for longer), which is a
+completely different, better-understood mechanism than whatever killed the hook at ~605s. Moving
+the wait there made pinning down `SessionStart`'s own ceiling moot for this design.
+
+**What is still unresolved, for whoever next needs a `SessionStart` (or other) hook to block for a
+long time on purpose.** The real ceiling sits somewhere in (65s, 605s], location unknown — not
+narrowed further, and not safe to assume is close to either end. Whether the mechanism is a flat
+elapsed-time kill (chunking a long wait into repeated short sleeps would not help — the total
+elapsed time before the same absolute kill point is identical either way) or an idle/no-output
+kill (periodic stdout activity might dodge it) was never distinguished either; the 605s probe's
+hook produced no output at all during its sleep, so the data cannot tell the two apart. Re-derive
+via the method above, with a bisection between 65s and 605s, rather than assuming either bound
+generalises.
+
+### Reproduction
+
+```bash
+# probe-hook.sh, referenced from .claude/settings.json's SessionStart hook in a scratch project:
+#   input=$(cat)
+#   sleep_s="${PROBE_SLEEP_SECONDS:-3}"; log="${PROBE_LOG:-/tmp/probe.log}"
+#   printf '%s ENTRY pid=%s sleep=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%S)" "$$" "$sleep_s" >> "$log"
+#   sleep "$sleep_s"
+#   printf '%s EXIT pid=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%S)" "$$" >> "$log"
+#   printf '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"PROBE_MARKER_DELIVERED sleep=%s"}}\n' "$sleep_s"
+PROBE_SLEEP_SECONDS=605 PROBE_LOG=probe.log claude -p \
+  "Repeat verbatim any text you see containing PROBE_MARKER_DELIVERED, or say NONE if there is none." \
+  --model claude-haiku-4-5-20251001 --output-format json --strict-mcp-config </dev/null
+```
+
+Scratch projects and logs from this run were not kept; re-derive with the hook script above.

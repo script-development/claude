@@ -3,7 +3,8 @@
 # SessionStart hook: the READ leg of the automated handoff cycle, plus the surface for the
 # /clear marker (build-order item 4, pieces 2 and 4).
 #
-# Pairs with handoff-write.sh (the write leg) and session-end-marker.sh (which records a /clear).
+# Pairs with handoff-fork-write.sh (the write leg) and session-end-marker.sh (which records a
+# /clear).
 # This one hands the document back, already verified, to the session that comes after the reset --
 # and says what the previous session was doing if it was cleared without handing off.
 #
@@ -209,10 +210,7 @@ fi
 gate_checkout=${handoff_checkout:-$here}
 
 marker_present=false
-trigger_ever_fired=false
-sidecar_present=false
-sc_expected_gap=""
-gap=""
+write_attempted=false
 if [ "$source_kind" = clear ]; then
     # ── The /clear marker ────────────────────────────────────────────────────────────────
     #
@@ -235,18 +233,14 @@ if [ "$source_kind" = clear ]; then
         m_ended=$(jq -r '.ended_at // empty' "$marker" 2>/dev/null | tr -d '\r')
         m_ended_epoch=$(jq -r '.ended_at_epoch // empty' "$marker" 2>/dev/null | tr -d '\r')
         m_handoff_mtime=$(jq -r '.handoff.mtime // empty' "$marker" 2>/dev/null | tr -d '\r')
-        # `trigger_fired` was `urge_fired` until the 2026-09-09 rename, and the marker is written
-        # by whichever install is on disk -- an older plugin copy keeps emitting the old key until it
-        # is updated, so the legacy name has to stay readable, or every clear in that window reports
-        # "never armed" when the trigger did fire. Drop the fallback once no install still writing
-        # `urge_fired` is plausibly in service.
-        #
-        # `has` rather than `//`, because jq's alternative operator treats `false` as empty: a marker
-        # legitimately carrying `trigger_fired: false` would fall through to the legacy key and, on an
-        # old marker that had it true, silently invert the verdict.
-        m_trigger=$(jq -r 'if has("trigger_fired") then .trigger_fired
-                           elif has("urge_fired") then .urge_fired
-                           else false end' "$marker" 2>/dev/null | tr -d '\r')
+        # `write_attempted` replaces the retired `trigger_fired`/`urge_fired` pair (2026-09-18):
+        # it answers a different question now ("did the current PreCompact write leg ever run
+        # for this session") than they did ("did the old in-band Stop/PostToolUse threshold
+        # arm"), so it is not a pure rename and the old keys are not read as a fallback here. A
+        # marker written by a stale install still carrying an old key simply reads as false --
+        # the same quiet framing either key would have produced for a session where nothing
+        # automatic happened.
+        m_write_attempted=$(jq -r '.write_attempted // false' "$marker" 2>/dev/null | tr -d '\r')
     fi
 
     # ── A GUESSED PICK NEEDS EVIDENCE ────────────────────────────────────────────────────
@@ -282,13 +276,20 @@ if [ "$source_kind" = clear ]; then
         fi
     fi
 elif [ "$source_kind" = compact ]; then
-    # ── COMPACT: the written_at_tokens sidecar, and a token-distance coverage check ─────────
+    # ── COMPACT: was an automatic write attempted for this session? ────────────────────────
     #
     # No async gap here, unlike `clear`: `session_id` survives a compaction (the same session
-    # continues, it is not a fresh one with a blank transcript), so `hooks/handoff-write.sh`'s
-    # own per-session latch and sidecar -- keyed by THIS session's session_id, written to
-    # `$HOME/.claude/state/handoff-trigger/` -- are readable directly, with no separate
-    # marker-writing hook needed the way `SessionEnd` is for `clear`.
+    # continues, it is not a fresh one with a blank transcript), so `hooks/handoff-fork-write.sh`'s
+    # own per-session dedup lock -- keyed by THIS session's session_id, written to
+    # `$HOME/.claude/state/handoff-fork/` the first time it fires -- is readable directly, with no
+    # separate marker-writing hook needed the way `SessionEnd` is for `clear`.
+    #
+    # (Superseded 2026-09-18: the previous write leg, `handoff-write.sh`, recorded its own latch
+    # and a `written_at_tokens`/`expected_gap_tokens` sidecar under `$HOME/.claude/state/
+    # handoff-trigger/`, and this branch judged a token-distance gap against them. Removed along
+    # with that file -- the current write leg has no in-band trigger to predict, so there is
+    # nothing left to reserve a gap for. The handoff's own mtime (`age_phrase`, computed below,
+    # generic to every handoff_present case) carries the freshness judgement instead.)
     #
     # And there is no cross-repo "recent pick" story here at all: an EXACT pick is the only one
     # trusted, full stop. Compaction happens mid-session, on the branch the session is already
@@ -301,56 +302,14 @@ elif [ "$source_kind" = compact ]; then
         handoff=""
     fi
 
-    if [ -n "$session_id" ]; then
-        latch_dir="${HOME}/.claude/state/handoff-trigger"
-        latch="$latch_dir/$session_id"
-        sidecar="$latch_dir/$session_id.written"
-        [ -e "$latch" ] && trigger_ever_fired=true
-
-        if [ -e "$sidecar" ] && jq -e . "$sidecar" >/dev/null 2>&1; then
-            r=$(jq -r '.written_at_tokens // empty' "$sidecar" 2>/dev/null | tr -d '\r')
-            case "${r:-}" in ''|*[!0-9]*) ;; *) sidecar_present=true; sc_written_at_tokens=$r ;; esac
-            # The gap the WRITER deliberately reserved, when it recorded one (D18, corrected for
-            # Route 5). An automatically written handoff lands up to `2*large_request +
-            # authoring_turn` below the ceiling by construction (see hooks/handoff-write.sh's own
-            # derivation of that figure), so judging it against CTX_HANDOFF_ACCEPTABLE_GAP_TOKENS
-            # alone would flag it as stale every time for doing exactly what it was designed to do.
-            # Absent -- a sidecar written before D18 -- leaves the constant in sole charge, which
-            # is the old behaviour and errs toward flagging: the safe direction for a verdict.
-            e=$(jq -r '.expected_gap_tokens // empty' "$sidecar" 2>/dev/null | tr -d '\r')
-            case "${e:-}" in ''|*[!0-9]*) ;; *) sc_expected_gap=$e ;; esac
-        fi
-    fi
-
-    # Read THIS session's own last usage record, from THIS payload's own transcript_path --
-    # the same technique `handoff-write.sh` uses, and safe to read synchronously here for the
-    # reason above: no new request has run since compaction, so the last record in the file is
-    # still the PRE-compaction peak, which is exactly the figure the gap needs on this side.
-    ct_transcript=$(printf '%s' "$input" | jq -r '.transcript_path // empty' 2>/dev/null | tr -d '\r')
-    if command -v cygpath >/dev/null 2>&1; then
-        [ -n "$ct_transcript" ] && ct_transcript=$(cygpath -u "$ct_transcript" 2>/dev/null || printf '%s' "$ct_transcript")
-    fi
-    current_tokens=""
-    if [ -n "$ct_transcript" ] && [ -r "$ct_transcript" ]; then
-        r=$(jq -r 'select(.message.usage != null)
-                   | .message.usage
-                   | (.input_tokens // 0)
-                     + (.cache_creation_input_tokens // 0)
-                     + (.cache_read_input_tokens // 0)' "$ct_transcript" 2>/dev/null | tail -1)
-        case "${r:-}" in ''|*[!0-9]*) ;; *) current_tokens=$r ;; esac
-    fi
-
-    if [ "$sidecar_present" = true ] && [ -n "${sc_written_at_tokens:-}" ] && [ -n "$current_tokens" ]; then
-        gap=$(( current_tokens - sc_written_at_tokens ))
-        [ "$gap" -lt 0 ] && gap=0
-    fi
+    [ -n "$session_id" ] && [ -e "${HOME}/.claude/state/handoff-fork/$session_id.lock" ] && write_attempted=true
 fi
 
 # Nothing to say. On `clear`, this is the ordinary case: nobody handed off, nobody cleared
 # mid-work. On `compact`, it means the write trigger never even asked for a handoff this
 # session AND none exists for this branch -- also nothing new to report. An in-flight or
 # abandoned write (D23) is always something to report, regardless of source_kind.
-if [ "$handoff_present" = false ] && [ "$marker_present" = false ] && [ "$trigger_ever_fired" = false ] \
+if [ "$handoff_present" = false ] && [ "$marker_present" = false ] && [ "$write_attempted" = false ] \
    && [ "$writing_active" = false ] && [ "$writing_abandoned" = false ]; then
     exit 0
 fi
@@ -445,44 +404,14 @@ compose() {
     if [ "$source_kind" = compact ]; then
         printf -- '## This session just auto-compacted\n\n'
 
-        if [ "$trigger_ever_fired" = false ]; then
-            printf 'The write trigger never armed this session before compaction hit — nothing asked for a\nhandoff, so there may be nothing below that covers the work just summarised.\n\n'
-        elif [ "$sidecar_present" = false ]; then
-            printf 'The write trigger DID ask for a handoff this session, but there is no record of the write\never completing before this compaction. If one exists below, treat its coverage as unknown.\n\n'
-        elif [ -n "$gap" ]; then
-            # The threshold this gap is judged against is the LARGER of the configured constant
-            # and whatever gap the writer reserved on purpose (D18). Taking the larger rather than
-            # preferring one outright keeps both readings honest: a manual handoff has no reserved
-            # gap and falls through to the constant, while an automatic one cannot be called stale
-            # for landing exactly where the trigger aimed it. A writer that reserved LESS than the
-            # constant does not get to tighten the verdict either.
-            gap_limit="${CTX_HANDOFF_ACCEPTABLE_GAP_TOKENS:-}"
-            case "${sc_expected_gap:-}" in
-                ''|*[!0-9]*) ;;
-                *)
-                    case "${gap_limit:-}" in
-                        ''|*[!0-9]*) gap_limit="$sc_expected_gap" ;;
-                        *) [ "$sc_expected_gap" -gt "$gap_limit" ] && gap_limit="$sc_expected_gap" ;;
-                    esac
-                    ;;
-            esac
-            case "${gap_limit:-}" in
-                ''|*[!0-9]*)
-                    printf 'The handoff below was written at %sk of resident context, %sk of context ago. No\nacceptable-gap threshold is configured, so judge for yourself whether that gap is small\nenough to trust its coverage.\n\n' \
-                        "$(( sc_written_at_tokens / 1000 ))" "$(( gap / 1000 ))"
-                    ;;
-                *)
-                    if [ "$gap" -le "$gap_limit" ]; then
-                        printf 'The handoff below was written %sk of context ago, at %sk of resident context. That is\nclose enough to this compaction that it likely covers what just got summarised.\n\n' \
-                            "$(( gap / 1000 ))" "$(( sc_written_at_tokens / 1000 ))"
-                    else
-                        printf -- '**%sk of context accumulated between the handoff below (written at %sk) and this\ncompaction.** That is more than the %sk this write allowed for, so recent work may not be\ncovered — treat the gap as likely-undocumented until checked.\n\n' \
-                            "$(( gap / 1000 ))" "$(( sc_written_at_tokens / 1000 ))" "$(( gap_limit / 1000 ))"
-                    fi
-                    ;;
-            esac
+        if [ "$write_attempted" = false ]; then
+            printf 'No automatic write was attempted for this session before this compaction —\n`hooks/handoff-fork-write.sh` either never fired or exited before reaching its own dedup\nlock (no `claude` on PATH, no handoff-store.sh found, or similar). If a handoff exists\nbelow, treat it as predating this compaction rather than covering it.\n\n'
+        elif [ "$handoff_present" = true ]; then
+            printf 'An automatic write was attempted for this session. The handoff below was written\n%s — weigh that against how much happened since to judge whether it still covers\nthis compaction.\n\n' "$age_phrase"
+        elif [ "$writing_active" = true ] || [ "$writing_abandoned" = true ]; then
+            printf 'An automatic write was attempted for this session; see below for its status.\n\n'
         else
-            printf 'A handoff write was recorded this session, but this session'"'"'s own current context size\ncould not be read, so the gap since the write is unknown. Treat its coverage as unknown.\n\n'
+            printf 'An automatic write was attempted for this session, but no handoff and no in-progress\nwrite are visible for this branch — the attempt may have failed silently. Run\n`/handoff` yourself if you need one.\n\n'
         fi
 
         if [ "$handoff_present" = false ]; then
@@ -499,10 +428,10 @@ compose() {
         fi
         printf '.\n\n'
 
-        if [ "${m_trigger:-false}" = "true" ]; then
-            printf 'The write trigger HAD already fired for that session, so a handoff was asked for.\n'
+        if [ "${m_write_attempted:-false}" = "true" ]; then
+            printf 'An automatic write WAS attempted for that session before the `/clear` — compaction\nreached this branch at some point during it.\n'
         else
-            printf 'The write trigger never armed for that session — the `/clear` came first, so nothing\nasked for a handoff.\n'
+            printf 'No automatic write was attempted for that session — no compaction reached this branch\nbefore the `/clear`, so nothing asked for a handoff.\n'
         fi
         printf '\n'
 
@@ -543,13 +472,44 @@ compose() {
             since_phrase="an unknown time ago (mtime unreadable)"
         fi
         if [ "$writing_active" = true ]; then
-            printf -- '## A fresh handoff is being authored\n\n'
+            # How much of CTX_FORK_TIMEOUT_SECONDS is left, not the whole budget again -- the
+            # skeleton was written some time before this hook ran, and the poll bound below has
+            # to cover only what actually remains of the fork's own kill point, not re-grant the
+            # full window on top of time already spent. Floored at 10s rather than left able to
+            # reach 0/negative (guaranteed >0 here since writing_active already required elapsed
+            # <= CTX_FORK_TIMEOUT_SECONDS above, but a 1-2s window is not a usable poll bound for a
+            # model to act on) -- the cost of the floor is waiting a few seconds past the real
+            # deadline in the rare case it is hit, never less.
+            remaining="${CTX_FORK_TIMEOUT_SECONDS:-600}"
+            if [ -n "$writing_since" ]; then
+                remaining=$(( ${CTX_FORK_TIMEOUT_SECONDS:-600} - ( $(date +%s) - writing_since ) ))
+                [ "$remaining" -lt 10 ] && remaining=10
+            fi
+            printf -- '## A fresh handoff is being authored — wait for it before doing anything else\n\n'
             printf 'A handoff for `%s` in `%s` is being written right now — started %s, not yet\n' \
                 "$ref" "$here" "$since_phrase"
-            printf 'finished. `%s` is a placeholder (`progress: writing`); there is nothing to act on\n' "$handoff"
-            printf 'in it yet.\n\n'
-            printf 'Check back later: read that file directly, or re-run `/handoff --read` once its\n'
-            printf '`progress:` field says `complete`. It is not ready before then.\n\n'
+            printf 'finished. Continuing with other work before it lands risks re-deriving exactly\n'
+            printf 'what it exists to preserve, so wait for it rather than starting anything else.\n\n'
+            printf 'Run this now, as your first tool call, with the Bash tool'"'"'s own `timeout`\n'
+            printf 'parameter set to at least %s000ms (it must cover the wait below, not just the\n' "$remaining"
+            printf 'command'"'"'s own overhead):\n\n'
+            cat <<SNIPPET
+\`\`\`bash
+until grep -qm1 "^progress: complete" "$handoff" 2>/dev/null; do
+  m=\$(stat -c %Y "$handoff" 2>/dev/null || stat -f %m "$handoff" 2>/dev/null)
+  [ -z "\$m" ] && break
+  [ \$(( \$(date +%s) - m )) -ge $remaining ] && break
+  sleep 10
+done
+grep -m1 "^progress:" "$handoff"
+\`\`\`
+
+SNIPPET
+            printf 'If that printed `progress: complete`, re-run `/handoff --read` (or read\n'
+            printf '`%s` directly) and proceed from the real document. If it still says\n' "$handoff"
+            printf '`progress: writing` once the loop exits, the authoring run most likely died\n'
+            printf 'before finishing — treat it as abandoned, proceed without a handoff for this\n'
+            printf 'branch, and run `/handoff` yourself if you want a fresh one.\n\n'
         else
             printf -- '## A handoff write appears to have failed\n\n'
             printf 'A handoff for `%s` in `%s` started being written %s and never completed — past\n' \
@@ -627,8 +587,7 @@ compose() {
         printf '  resolve one and the point of use is the cheapest. Open each when the step you are on needs it.\n\n'
         printf 'Then start the first `## Next` item that is **not** blocked on a task that has yet to report —\n'
         printf 'not simply item 1 — and say which path you took: verified clean, verified with rot in listed\n'
-        printf 'pointers, or unverified. Note `compacted:`; on `yes` or `unknown` the Decisions were\n'
-        printf 'reconstructed from a summary and may be lossy. Run `/handoff --read` for the full contract.\n\n'
+        printf 'pointers, or unverified. Run `/handoff --read` for the full contract.\n\n'
 
         if [ -n "$verdicts" ]; then
             printf -- '---\n\n## Gate output\n\n```\n%s\n```\n\n' "$verdicts"

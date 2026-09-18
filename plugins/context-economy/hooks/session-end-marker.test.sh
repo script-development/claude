@@ -17,9 +17,9 @@
 #   m2  the handoff MTIME, captured at clear time, is the whole basis of the one judgement the
 #       surface makes: does the handoff on disk describe the session just thrown away, or an
 #       older one? Without it a stale handoff gets injected as though it were coverage.
-#   m3  `trigger_fired` distinguishes two different mistakes — the clear beat the threshold (trigger
-#       never armed) versus the human cleared past a handoff that had been asked for. Recording
-#       only "no handoff" would conflate them.
+#   m3  `write_attempted` distinguishes two different mistakes — no compaction reached this session
+#       before the clear versus the human cleared past a handoff a compaction had already asked
+#       for. Recording only "no handoff" would conflate them.
 #   m4  the key is the MAIN worktree, not the cwd. A clear inside a linked worktree must file
 #       under main+branch or the surface, which resolves main the same way, will never find it.
 #   m5  the newest clear replaces the older one. A marker is news about one reset; accumulating
@@ -222,25 +222,25 @@ assert_field 'and it is the sibling one that gets recorded'     "$m" '.handoff.p
 rm -f "$cross"
 printf 'a handoff\n' > "$exact"
 
-# --- m3 — did the trigger ever arm? ---------------------------------------
+# --- m3 — was an automatic write ever attempted? --------------------------
 
 # Arrange
 reset_state
 # Act
 run "$(payload clear "$repo" sess-noarm)" >/dev/null
 # Assert
-assert_field 'a clear that beat the trigger records trigger_fired false' \
-    "$(marker_for "$repo" main)" '.trigger_fired' 'false'
+assert_field 'a clear with no write attempted records write_attempted false' \
+    "$(marker_for "$repo" main)" '.write_attempted' 'false'
 
 # Arrange
-mkdir -p "$home/.claude/state/handoff-trigger"
-: > "$home/.claude/state/handoff-trigger/sess-armed"
+mkdir -p "$home/.claude/state/handoff-fork"
+: > "$home/.claude/state/handoff-fork/sess-armed.lock"
 reset_state
 # Act
 run "$(payload clear "$repo" sess-armed)" >/dev/null
 # Assert
-assert_field 'a clear after the trigger fired records trigger_fired true' \
-    "$(marker_for "$repo" main)" '.trigger_fired' 'true'
+assert_field 'a clear after a write was attempted records write_attempted true' \
+    "$(marker_for "$repo" main)" '.write_attempted' 'true'
 
 # --- Branch slugging and separation ---------------------------------------
 

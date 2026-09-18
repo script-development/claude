@@ -103,7 +103,7 @@ it from the shape below and let the tool correct you.
 
 ```
 # Handoff — <task>
-branch: / checkout: / compacted: / status: / progress:
+branch: / checkout: / status: / progress:
                                     envelope + one-line orientation
 ## Do not re-derive                 the reason the file exists (heading only; a container)
 ### Decisions                       what was chosen AND what it beat
@@ -114,10 +114,6 @@ branch: / checkout: / compacted: / status: / progress:
 ## Unverifiable                     optional: real files the gate cannot resolve
 ```
 
-- `compacted: no | yes | unknown` is gated for one reason: it says whether the expensive half of the
-  document is first-hand. If the session auto-compacted before writing, its decisions were
-  reconstructed from a summary produced by the very process that drops them. `unknown` is a
-  legitimate answer; omitting it is the only answer that tells a reader nothing.
 - `progress: writing | complete | consumed` says where THIS document is in its own write/read
   cycle, not anything about the task (`docs/design.md` D23). It exists because the automated write
   leg (`hooks/handoff-fork-write.sh`) authors out of band: it writes a bare placeholder with
@@ -318,14 +314,13 @@ had to be long, say why in the handoff.
 Print `>> STEP: handoff — 4 (write)` before doing anything else in this step.
 
 No tool call. Report the path, the exit status, and any warning worth acting on. What happens next is
-decided by **why this write is happening, not by who is watching**:
-
-**Fired by the Stop hook itself** — this turn opens with `Stop hook feedback:` and tells you to run
-this skill "now, before anything else." This path exists to be as invisible as real auto-compaction:
-nobody asked for a pause, only for insurance against one. Report the write in one line and **keep
-going with whatever was in flight.** Do not tell anyone to `/clear`. The handoff may be stale by the
-time anything reads it back — that is the accepted cost of the margin `CTX_COMPACT_THRESHOLD_TOKENS`
-keeps against racing real auto-compaction, not a defect in this step to correct for.
+decided by **why this write is happening, not by who is watching** — and the automatic path never
+reaches this step at all: it runs as a detached, headless spawn on `PreCompact`
+(`hooks/handoff-fork-write.sh`), and that spawn's own prompt explicitly overrides this step with "there
+is no human to hand back to and no Step 4 report to give" before ever getting here. (A predecessor
+mechanism ran this skill in-band, inside the live session's own turn, on a `Stop` hook — superseded
+2026-09-17, `docs/design.md` D22 — and Step 4 used to carry a case for it. Removed along with that
+mechanism: nothing registers `Stop` on this skill any more, so that case could never fire.)
 
 **Invoked directly** — a human asked for one, or an orchestrator watching this session's growth from
 outside sent the instruction. Either way, someone chose the manual path *because* they want the pause,
@@ -378,13 +373,28 @@ grep -m1 '^progress:' "$handoff"
 ```
 
 - **Absent, `complete`, or `consumed`** — a real document. Proceed below.
-- **`writing`** — the automated write leg's placeholder, mid-authoring. Compare its mtime against
-  `CTX_FORK_TIMEOUT_SECONDS` (default 600, `lib/context-economy/context-thresholds.sh`): within
-  that window, a fresh handoff is plausibly still being composed — say so and stop here rather than
-  verifying or reading a document that is deliberately near-empty; past it, the authoring run has
-  most likely died before finishing — say that instead, and proceed as if no handoff exists for
-  this target at all. Either way, do not treat the placeholder's own body as content to act on —
-  it is a signal, not a handoff.
+- **`writing`** — the automated write leg's placeholder, mid-authoring. Do not treat its own body
+  as content to act on (it is a signal, not a handoff), and do not just report this and move on to
+  other work — a real handoff exists specifically to prevent re-deriving what this session would
+  otherwise lose, and starting other work before it lands defeats that. Wait for it instead, the
+  same way the automatic `SessionStart` injection does (`hooks/handoff-inject.sh`, D26): run this
+  now, as its own Bash tool call with `timeout` set to at least 610000ms (covers the default
+  `CTX_FORK_TIMEOUT_SECONDS` of 600, `lib/context-economy/context-thresholds.sh`, with margin —
+  raise it if that constant was customized higher):
+
+  ```bash
+  until grep -qm1 '^progress: complete' "$handoff" 2>/dev/null; do
+    m=$(stat -c %Y "$handoff" 2>/dev/null || stat -f %m "$handoff" 2>/dev/null)
+    [ -z "$m" ] && break
+    [ $(( $(date +%s) - m - ${CTX_FORK_TIMEOUT_SECONDS:-600} )) -ge 0 ] && break
+    sleep 10
+  done
+  grep -m1 '^progress:' "$handoff"
+  ```
+
+  If that now prints `progress: complete`, proceed below as normal. If it still prints
+  `progress: writing`, the authoring run most likely died before finishing — say so, and proceed
+  as if no handoff exists for this target at all.
 
 Then verify with **one argument**:
 
@@ -404,8 +414,7 @@ If the gate is unreachable, read the handoff anyway and treat every pointer as u
 
 Print `>> STEP: handoff — 2 (read)` before doing anything else in this step.
 
-One `Read` of the handoff. Note `compacted:` — on `yes` or `unknown` the body was reconstructed from
-a summary, so its Decisions may be lossy.
+One `Read` of the handoff.
 
 ## Read mode — Step 3: act on the verdicts
 
