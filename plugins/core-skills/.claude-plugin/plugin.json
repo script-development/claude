@@ -1,0 +1,18 @@
+{
+  "name": "core-skills",
+  "displayName": "Core Skills",
+  "version": "0.1.0",
+  "description": "Project-agnostic catalog skills bundled into one installable plugin. Each skill reads .claude/project-context.md for any project-specific facts it needs. Currently: catchup.",
+  "keywords": [
+    "git",
+    "workflow",
+    "branch",
+    "context"
+  ],
+  "author": {
+    "name": "bjvle",
+    "url": "https://github.com/bjvle"
+  },
+  "repository": "https://github.com/script-development/claude/tree/main/plugins/core-skills",
+  "license": "MIT"
+}
