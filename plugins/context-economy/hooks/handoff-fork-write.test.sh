@@ -124,6 +124,60 @@ run "$(payload "other-$$" "$transcript" "$repo")" CTX_FORK_TIMEOUT_SECONDS=1 >/d
 assert_eq 'a different session_id gets its own lock, unaffected by an unrelated one' \
     "$((out_count_before + 1))" "$(lock_count)"
 
+# --- D23: the synchronous skeleton write ---------------------------------------------------
+#
+# Written by hand, not sourced from lib/handoff-store.sh, for the same reason
+# handoff-inject.test.sh's own store_name() is: an oracle that called the function under test
+# would agree with any change to it, including a wrong one.
+store_name() {  # store_name <target-main> <slug>
+    printf '%s-%s-%s.md' \
+        "$(printf '%s' "$(basename "$1")" | tr -c 'A-Za-z0-9._-' '_')" \
+        "$(printf '%s' "$2" | tr -c 'A-Za-z0-9._-' '_')" \
+        "$(printf '%s' "$1" | md5sum | cut -c1-8)"
+}
+
+store="$fixture/store"
+mkdir -p "$store"
+main_git=$(git -C "$repo" worktree list | head -1 | awk '{print $1}')
+skeleton_path="$store/$(store_name "$main_git" main)"
+
+# Act — passes every guard (real session_id, real transcript, real repo) and reaches the
+# skeleton write. CTX_FORK_TIMEOUT_SECONDS=1 still bounds whatever real detached turn follows to
+# a near-instant kill, exactly as the dedup-lock cases above rely on; HANDOFF_STORE_DIR isolates
+# the skeleton from both the real store and the other cases' own $home/.local/share default.
+run "$(payload "skel-$$" "$transcript" "$repo")" CTX_FORK_TIMEOUT_SECONDS=1 HANDOFF_STORE_DIR="$store" >/dev/null
+
+# Assert
+[ -s "$skeleton_path" ] && pass 'a firing that passes every guard writes a skeleton at the resolved store path' \
+    || fail 'a firing that passes every guard writes a skeleton at the resolved store path' 'no file at expected path'
+
+case "$(cat "$skeleton_path" 2>/dev/null)" in
+    *'progress: writing'*) pass 'the skeleton carries progress: writing' ;;
+    *) fail 'the skeleton carries progress: writing' "got [$(cat "$skeleton_path" 2>/dev/null)]" ;;
+esac
+
+case "$(cat "$skeleton_path" 2>/dev/null)" in
+    *"checkout: $main_git"*) pass 'the skeleton declares the repo it was fired for as checkout:' ;;
+    *) fail 'the skeleton declares the repo it was fired for as checkout:' "got [$(cat "$skeleton_path" 2>/dev/null)]" ;;
+esac
+
+case "$(cat "$skeleton_path" 2>/dev/null)" in
+    *'branch: main'*) pass 'the skeleton declares the branch it was fired for' ;;
+    *) fail 'the skeleton declares the branch it was fired for' "got [$(cat "$skeleton_path" 2>/dev/null)]" ;;
+esac
+
+# Unconditional overwrite: a REAL, already-complete handoff sitting at this path must still be
+# replaced by the placeholder on the next firing -- D23's whole point is that the reset cannot be
+# contingent on anything, including what was there before.
+printf '# Handoff — real work\nbranch: main\ncheckout: %s\ncompacted: no\nstatus: ok\nprogress: complete\n\nreal content nobody should lose silently, but D23 accepts they will\n' \
+    "$main_git" > "$skeleton_path"
+run "$(payload "skel2-$$" "$transcript" "$repo")" CTX_FORK_TIMEOUT_SECONDS=1 HANDOFF_STORE_DIR="$store" >/dev/null
+case "$(cat "$skeleton_path" 2>/dev/null)" in
+    *'progress: writing'*) pass 'a real, already-complete handoff is unconditionally reset to writing on the next firing' ;;
+    *) fail 'a real, already-complete handoff is unconditionally reset to writing on the next firing' \
+        "got [$(cat "$skeleton_path" 2>/dev/null)]" ;;
+esac
+
 # --- Cleanup: every spawn above that passed the guards genuinely launched a real detached
 # `claude -p` call (this machine's own install, no stub). Give them a moment, then sweep whatever
 # they left in the real HOME's own state dir and scratch space so this test suite does not leave

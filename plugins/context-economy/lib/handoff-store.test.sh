@@ -206,6 +206,75 @@ case "$HANDOFF_OTHERS" in
     *)          pass 'an empty candidate is not listed either' ;;
 esac
 
+# --- D23 — the skeleton and the progress field ------------------------------
+#
+# handoff_store_write_skeleton is the WRITE leg's half of the compaction-race fix: called
+# synchronously, before any detached authoring turn exists, so a reader arriving mid-write finds
+# an honest placeholder rather than silence or a stale `complete` document. handoff_store_set_progress
+# is the READ leg's half: it flips `progress:` after a document has actually been shown to someone.
+
+skel="$fixture/skeleton.md"
+printf '# Handoff — old real content\nbranch: old\ncheckout: /c/old\ncompacted: no\nstatus: ok\nprogress: complete\n\nstale body\n' > "$skel"
+# Act
+handoff_store_write_skeleton "$skel" /c/checkouts/target feature/x
+# Assert
+assert_eq 'the skeleton carries progress: writing' 'writing' "$(handoff_store_field "$skel" progress)"
+assert_eq 'the skeleton carries the checkout it was given' '/c/checkouts/target' "$(handoff_store_field "$skel" checkout)"
+assert_eq 'the skeleton carries the branch it was given' 'feature/x' "$(handoff_store_field "$skel" branch)"
+case "$(cat "$skel")" in
+    *'stale body'*) fail 'the skeleton replaces prior real content, not appends to it' 'old body survived' ;;
+    *)              pass 'the skeleton replaces prior real content, not appends to it' ;;
+esac
+for label_pattern in '### Decisions' '### Dead ends' '### Traps' '## Next' '## Pointers'; do
+    case "$(cat "$skel")" in
+        *"$label_pattern"*) pass "the skeleton's required section '$label_pattern' is present" ;;
+        *) fail "the skeleton's required section '$label_pattern' is present" 'missing from skeleton' ;;
+    esac
+done
+
+# handoff_store_set_progress — replacing an existing field
+f=$(put /c/checkouts/emmie EMMIE-0900 EMMIE-0900 /c/worktrees/emmie-900)
+printf 'progress: complete\n' >> "$f"
+# Act
+handoff_store_set_progress "$f" consumed
+# Assert
+assert_eq 'set_progress replaces an existing progress: line' 'consumed' "$(handoff_store_field "$f" progress)"
+assert_eq 'set_progress leaves the other envelope fields alone' 'EMMIE-0900' "$(handoff_store_field "$f" branch)"
+
+# handoff_store_set_progress — inserting when the field is absent entirely (a pre-D23 handoff)
+legacy=$(put /c/checkouts/kendo KENDO-1 KENDO-1 /c/checkouts/kendo)
+assert_eq 'a pre-D23 fixture has no progress: field yet' '' "$(handoff_store_field "$legacy" progress)"
+# Act
+handoff_store_set_progress "$legacy" consumed
+# Assert
+assert_eq 'set_progress inserts the field when the envelope has none' 'consumed' "$(handoff_store_field "$legacy" progress)"
+
+# Bounded to the head, same rule as handoff_store_field itself — a body that happens to contain
+# a progress:-shaped line must never be mistaken for the document's own header.
+hostile=$(put /c/checkouts/mc body-progress body-progress /c/checkouts/mc)
+{ printf '\n\n'; for i in $(seq 30); do echo "- padding $i"; done; echo 'progress: complete'; } >> "$hostile"
+body_before=$(tail -1 "$hostile")
+# Act
+handoff_store_set_progress "$hostile" consumed
+# Assert
+assert_eq 'set_progress does not touch a progress:-shaped line deep in the body' \
+    "$body_before" "$(tail -1 "$hostile")"
+assert_eq 'set_progress still inserted its own header field, ahead of the body decoy' \
+    'consumed' "$(handoff_store_field "$hostile" progress)"
+
+# The rest of the file, including hostile characters, must survive byte-for-byte.
+hostile_body=$(put /c/checkouts/mc hostile-body hostile-body /c/checkouts/mc)
+printf '\nA tab\tand a backslash \\ and a backtick ` and a "quote".\r\n' >> "$hostile_body"
+# Act
+handoff_store_set_progress "$hostile_body" consumed
+# Assert
+after_body=$(tail -1 "$hostile_body")
+case "$after_body" in
+    *'A tab'*'backslash \'*'backtick `'*'"quote".'*)
+        pass 'set_progress preserves hostile body characters untouched' ;;
+    *) fail 'set_progress preserves hostile body characters untouched' "got [$after_body]" ;;
+esac
+
 # A store that does not exist at all is the state of every machine before the first handoff.
 # Act
 HANDOFF_STORE_DIR="$fixture/no-such-store" handoff_store_resolve /c/checkouts/mc main

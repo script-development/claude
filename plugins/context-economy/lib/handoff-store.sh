@@ -141,6 +141,92 @@ handoff_store_field() {
         | grep -m1 -E "^$2:" | sed -E "s/^$2:[[:space:]]*//" | sed -E 's/[[:space:]]+$//'
 }
 
+# handoff_store_write_skeleton <path> <checkout> <branch>
+#
+# The WRITE leg's half of D23's compaction-race fix (docs/design.md): overwrites <path> with a
+# bare, mostly-empty document whose only load-bearing content is `progress: writing`. Called
+# SYNCHRONOUSLY, before the detached authoring turn is even spawned (hooks/handoff-fork-write.sh),
+# so the file a session's own compaction finds already says "a fresh one is coming" rather than
+# either nothing (silently read as "nothing to resume") or a stale `complete` document from a
+# previous cycle (read as if it covers work it never saw). Unconditional: called every time
+# `PreCompact` fires, whether or not anything real was here before -- an unread `complete` handoff
+# lost this way is an accepted casualty of reusing one file per target, not a new failure D23
+# introduces (the store already worked this way before this field existed).
+#
+# Deliberately passes the FULL format contract (verify-handoff.sh): "None." in each required
+# subsection, an empty Pointers fence. Nothing today runs the gate against a `writing` placeholder
+# on purpose -- the read leg checks `progress:` before ever reaching the gate -- but a skeleton
+# that would fail its own document's contract if someone opened `verify-handoff.sh` against it by
+# hand is a worse failure mode than the few extra lines cost to avoid it.
+handoff_store_write_skeleton() {
+    local path=$1 checkout=$2 branch=$3 tmp
+    tmp="$path.tmp.$$"
+    {
+        printf '# Handoff — (placeholder: a fresh write is in progress)\n'
+        printf 'branch: %s\n' "$branch"
+        printf 'checkout: %s\n' "$checkout"
+        printf 'compacted: unknown\n'
+        printf 'status: placeholder -- not yet authored\n'
+        printf 'progress: writing\n'
+        cat <<'BODY'
+
+## Do not re-derive
+
+### Decisions
+None.
+
+### Dead ends
+None.
+
+### Traps
+This is a placeholder, not a handoff. A detached process is authoring the real one; if this file
+still says `progress: writing` a long time from now, that authoring run likely died before
+finishing -- treat it as abandoned rather than waiting on it forever.
+
+## Next
+None.
+
+## Pointers
+
+```
+```
+BODY
+    } > "$tmp" 2>/dev/null && mv -f "$tmp" "$path" 2>/dev/null
+}
+
+# handoff_store_set_progress <file> <value>
+#
+# The READ leg's half of D23: rewrites the ONE header field in place, after a `complete` (or
+# missing/legacy) handoff has actually been shown to a reader -- never on a `writing` placeholder,
+# which the read leg does not call this for at all (see hooks/handoff-inject.sh). Bounded to the
+# envelope for the same reason handoff_store_field reads only the head: a `progress:`-shaped line
+# appearing later is body text, not this document's own header, and must never be rewritten.
+#
+# Replaces an existing `progress:` line if the envelope already has one; inserts a new line right
+# after `status:` if it does not -- the missing case is every handoff written before this field
+# existed, and this is also how such a document acquires the field going forward, rather than
+# staying permanently unreadable by anything that expects it.
+#
+# Atomic: composed into a sibling temp file, then renamed over the original, so a reader mid-`cat`
+# of the file never sees a half-written header. Degrades silently on failure (unwritable file, no
+# `status:` line to anchor an insert on a malformed document) -- callers already treat this as
+# best-effort bookkeeping, not something to fail a hook over.
+handoff_store_set_progress() {
+    local file=$1 value=$2 tmp
+    [ -w "$file" ] || return 1
+    tmp="$file.tmp.$$"
+    if head -20 "$file" 2>/dev/null | grep -qE '^progress:'; then
+        awk -v n=20 -v val="progress: $value" \
+            'NR <= n && /^progress:/ { print val; next } { print }' \
+            "$file" > "$tmp" 2>/dev/null
+    else
+        awk -v n=20 -v val="progress: $value" \
+            'NR <= n && /^status:/ { print; print val; next } { print }' \
+            "$file" > "$tmp" 2>/dev/null
+    fi
+    mv -f "$tmp" "$file" 2>/dev/null
+}
+
 # handoff_store_resolve <session-main-worktree> <session-branch-slug>
 #
 # Picks the handoff to surface, and sets:

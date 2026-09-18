@@ -164,6 +164,44 @@ if [ -n "$handoff" ] && [ -r "$handoff" ] && [ -s "$handoff" ]; then
     handoff_present=true
 fi
 
+# ── D23: is this a real handoff, or the write leg's own in-flight placeholder? ─────────────
+#
+# `handoff_present=true` above only means "a non-empty file exists at the resolved path" — it
+# says nothing about whether that file is a document to inject or the bare `progress: writing`
+# skeleton `hooks/handoff-fork-write.sh` writes SYNCHRONOUSLY, before its own detached authoring
+# turn has produced anything (`docs/design.md` D23). Checked here, once, before the gate or the
+# body-injection logic below ever sees the file: neither should run against a placeholder, and a
+# reader is owed a different message than either "here is a handoff" or silence.
+#
+# `writing_since` carries the raw epoch rather than a phrase — `human_gap()` is not defined yet at
+# this point in the script, and compose() (which is) already has everything it needs to render it.
+handoff_progress=""
+writing_active=false
+writing_abandoned=false
+writing_since=""
+if [ "$handoff_present" = true ] && [ -r "$hook_dir/../lib/handoff-store.sh" ]; then
+    handoff_progress=$(handoff_store_field "$handoff" progress)
+    if [ "$handoff_progress" = writing ]; then
+        handoff_present=false   # never gate or inject a placeholder's own (deliberately empty) body
+        writing_since=$(handoff_store_mtime "$handoff" 2>/dev/null)
+        case "${writing_since:-}" in
+            ''|*[!0-9]*)
+                # An unreadable mtime cannot support an age judgement either way — same "an
+                # admitted gap beats an invented figure" rule age_phrase follows further down.
+                writing_active=true
+                writing_since=""
+                ;;
+            *)
+                if [ $(( $(date +%s) - writing_since )) -le "${CTX_FORK_TIMEOUT_SECONDS:-600}" ]; then
+                    writing_active=true
+                else
+                    writing_abandoned=true
+                fi
+                ;;
+        esac
+    fi
+fi
+
 # The tree the citations resolve against. The document's own `checkout:` header is the
 # authority; `here` is the fallback, and is right only when the session happens to be standing
 # in the work's own repository. Never the other way round: preferring `here` would aim the gate
@@ -310,8 +348,10 @@ fi
 
 # Nothing to say. On `clear`, this is the ordinary case: nobody handed off, nobody cleared
 # mid-work. On `compact`, it means the write trigger never even asked for a handoff this
-# session AND none exists for this branch -- also nothing new to report.
-if [ "$handoff_present" = false ] && [ "$marker_present" = false ] && [ "$trigger_ever_fired" = false ]; then
+# session AND none exists for this branch -- also nothing new to report. An in-flight or
+# abandoned write (D23) is always something to report, regardless of source_kind.
+if [ "$handoff_present" = false ] && [ "$marker_present" = false ] && [ "$trigger_ever_fired" = false ] \
+   && [ "$writing_active" = false ] && [ "$writing_abandoned" = false ]; then
     exit 0
 fi
 
@@ -490,6 +530,38 @@ compose() {
         printf -- '---\n\n'
     fi
 
+    # ── D23: an in-flight or abandoned write, instead of a handoff body ────────────────────
+    #
+    # Neither branch below reads the placeholder's own (deliberately near-empty) content — it is
+    # a signal, not a document. `writing_since` is empty when the mtime could not be read, which
+    # `human_gap` cannot render, so that case gets a plain "an unknown time" rather than arithmetic
+    # on an empty string.
+    if [ "$writing_active" = true ] || [ "$writing_abandoned" = true ]; then
+        if [ -n "$writing_since" ]; then
+            since_phrase="$(human_gap $(( $(date +%s) - writing_since ))) ago"
+        else
+            since_phrase="an unknown time ago (mtime unreadable)"
+        fi
+        if [ "$writing_active" = true ]; then
+            printf -- '## A fresh handoff is being authored\n\n'
+            printf 'A handoff for `%s` in `%s` is being written right now — started %s, not yet\n' \
+                "$ref" "$here" "$since_phrase"
+            printf 'finished. `%s` is a placeholder (`progress: writing`); there is nothing to act on\n' "$handoff"
+            printf 'in it yet.\n\n'
+            printf 'Check back later: read that file directly, or re-run `/handoff --read` once its\n'
+            printf '`progress:` field says `complete`. It is not ready before then.\n\n'
+        else
+            printf -- '## A handoff write appears to have failed\n\n'
+            printf 'A handoff for `%s` in `%s` started being written %s and never completed — past\n' \
+                "$ref" "$here" "$since_phrase"
+            printf 'the %ss it should have taken (`CTX_FORK_TIMEOUT_SECONDS`). Treat it as abandoned:\n' \
+                "${CTX_FORK_TIMEOUT_SECONDS:-600}"
+            printf 'there is no fresh handoff to read for this branch. Run `/handoff` yourself if you\n'
+            printf 'need one.\n\n'
+        fi
+        printf -- '---\n\n'
+    fi
+
     if [ "$handoff_present" = true ]; then
         # WHICH handoff, and WHY THIS ONE. The store holds handoffs for every target on this
         # machine, so naming the branch is no longer enough to identify what arrived: an `exact`
@@ -500,6 +572,10 @@ compose() {
             exact)
                 printf 'A handoff for the current branch (`%s`) was found at\n' "$ref"
                 printf '`%s`, last written %s, and is reproduced in full below.\n\n' "$handoff" "$age_phrase"
+                if [ "$handoff_progress" = consumed ]; then
+                    printf '(`progress: consumed` — this is the same document already delivered at an earlier\n'
+                    printf 'reset; nothing new has been written for this branch since.)\n\n'
+                fi
                 ;;
             recent)
                 printf 'No handoff exists for this session'"'"'s own branch (`%s`). **The most recent one in\n' "$ref"
@@ -573,5 +649,15 @@ compose | jq -Rs --arg e "SessionStart" \
 # Consumed only after a successful emit, so a hook that died composing does not also destroy the
 # only record that the clear happened.
 [ "$marker_present" = true ] && rm -f "$marker" 2>/dev/null
+
+# D23: flip `complete` (or absent, a pre-D23 handoff) to `consumed` now that the document has
+# actually been shown to a reader -- never on a `writing` placeholder (handoff_present is false
+# for that case, so this block never runs for it) and never on a `recent` pick, which is a guess
+# about someone else's branch and not this reader's to mutate. Best-effort: failure here loses
+# nothing but the "already seen" framing on the next reset, not the handoff itself.
+if [ "$handoff_present" = true ] && [ "$handoff_pick" = exact ] && [ "$handoff_progress" != consumed ] \
+   && [ -r "$hook_dir/../lib/handoff-store.sh" ]; then
+    handoff_store_set_progress "$handoff" consumed 2>/dev/null
+fi
 
 exit 0

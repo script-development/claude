@@ -783,6 +783,146 @@ assert_context_has 'the clear is still reported when its guessed handoff was rej
 git -C "$repo" checkout -q main
 rm -f "$store/$(store_name "$other_main" other-work)" "$state"/*.json
 
+# --- D23 — the write leg's placeholder, and the consumed handshake ---------
+#
+# hooks/handoff-fork-write.sh writes a `progress: writing` placeholder synchronously, before its
+# detached authoring turn produces anything, to close the race where SessionStart(compact) reads
+# the store before that turn has finished. This hook must recognise that placeholder before it
+# ever reaches the gate or the body -- and must flip a genuine `complete` document to `consumed`
+# once it has actually shown it to a reader, so a later, no-op reset says so honestly.
+
+# write_progress_handoff <slug> <progress> [age-seconds] [target-main] [checkout] [branch]
+write_progress_handoff() {
+    local slug=$1 progress=$2 age=${3:-0} target=${4:-$main_git} checkout=${5:-$repo_top} branch=${6:-main}
+    local path="$store/$(store_name "$target" "$slug")"
+    {
+        printf '# Handoff — progress fixture\n'
+        printf 'branch: %s\ncheckout: %s\ncompacted: no\nstatus: fixture\nprogress: %s\n' \
+            "$branch" "$checkout" "$progress"
+        cat <<'EOF'
+
+## Do not re-derive
+
+### Decisions
+None.
+
+### Dead ends
+None.
+
+### Traps
+None.
+
+## Next
+None.
+
+## Pointers
+
+```
+```
+EOF
+    } > "$path"
+    if [ "$age" -ne 0 ]; then
+        touch -d "@$(( $(date +%s) - age ))" "$path" 2>/dev/null \
+            || touch -t "$(date -d "@$(( $(date +%s) - age ))" +%Y%m%d%H%M.%S)" "$path"
+    fi
+    printf '%s' "$path"
+}
+
+# This file's own assert_* helpers all inline their pass/fail bookkeeping; a couple of the cases
+# below need a bare pass/fail instead (asserting against the FILE on disk, not the injected
+# context), so those two get defined here rather than importing the sibling suites' convention
+# wholesale.
+pass() { passed=$((passed + 1)); echo "ok   $1"; }
+fail() { failed=$((failed + 1)); echo "FAIL $1 — $2"; }
+
+# Every case below resolves as an EXACT pick: `$repo` really is on `main` right now (the cross-repo
+# section above already returned it there), so the slug the hook derives from cwd really is `main`
+# — these fixtures MUST use that same slug, or handoff_store_resolve never finds them by exact
+# match at all. This section is the last thing in the suite to use the shared `main` fixture, so
+# overwriting it repeatedly below breaks nothing that runs after it.
+
+# `writing`, fresh: the ordinary in-flight case. Must not run the (stubbed) gate and must not
+# leak the placeholder's own body as if it were content.
+progress_path=$(write_progress_handoff main writing 0)
+assert_context_has 'a fresh `writing` placeholder says a handoff is being authored' \
+    'is being authored' "$(payload compact)" VERIFY_HANDOFF_GATE="$gate"
+assert_context_lacks 'a fresh `writing` placeholder never reaches the gate' \
+    'STUB GATE ran on' "$(payload compact)" VERIFY_HANDOFF_GATE="$gate"
+
+# `writing`, past CTX_FORK_TIMEOUT_SECONDS: the authoring turn almost certainly died.
+progress_path=$(write_progress_handoff main writing 10)
+assert_context_has 'a `writing` placeholder past the timeout reads as an abandoned write' \
+    'appears to have failed' "$(payload compact)" VERIFY_HANDOFF_GATE="$gate" CTX_FORK_TIMEOUT_SECONDS=1
+
+# `complete`, first time: injects normally, and the ON-DISK file is flipped to `consumed` once
+# shown to a reader -- never before.
+progress_path=$(write_progress_handoff main complete 0)
+out=$(run "$(payload compact)" VERIFY_HANDOFF_GATE="$gate")
+case "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext // empty')" in
+    *'progress fixture'*) pass 'a `complete` handoff is injected' ;;
+    *) fail 'a `complete` handoff is injected' 'body missing from injected context' ;;
+esac
+case "$(cat "$progress_path" 2>/dev/null)" in
+    *'progress: consumed'*) pass 'a `complete` handoff is flipped to consumed after being shown to a reader' ;;
+    *) fail 'a `complete` handoff is flipped to consumed after being shown to a reader' \
+        "got [$(cat "$progress_path" 2>/dev/null)]" ;;
+esac
+
+# `consumed`, already: still injected (an explicit ask, or a later reset, still wants the content)
+# but framed honestly as a repeat, not as news.
+assert_context_has 'an already-consumed handoff is still injected' \
+    'progress fixture' "$(payload compact)" VERIFY_HANDOFF_GATE="$gate"
+assert_context_has 'an already-consumed handoff says so, rather than reading as fresh news' \
+    'already delivered at an earlier' "$(payload compact)" VERIFY_HANDOFF_GATE="$gate"
+
+# A pre-D23 handoff (no progress: field at all) is treated as `complete` and, once shown, ALSO
+# acquires the field going forward -- this is how a document written before this feature existed
+# becomes field-complete rather than staying permanently unrecognised by anything that expects it.
+write_handoff main >/dev/null
+legacy_path="$store/$(store_name "$main_git" main)"
+run "$(payload compact)" VERIFY_HANDOFF_GATE="$gate" >/dev/null
+case "$(cat "$legacy_path" 2>/dev/null)" in
+    *'progress: consumed'*) pass 'a pre-D23 handoff with no progress: field acquires one after being read' ;;
+    *) fail 'a pre-D23 handoff with no progress: field acquires one after being read' \
+        "got [$(cat "$legacy_path" 2>/dev/null)]" ;;
+esac
+rm -f "$progress_path"
+
+# A `recent` (guessed, cross-repo) pick must never be mutated -- it is a guess about a DIFFERENT
+# branch's own handoff, not this reader's bookkeeping to touch.
+other_progress="$fixture/other-repo-2"
+mkdir -p "$other_progress"
+git -C "$other_progress" init -q -b feature/guess
+git -C "$other_progress" config user.email t@example.com
+git -C "$other_progress" config user.name  Test
+git -C "$other_progress" commit -q --allow-empty -m init
+op_main=$(git -C "$other_progress" worktree list | head -1 | awk '{print $1}')
+op_top=$(git -C "$other_progress" rev-parse --show-toplevel)
+guess_path=$(write_progress_handoff other-guess complete 0 "$op_main" "$op_top" feature/guess)
+git -C "$repo" checkout -q -b no-handoff-branch
+
+# Corroborate the guess (same rule the earlier cross-repo section exercises) so this actually
+# injects with handoff_pick=recent, rather than being demoted to nothing for lack of a marker --
+# the case worth testing is "injected as a guess, and still not mutated", not "not injected at all".
+guess_mtime=$(stat -c %Y "$guess_path" 2>/dev/null || stat -f %m "$guess_path" 2>/dev/null)
+jq -n --argjson hm "$guess_mtime" --argjson ee "$((guess_mtime + 60))" \
+    '{ended_at:"2026-09-18T00:00:00Z", ended_at_epoch:$ee, reason:"clear",
+      session_id:"prev-sess", transcript_path:"C:/x/prev.jsonl", branch:"no-handoff-branch",
+      resident_tokens:300000, handoff:{present:true,path:"x",mtime:$hm}, trigger_fired:true}' \
+    > "$state/$driving_key-no-handoff-branch.json"
+
+out=$(run "$(payload clear)" VERIFY_HANDOFF_GATE="$gate" LAST_CLEAR_STATE_DIR="$state")
+case "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext // empty')" in
+    *'That is a GUESS'*) pass 'the recent-pick scenario really is a guess, not an exact match' ;;
+    *) fail 'the recent-pick scenario really is a guess, not an exact match' 'guess wording absent — test setup is not exercising handoff_pick=recent' ;;
+esac
+case "$(cat "$guess_path" 2>/dev/null)" in
+    *'progress: complete'*) pass 'a recent (guessed) pick is never rewritten to consumed' ;;
+    *) fail 'a recent (guessed) pick is never rewritten to consumed' "got [$(cat "$guess_path" 2>/dev/null)]" ;;
+esac
+git -C "$repo" checkout -q main
+rm -rf "$other_progress" "$guess_path" "$state/$driving_key-no-handoff-branch.json"
+
 echo
 if [ "$failed" -gt 0 ]; then
     echo "FAILED: $failed of $((passed + failed)) assertions"

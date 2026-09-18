@@ -103,7 +103,7 @@ it from the shape below and let the tool correct you.
 
 ```
 # Handoff — <task>
-branch: / checkout: / compacted: / status:
+branch: / checkout: / compacted: / status: / progress:
                                     envelope + one-line orientation
 ## Do not re-derive                 the reason the file exists (heading only; a container)
 ### Decisions                       what was chosen AND what it beat
@@ -118,6 +118,19 @@ branch: / checkout: / compacted: / status:
   document is first-hand. If the session auto-compacted before writing, its decisions were
   reconstructed from a summary produced by the very process that drops them. `unknown` is a
   legitimate answer; omitting it is the only answer that tells a reader nothing.
+- `progress: writing | complete | consumed` says where THIS document is in its own write/read
+  cycle, not anything about the task (`docs/design.md` D23). It exists because the automated write
+  leg (`hooks/handoff-fork-write.sh`) authors out of band: it writes a bare placeholder with
+  `progress: writing` *before* the real content even starts being composed, so a `SessionStart`
+  read racing against that authoring turn finds an honest "not ready yet" instead of either
+  silence or a stale document from a previous cycle. A live write — this skill's own Step 2,
+  whether invoked by a human or the detached turn — never writes `writing`: by the time Step 2
+  runs, the document is composed in full in one `Write` call, so it goes straight to
+  `progress: complete`. The read leg then flips `complete` to `consumed` once it has actually
+  shown the document to a reader, so a later reset on the same branch, with nothing new written
+  since, can say so honestly rather than presenting the same content as if it were news. **Not
+  gate-required** — a handoff written before this field existed has none, and the gate and every
+  reader treat an absent `progress:` the same as `complete`, so nothing already on disk breaks.
 - **Decisions record what the decision beat**, not just what it was. A decision without its rejected
   alternative gets re-litigated by the next session, which is the expensive failure this document
   exists to prevent.
@@ -257,6 +270,11 @@ One `Write` call, to the path Step 1 printed. Author in section order, which is 
 order: do Decisions, Dead ends and Traps *first* and best, while there is still budget for them.
 `## Next` and `## Pointers` are the cheap half, and the half that survives without you.
 
+Write `progress: complete`. This step composes the whole document in one call, so it is never
+`writing` — that value belongs only to the placeholder `hooks/handoff-fork-write.sh` writes
+*before* this step runs, as its own separate, earlier act (`docs/design.md` D23). By the time
+Step 2 runs at all, whatever this call produces supersedes that placeholder outright.
+
 Recall the one rule — if a sentence needs a file open to write, it is a Pointer.
 
 ## Write mode — Step 3: verify
@@ -353,6 +371,21 @@ Newest first. Pick by the branch and checkout, not by position: several may be l
 the SessionStart hook already surfaced one it says in its own output whether that was an exact match
 or a guess made on recency.
 
+**Check `progress:` before verifying anything** (`docs/design.md` D23):
+
+```bash
+grep -m1 '^progress:' "$handoff"
+```
+
+- **Absent, `complete`, or `consumed`** — a real document. Proceed below.
+- **`writing`** — the automated write leg's placeholder, mid-authoring. Compare its mtime against
+  `CTX_FORK_TIMEOUT_SECONDS` (default 600, `lib/context-economy/context-thresholds.sh`): within
+  that window, a fresh handoff is plausibly still being composed — say so and stop here rather than
+  verifying or reading a document that is deliberately near-empty; past it, the authoring run has
+  most likely died before finishing — say that instead, and proceed as if no handoff exists for
+  this target at all. Either way, do not treat the placeholder's own body as content to act on —
+  it is a signal, not a handoff.
+
 Then verify with **one argument**:
 
 ```bash
@@ -394,6 +427,14 @@ Then start the first `## Next` item that is **not** blocked on a task that has y
 simply item 1. A blocked step names the task it waits on and what to do if it never lands; check that
 before assuming the step is ready. Say which path the run took: verified clean, verified with rot in
 listed pointers, or unverified.
+
+If `progress:` read `complete` in Step 1, flip it to `consumed` now, one small edit to the
+envelope line only — the document has just been shown to a reader, so leaving it `complete` would
+let a later reset on this branch present the same, already-seen content as if it were news
+(`docs/design.md` D23). Skip this if it already read `consumed`, `writing` was handled in Step 1
+and never reaches here, and skip it too on a `recent` (guessed, cross-repo) pick — this is
+bookkeeping for THIS branch's own handoff, not something a guess on someone else's is entitled to
+mutate.
 
 ## Feedback — a deliberate divergence, stated so it does not read as an omission
 

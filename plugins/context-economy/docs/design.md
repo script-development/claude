@@ -1759,7 +1759,122 @@ this list rather than by recollection.
 
 ---
 
-## Build order
+### D23 — Closing the compaction race D22 opened: a `progress:` header field, and a synchronous placeholder written before the detached turn even exists
+
+Built 2026-09-18, on explicit instruction (v0.5.0's stated goal): D22 detached the write from
+compaction, and in doing so opened a race it never closed. `hooks/handoff-fork-write.sh` returns
+immediately after launching the detached authoring turn — but compaction itself, and the
+`SessionStart(source: compact)` read leg that follows it, do not wait for that turn either. So a
+reader can arrive before the turn has produced anything, and until this entry, had no way to tell
+"nothing was ever asked for" apart from "asked for, not landed yet" — or worse, could find a
+`complete` handoff left over from a PREVIOUS compaction cycle and read it as if it covered THIS
+one, exactly the false-coverage failure `docs/design.md`'s whole `checkout:`/`compacted:` apparatus
+exists to prevent everywhere else.
+
+**The mechanism: a three-state handshake, `progress: writing | complete | consumed`.**
+
+1. `hooks/handoff-fork-write.sh`, BEFORE spawning anything, computes the target path and calls
+   `lib/handoff-store.sh`'s new `handoff_store_write_skeleton` — a bare, mostly-empty document
+   whose only load-bearing content is `progress: writing`, plus enough structure to pass
+   `verify-handoff.sh`'s own contract (`None.` in each required subsection, an empty Pointers
+   fence) if anyone ever ran the gate against it directly, which nothing does on purpose.
+2. The detached turn, once it actually finishes, overwrites the same path in full via its own
+   Step 2 `Write` call — `skills/handoff/SKILL.md`'s format now includes `progress: complete` as
+   part of that one call, so a live authoring pass (whether the detached turn or a human) never
+   writes `writing` at all; only the synchronous placeholder in step 1 does.
+3. `hooks/handoff-inject.sh`, once it has actually shown a `complete` document to a reader, calls
+   the new `handoff_store_set_progress` to flip it to `consumed` — so a LATER reset on the same
+   branch, with nothing new written since, can say so honestly ("already delivered") instead of
+   presenting identical content as if it were news.
+
+**Why the skeleton is written by the hook itself, in plain bash, and not as the detached turn's
+own first action.** This was the one open sub-question, settled by tracing what actually
+guarantees ordering rather than what probably would, asked and answered directly rather than
+measured by racing it: `hooks/handoff-fork-write.sh` is a synchronous script that must fully return before the
+harness proceeds to compaction — so a write placed IN it, before the `nohup ... & disown` line, is
+not a race this hook can lose. It is program order. Had the placeholder instead been the detached
+turn's OWN first action, the ordering would depend on a cold `claude -p` process (subject to this
+same file's own documented startup cost — the ~15-MCP-server initialization `--strict-mcp-config`
+exists to cut, and the flatly unreliable `timeout` behaviour on this Windows/Git-Bash machine)
+beating compaction and the very next `SessionStart` hook to the punch. "Virtually always wins" is
+exactly the kind of assumption this document has been burned by before (finding #13's double
+`PreCompact` fire; D22's own three failed detached-turn attempts before a clean one). Writing it in
+the hook costs nothing extra: the hook already needs `store` sourced for its own gate/skill/store
+probe, and deriving `main`/`ref`/`slug` is a few more `git` calls it did not previously make (that
+work used to happen only inside the detached turn's own Step 1, per its prompt; now it happens
+twice — once here, cheaply, and once again inside the detached turn, which still needs it for the
+real write).
+
+**Why unconditional, not "only if nothing is there yet."** Every `PreCompact` firing that reaches
+the write step overwrites whatever is at the target path — `complete`, `consumed`, or a stale
+`writing` from a run that died — with a fresh placeholder. This can destroy an unread `complete`
+handoff nobody got to see. Accepted deliberately: the store already worked this way before this
+field existed (one file per target, each write replacing the last), and a conditional reset would
+have to answer "how do I know nothing important is here" from inside a hook with no way to ask a
+human — the same "degrade toward the answer that is at least honest" reasoning [D16](#d16)
+already uses for `compacted: unknown`.
+
+**Why THREE states, not two.** A `writing` placeholder collapsed onto the same value the read leg
+would write after consuming a `complete` document would make "actively being authored right now"
+indistinguishable from "nothing new since it was last shown to someone" — exactly the ambiguity
+this entry exists to remove. Explored directly while shaping this, in place of guessing:
+
+- `writing` → `complete`: the write leg's own two acts, always in that order, always overwriting
+  in full.
+- `complete` → `consumed`: the read leg's one act, and ONLY after a successful injection —
+  "consumed only after a successful emit" is the same rule the `/clear` marker's own `rm -f`
+  already follows in this file, applied to a rewrite instead of a deletion.
+- Absent (every handoff written before this field existed) is treated identically to `complete`
+  everywhere that reads it, and — once shown to a reader — acquires the field going forward. **Not
+  gate-required**, deliberately: making it required would fail every handoff already on disk the
+  moment this ships, for a field whose absence has one unambiguous, safe interpretation. Compare
+  `checkout:`/`compacted:`/`branch:`/`status:`, which ARE gate-required because their absence has
+  no safe default to fall back to.
+
+**Why `consumed` never fires on a `recent` (guessed, cross-repo) pick.** `handoff-inject.sh`'s
+resolver already distinguishes an `exact` pick (this session's own branch) from a `recent` one (a
+guess, made on recency alone, about some OTHER branch's handoff — see `lib/handoff-store.sh`'s own
+`handoff_store_resolve`). Mutating a file based on a guess about it would let one session's mistaken
+pick corrupt another branch's own bookkeeping. So the consumed-rewrite is gated on
+`handoff_pick = exact`, full stop — a `recent` pick is shown (it may still be exactly what the
+reader needs) but never written back to.
+
+**What a `writing` placeholder means to a reader, and how long it means it.** `hooks/handoff-inject.sh`
+checks `progress:` before the gate or the body ever run. `writing` within `CTX_FORK_TIMEOUT_SECONDS`
+(now declared once, in `lib/context-economy/context-thresholds.sh`, shared between the write leg's
+own kill bound and this judgement — see that file's own comment) reads as "still plausibly in
+flight," and the reader is told to check back rather than told a handoff is ready. Past that
+threshold, the same file's own admission that `timeout` is not RELIABLY enforced on this platform
+means the honest reading is "the authoring run most likely died before finishing," not "still
+running, just slow" — so the read leg reports it as abandoned and proceeds as if no handoff exists
+for this branch at all, rather than waiting on a process that already lost. Either verdict is a
+judgement call stated as one, never a hard fact — the same discipline the age-in-days phrase
+elsewhere in this hook already follows.
+
+**Verified.** `lib/handoff-store.test.sh` (8 new assertions): the skeleton carries the given
+checkout/branch and `progress: writing`, replaces prior real content rather than appending to it,
+and satisfies every required section label; `handoff_store_set_progress` replaces an existing
+`progress:` line, inserts one when absent, stays bounded to the envelope (a body line that merely
+looks like a header is left alone), and preserves hostile body content — tabs, backslashes,
+backticks, quotes — byte-for-byte. `hooks/handoff-fork-write.test.sh` (5 new assertions, real
+firings against this machine's own `claude`, same as the suite's existing dedup-lock cases): a
+firing that passes every guard writes the skeleton at the exact resolved store path with the right
+`checkout:`/`branch:`, and a REAL, already-`complete` handoff sitting there is unconditionally
+reset to `writing` on the next firing. `hooks/handoff-inject.test.sh` (13 new assertions): a fresh
+`writing` placeholder is reported as in-flight and never reaches the (stubbed) gate; one past the
+timeout is reported as abandoned; a `complete` handoff is injected and then flipped to `consumed`
+on disk; an already-`consumed` handoff is still injected but framed as a repeat; a legacy handoff
+with no `progress:` field acquires one after being read; a `recent` (guessed) pick is shown but
+never rewritten. All three suites' pre-existing assertions still pass unchanged — the fixtures that
+never touch `progress:` are read as `complete` by default, exactly as designed.
+
+**What this does not cover.** No real end-to-end run has yet raced a genuine detached authoring
+turn against a genuine compaction on this machine and observed the placeholder actually being read
+mid-write by a live `SessionStart(source: compact)` hook — D22's own account of getting a real
+detached turn to complete at all took five attempts and several upstream fixes, and this entry adds
+a new step ahead of all of them without yet having watched it survive contact with one of those
+runs. The mechanism is verified in isolation (three suites, above); it has not yet been verified
+in the wild the way D22 eventually was.
 
 1. ~~`verify-citations` generalisation~~ — **done**, 2026-08-21. `tools/verify-citations.sh` +
    `tools/verify-citations.test.sh`, 50 assertions passing. Scope per [D4](#d4), layout per

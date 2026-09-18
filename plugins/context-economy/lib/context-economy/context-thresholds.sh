@@ -418,3 +418,21 @@ CTX_CHARS_PER_TOKEN_X100=268
 # verdict a reader acts on. THIS NUMBER THEREFORE GOVERNS THE MANUAL PATH, where a person ran
 # /handoff at a moment of their own choosing and the gap really is a free variable worth judging.
 CTX_HANDOFF_ACCEPTABLE_GAP_TOKENS=10350
+
+# ── The fork write's timeout, and the read leg's abandoned-write threshold (D23) ──────────
+#
+# ONE number, TWO consumers, deliberately: `hooks/handoff-fork-write.sh` uses it as the detached
+# turn's own `timeout` bound; `hooks/handoff-inject.sh` uses the SAME number to decide whether a
+# `progress: writing` placeholder (docs/design.md D23) is still plausibly in flight or has been
+# sitting there long enough that the authoring turn almost certainly died before finishing. Two
+# copies of this number would let the read leg's patience drift out of step with the write leg's
+# own kill bound -- exactly the drift this file exists to prevent everywhere else.
+#
+# `${CTX_FORK_TIMEOUT_SECONDS:-600}` rather than a bare assignment: this line must not clobber an
+# operator's own override if it is already exported, since sourcing this file after the export
+# would otherwise win and silently discard it. Read `hooks/handoff-fork-write.sh`'s own header for
+# why 600s is not a reliably ENFORCED bound on every platform this runs on (`timeout` was observed
+# still running well past it once, on Windows/Git-Bash) -- which is precisely why the read leg
+# treats crossing this threshold as "likely abandoned", a probabilistic judgement call for a
+# reader to act on, never a hard fact.
+CTX_FORK_TIMEOUT_SECONDS=${CTX_FORK_TIMEOUT_SECONDS:-600}
