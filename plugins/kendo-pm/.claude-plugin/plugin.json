@@ -1,8 +1,8 @@
 {
   "name": "kendo-pm",
   "displayName": "Kendo PM",
-  "version": "0.2.0",
-  "description": "Kendo project-management skills bundled into one installable plugin, for any project using Kendo (https://kendo.dev) for issue tracking. Requires the Kendo MCP server or the kendo CLI. Currently: kendo-cli, kendo-mcp.",
+  "version": "0.3.0",
+  "description": "Kendo project-management skills bundled into one installable plugin, for any project using Kendo (https://kendo.dev) for issue tracking. Requires the Kendo MCP server or the kendo CLI. Currently: kendo-cli, kendo-mcp, triage-reports.",
   "keywords": [
     "kendo",
     "project-management",
@@ -12,7 +12,9 @@
     "tracker",
     "board",
     "sprints",
-    "epics"
+    "epics",
+    "triage",
+    "reports"
   ],
   "author": {
     "name": "script-development"

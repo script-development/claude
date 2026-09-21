@@ -70,11 +70,37 @@ this plugin ships on its own. Revisit only if a fact turns out to make no sense 
   plugin, so the link survives an independent install the way it wouldn't have across plugin
   boundaries (see D1's rejected alternative). `kendo-pm` bumped to 0.2.0.
 
+- **`triage-reports`** — the first `kendo-pm` skill to actually need a
+  `.claude/project-context.md` field: reused `issue_tracker_project_id` (D14, from the parent
+  plan's template) for its six `{{PROJECT_ID}}` occurrences, resolving the "Out" item below.
+  Falls back to `kendo-mcp`'s own `kendo://projects` discovery + asking the user when unset,
+  rather than failing — the same "ask, don't guess" shape used elsewhere in this rework.
+  Reading the field is **not** a runtime dependency on `core-skills` being installed: it's a
+  plain scalar in a project-owned file, not a call into another plugin's skill (contrast the
+  still-open `/newbranch` question on `prepare-issue`, which genuinely is one). Swapped the
+  three `{{ISSUE_KEY_PREFIX}}-XXXX` occurrences for `PROJ-XXXX`, matching `kendo-mcp`'s
+  convention. Its `references/decisions-log-template.md` and the `docs/triage/decisions.md`
+  output path shipped unchanged — the path is explicitly a fixed cross-consumer convention in
+  the skill's own text, not a project-specific fact to externalize. `kendo-pm`'s own README
+  gained a real `.claude/project-context.md` section (previously speculative, now describing an
+  actual reader). `kendo-pm` bumped to 0.3.0.
+
+### Paused
+
+- **`prepare-issue`** — picked up, then paused before any edits landed: it unconditionally
+  invokes `/newbranch` (`core-skills`) once Step 5's repo-state check finds no existing branch —
+  a hard dependency under the workflow's Step 5b (repo-state-gated, not a developer
+  confirmation), and the first case in this plugin of a genuine *runtime* cross-plugin
+  dependency (unlike `triage-reports`' field reuse above, this really does need `core-skills`
+  installed for that path to work). User wants to think about how to handle it before
+  proceeding — see `docs/plans/plugin-skills-rework-kendo-pm/DECISIONS.md` for the options
+  raised, none chosen yet. Also flagged during the read-through, not yet acted on: Step 7 Option
+  C hardcodes the new-worktree path (`../{worktree_name}`) rather than reading `worktree_dir`,
+  but that field's `{slug}`-substitution contract doesn't obviously fit this skill's `{N}`-based
+  naming — needs the same "does the shape actually fit" check `plan-directory.md` already warns
+  about for `plan_dir`, not an automatic reuse.
+
 ### Out (open questions — not resolved yet)
 
-- **Whether any remaining Kendo PM skill needs a `kendo-pm`-scoped `.claude/project-context.md`
-  field of its own**, and if so, which section of `core-skills`' template it lands under (see
-  *Rollout approach* above). Not decided speculatively — resolve when the first skill that
-  actually needs one converts.
 - **Fate of `skills/kendo-mcp/` and its siblings** (the pre-existing catalog copies), same open
   question the parent plan already carries for `catchup`/`worktree` — left in place for now.
