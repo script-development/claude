@@ -257,15 +257,43 @@ session that never made it into that one line (the plugin's own README and `plug
 both kept current; only the catalog root's summary row lagged). Same two-tier staleness pattern
 D24/D25 already flagged for "used by" comments, one level up — see D26 in `DECISIONS.md`.
 
+### `pr` — needed zero new fields
+
+Converted. Every one of its four catalog placeholder tokens resolved by **reusing** an existing
+field or fixing an internal inconsistency — no new `project-context.md` surface at all:
+
+- **`{{ISSUE_KEY_PREFIX}}`** (Step 3, issue feedback) → the same generic issue-key-shaped regex
+  (`[A-Z]+-\d+`) `catchup` and `plan-directory.md` already use, combined with
+  `issue_tracker_skill` (D8) to decide whether to run the step at all (`none`, or no such prefix
+  on the branch, skips it silently).
+- **`{{PROJECT_ID}}`** (Step 3, tracker search scope) → `issue_tracker_project_id` (D14).
+- **`{{DOC_PATHS}}`** (Step 4, docs-accuracy trigger and PR-body comment) → `doc_paths` (D26),
+  read first with the same "unset skips the whole gate" behaviour `review-branch` established.
+- **`{{DEFAULT_BRANCH}}`** (Step 4 only, both occurrences) → **not** a new field or a reuse of
+  `integration_branch`. Fixed as an internal inconsistency instead, the same category D13 found
+  in `commit`: Step 1 already resolves `<base>` generically (`gh pr view --json baseRefName`,
+  falling back to the remote's default branch) and states "every diff/log command below compares
+  against `origin/<base>`" — Step 4's docs-accuracy diff was the one command that didn't follow
+  that stated rule, diffing against the hard default branch instead. Fixed by reusing `<base>`,
+  which also makes the docs-accuracy diff correct on a stacked PR (a PR targeting a non-default
+  branch), where the old hardcoded-default read would have included the parent branch's own
+  already-reviewed diff. See D27 in `DECISIONS.md`.
+
+Also delegated Step 3's `mcp__kendo__*` tool calls to whatever `issue_tracker_skill` resolves to
+(documenting the `kendo-mcp` path concretely, same as `newbranch`/`task-writer` already do)
+instead of assuming Kendo unconditionally. Re-synced `pr`'s own fallback bullet into
+`plugins/core-skills/references/plan-directory.md`'s "Skill-specific fallbacks" section and
+widened its "Which root" note to cover both `review-branch` and `pr` as dual-pipeline consumers.
+
 ### Up next
 
-Every Generic Skill in the README's table is now converted into `core-skills`, except `pr`,
-`implement-plan`, and `fix-bug` — the remaining members of the agent/reviewer cluster, now
-unblocked by `review-branch`'s own conversion above — and `plan-feature`, a separate cluster
-(spawns `plan-reviewer` + `surface-reviewer`, unrelated to `review-branch`'s three) still
-deferred on its own terms. `fix-bug` depends on `pr` per its own note in the "Deferred" section
-above, so convert `pr` before `fix-bug`; `implement-plan` has no ordering constraint relative to
-either. `babysit` stays explicitly skipped (superseded by `shepard`).
+Every Generic Skill in the README's table is now converted into `core-skills`, except
+`implement-plan` and `fix-bug` — the remaining members of the agent/reviewer cluster, now
+unblocked by `review-branch`'s and `pr`'s own conversions above — and `plan-feature`, a separate
+cluster (spawns `plan-reviewer` + `surface-reviewer`, unrelated to `review-branch`'s three) still
+deferred on its own terms. `fix-bug` depended on `pr` per the earlier "Deferred" note above,
+which is now satisfied; `implement-plan` has no ordering constraint relative to it. `babysit`
+stays explicitly skipped (superseded by `shepard`).
 
 ### Tooling: auto-sync the project-context template pair
 

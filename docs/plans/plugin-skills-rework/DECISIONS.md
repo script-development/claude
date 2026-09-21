@@ -749,3 +749,57 @@ unblocked — `plan-feature` remains separately deferred (spawns `plan-reviewer`
 `surface-reviewer`, unrelated to this cluster). `integration_branch` now has five consumers
 across the catalog's `{{DEFAULT_BRANCH}}`-and-`integration_branch` shapes combined once `pr` and
 `implement-plan` convert and reuse it the same way, per this decision's own pattern.
+
+## D27 — `pr` needed zero new fields; its `{{DEFAULT_BRANCH}}` was an internal inconsistency,
+not a field to reuse
+
+**Chosen.** Converted `pr`. Three of its four catalog placeholder tokens resolved by reuse:
+`{{ISSUE_KEY_PREFIX}}` (Step 3) → the generic issue-key-shaped regex (`[A-Z]+-\d+`) `catchup`
+and `plan-directory.md` already use, gated on `issue_tracker_skill` (D8) the same way `newbranch`
+gates its own issue resolution; `{{PROJECT_ID}}` (Step 3) → `issue_tracker_project_id` (D14);
+`{{DOC_PATHS}}` (Step 4, both the trigger command and the PR-body template comment) → `doc_paths`
+(D26), including its "unset skips the whole gate" behaviour. The fourth, `{{DEFAULT_BRANCH}}`
+(Step 4 only, two occurrences), did **not** become a reuse of `integration_branch` — it was a
+latent internal inconsistency, fixed instead by reusing `<base>`, the value Step 1 already
+resolves generically (`gh pr view --json baseRefName`, falling back to the remote's default
+branch) and explicitly says every later diff/log command should use ("every diff/log command
+below compares against `origin/<base>`"). Step 4's docs-accuracy diff was the one command in the
+skill that didn't follow its own stated rule.
+
+Also delegated Step 3's tracker calls (`mcp__kendo__search-issues-tool`, the `kendo://issues/{id}`
+read, `mcp__kendo__add-comment-tool`) to whatever `issue_tracker_skill` resolves to, documenting
+the `kendo-mcp` path concretely and adding "a different named tracker skill: follow its own
+instructions" for the rest — the same shape `newbranch` (D14) and `task-writer` already
+established, rather than assuming Kendo's tool names unconditionally. Re-synced `pr`'s own
+fallback bullet into `plugins/core-skills/references/plan-directory.md`'s "Skill-specific
+fallbacks" section (D16/D26's standing re-sync instruction) and widened the "Which root" note to
+name both `review-branch` and `pr` as the plugin's two dual-pipeline (`docs/plans/` +
+`docs/bugs/`) consumers.
+
+**Why.** Reuse-before-add (workflow Step 2) accounts for three of the four tokens directly — no
+new template surface needed for concepts the template already names. The fourth needed a
+different kind of judgment: `{{DEFAULT_BRANCH}}` reads, at a glance, like the same concept
+`integration_branch` already covers (as it genuinely is in `review-branch`, D26) — but `pr`
+already has its own, more specific base-branch concept (`<base>`, Step 1), and the catalog
+original's use of `{{DEFAULT_BRANCH}}` in Step 4 contradicts Step 1's own stated invariant rather
+than expressing a deliberate second concept. This is the same shape D13 found in `commit` (a
+gathered fact the skill then didn't actually use downstream) — checking whether a placeholder
+names a *genuinely new* fact or restates one already resolved earlier in the same skill is now a
+second confirmed instance of that check paying off, not a one-off. The fix is also a real
+correctness improvement, not just a cleanup: on a stacked PR (one targeting a branch other than
+the project's default), the old hardcoded-default read would have included the parent branch's
+own diff in the docs-accuracy audit; `<base>` doesn't.
+
+**Rejected.** Treating `{{DEFAULT_BRANCH}}` as a fourth `integration_branch` consumer and reading
+the field directly in Step 4 — rejected because it would have produced *wrong* behaviour on a
+stacked PR (diffing against the project's true default branch instead of the PR's actual base),
+not merely redundant-but-harmless behaviour the way an unnecessary reuse elsewhere might be.
+Leaving `{{DEFAULT_BRANCH}}` as a literal token substituted at adoption time — not available under
+D4's runtime-read model for converted skills.
+
+**Consequence.** `pr` is the first conversion in this rework to need **no** new
+`project-context.md` field at all while still resolving every one of its placeholder tokens —
+confirms reuse-before-add can fully cover a skill's needs even when one token turns out not to be
+what it first appears to be. `implement-plan` and `fix-bug` (the two remaining cluster members)
+are now unblocked; `fix-bug`'s own dependency on `pr` (noted in the "Deferred" section of
+`PLAN.md`) is satisfied.

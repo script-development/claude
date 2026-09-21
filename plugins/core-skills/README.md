@@ -37,6 +37,7 @@ back to, not re-explain the degrade-not-fail contract itself.
 | [memory-hygiene](skills/memory-hygiene/) | Audit the project memory store for stale, codified, duplicate entries; dry-run proposal, then sync worktree memory stores |
 | [newbranch](skills/newbranch/) | Create a new branch from this project's integration branch; if an issue tracker is configured, resolve/create the issue and start work on it |
 | [next](skills/next/) | Continue through TASKS.md — find next task, execute with TDD flow, mark done |
+| [pr](skills/pr/) | Create a pull request with automatic issue feedback; gates on this session's `/review-branch` report (or `bug-fix-verifier`'s BUG.md verdict on a bug branch) and embeds the docs-accuracy verdict when the diff touches `doc_paths` |
 | [research](skills/research/) | Run a research query, produce a structured markdown report, and file it so knowledge accumulates |
 | [retro](skills/retro/) | Write a numbered retrospective capturing what went wrong, why, and what changed |
 | [review-branch](skills/review-branch/) | Full-branch review vs the integration branch: runtime-integrity-reviewer + precedent-reviewer in parallel, joined by docs-accuracy-reviewer when the diff touches this project's `doc_paths`; reports in chat |
