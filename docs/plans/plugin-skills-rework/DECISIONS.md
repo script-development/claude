@@ -887,3 +887,105 @@ exists), and the one-clause fallback for `issue_tracker_skill: none` is the mini
 on. `issue_tracker_skill` now has five consumers (`catchup`, `newbranch`, `task-writer`, `pr`,
 `fix-bug`) across two established delegation styles — abstract/read-only and
 concrete-kendo-mcp/write — both traceable back to whether the consumer reads or writes.
+
+## D30 — `plan-feature` converts, bundling `plan-reviewer` + `surface-reviewer`; last of the
+Generic Skills table
+
+**Chosen.** Converted `plan-feature`, the last remaining cluster (`grill-me`'s own dependency,
+`/build-it`, was already in; this one was deferred alongside `fix-bug`/`pr`/`implement-plan` at
+the same point in the rework and left for last per the user's explicit instruction). Bundled
+`plan-reviewer` and `surface-reviewer` byte-identical into `plugins/core-skills/agents/` — one
+clean spawn-cluster, same D18/D26/D29 shape, confirmed by reading both agent files in full rather
+than trusting D14's unverified "Kendo-shaped" parenthetical about `plan-feature` (which D23 had
+already proven wrong once for a different skill — see Traps in the handoff this session resumed
+from).
+
+Generalized Phases 0, 1a, and 4a — issue-URL parsing, board search, and issue creation — to read
+`issue_tracker_skill` / `issue_tracker_project_id` (D8/D14), each under a "For the default
+tracker, `kendo-mcp`:" conditional, matching `newbranch`'s and `pr`'s concrete-spelled-out style
+(not `catchup`'s/`fix-bug`'s abstract style) since all three phases write as well as read. Phase
+4a's issue-template lookup (`../kendo-mcp/references/issue-templates.md`) generalized the same way
+`newbranch`'s Step 2a already resolved this exact shape: describe it as "the resolved tracker
+skill's own issue-writing template, if it ships one" rather than a cross-plugin file link or a
+trimmed D9-style copy — `kendo-mcp` isn't converted into this plugin and isn't going to be, so
+there's no stable path to link, and the Feature/Bug shape is already illustrated inline in prose.
+
+The plan/decisions directory naming (`docs/plans/{{ISSUE_KEY_PREFIX}}-XXXX-slug/`) generalized to
+`docs/plans/<slug>/` across `SKILL.md`, `decisions-template.md`, and `plan-template.md` — **no new
+field**, and deliberately **not** a `plan_dir` consumer. `plan_dir`'s own contract is
+`{issue_key}`-only substitution (the shape `catchup`'s simpler lookup needs); `plan-feature` mints
+a richer `<issue-key>-<description>` slug (or a bare description when `issue_tracker_skill` is
+`none`), the same shape `plugins/core-skills/references/plan-directory.md`'s own "Catchup variant"
+section already warns not to force through `plan_dir` without checking the fit first. Confirmed,
+not assumed: `plan-feature` is the skill that *defines* this convention (per `plan-directory.md`'s
+own "itself doesn't need this algorithm... but documents it because it owns the directory's naming
+convention"), so it's the authority here, not a reader of an override field. `plan-template.md`'s
+Issue line and `{{DOC_PATHS}}` mention generalized the same pass: the former to
+`[<issue-key>](link to tracker issue)` or `N/A — no issue tracker`, the latter to backticked
+`` `doc_paths` `` (D26, reused verbatim, no new field) matching `review-branch`'s/`pr`'s own prose
+style exactly.
+
+Three reference files — `module-shape-lens.md`, `quality-gates.md`, `surface-questions.md` —
+shipped byte-identical: zero `{{PLACEHOLDER}}` tokens, zero Kendo assumptions, zero cross-file
+path assumptions on grep. `anti-patterns.md` needed one line generalized ("Skipping the Kendo
+board check" → "Skipping the issue-tracker board check (when a tracker is configured)"). The two
+scripts (`verify-citations.sh`, its test) were already fully project-agnostic as written
+(configurable `CITATION_PATH_PREFIXES`/`CITATION_SEARCH_ROOTS`, no hardcoded install path in the
+resolver itself) — confirmed by running the 32-assertion test suite from the plugin location
+post-copy, all passing.
+
+**New pattern: `<skill dir>` resolution crosses a skill/agent boundary for the first time.**
+`shepard` and `sync-worktrees` (D20) already resolve their own `<skill dir>` for their own
+scripts. `plan-feature` needed the same resolution (Phase 1.4's `verify-citations.sh` invocation
+can't be a relative markdown link the way `references/*.md` links are — a `Bash` call needs a real
+path, and nothing tells bash where an installed skill lives). New here: `plan-reviewer` and
+`surface-reviewer` are a *different* skill's agents that also need `plan-feature`'s reference
+files (`module-shape-lens.md`; `surface-questions.md` + `quality-gates.md`), and they're spawned
+by `plan-feature` itself in the same run that already resolved `<skill dir>` for its own Phase 1.4
+— so `plan-feature` passes its already-resolved `<skill dir>` into both `Agent()` prompts as an
+input, the same shape `review-branch` already uses to hand `docs-accuracy-reviewer` a
+pre-resolved `<doc_paths>` (D26) instead of making the agent re-derive it. `surface-reviewer`
+gained a second `## Input` row (`plan_feature_skill_dir`) alongside its existing
+`plan_directory`; `plan-reviewer` documented the same hand-off inline at its one call site (it has
+no `## Input` section to extend).
+
+`precedent-reviewer`'s own optional read of `surface-questions.md` (flagged as an open question in
+the handoff this session resumed from) is a **different** shape and resolved differently:
+`review-branch` — the skill that actually spawns `precedent-reviewer` — has no reason to know
+where `plan-feature` lives and doesn't resolve anything for it (confirmed by reading
+`review-branch`'s own spawn blocks: `precedent-reviewer` gets a plan directory and a diff base,
+nothing plan-feature-specific). So `precedent-reviewer` resolves `plan-feature`'s `<skill dir>`
+**itself**, an independent copy of D20's multi-candidate glob — degrading to a silent skip (not
+`shepard`'s "stop and say so") on a triple miss, since the questions are optional enrichment of
+`precedent-reviewer`'s own standing-rules audit, not a hard dependency the way `shepard`'s own
+bundled script is for `shepard` itself.
+
+`plugins/core-skills/references/plan-directory.md` needed **no** changes — confirmed, not assumed,
+by reading it: its own "Catalog origin" note (written during the Post-D29 cleanup, before
+`plan-feature` had converted) already states plainly that `plan-feature` creates its directory
+rather than resolving one, so it was never expected to become a consumer.
+
+**Why.** Every generalization here reuses an existing field (D8/D14/D26) or an existing resolution
+pattern (D9/D16/D20/D26) rather than inventing a new one — the fourth conversion in a row
+(after D27/D28/D29) needing zero new `project-context.md` fields. The one genuinely new pattern
+(a parent skill handing its own resolved `<skill dir>` to agents it spawns) is a direct extension
+of D26's `<doc_paths>` hand-off, not a new design.
+
+**Rejected.** Shipping a trimmed copy of `kendo-mcp`'s `issue-templates.md` under
+`plugins/core-skills/references/` (the D9/6a hosting-problem treatment) — rejected because
+`newbranch` already resolved this exact shape without one, and copying it here would create two
+divergent "trimmed mirror of a file in an unconverted skill" precedents for the same file.
+Routing the directory-slug generalization through `plan_dir` — rejected per the shape mismatch
+above; forcing it through anyway would have made `plan_dir` mean two incompatible things depending
+on which skill reads it. Having `plan-reviewer`/`surface-reviewer` each independently resolve their
+own `<skill dir>` (mirroring `precedent-reviewer`'s self-resolution) — rejected because, unlike
+`precedent-reviewer`, both are spawned by `plan-feature` itself in the same run that already did
+the resolution; re-deriving it twice more would be the exact duplication D26's `<doc_paths>`
+hand-off pattern exists to avoid.
+
+**Consequence.** Every skill in the catalog README's Generic Skills table is now converted into
+`core-skills` except `babysit`, which is explicitly and permanently out of scope (superseded by
+`shepard` — see PLAN.md's "Out" section). `core-skills` is at plugin version 0.20.0. The remaining
+open items are the ones already recorded in PLAN.md's "Out" section (fate of `skills/catchup/` /
+`skills/worktree/` / `templates/` / `.githooks/pre-commit`; no split threshold set for
+`core-skills`) — not blocking, revisit only if raised.

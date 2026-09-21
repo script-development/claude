@@ -39,6 +39,7 @@ back to, not re-explain the degrade-not-fail contract itself.
 | [memory-hygiene](skills/memory-hygiene/) | Audit the project memory store for stale, codified, duplicate entries; dry-run proposal, then sync worktree memory stores |
 | [newbranch](skills/newbranch/) | Create a new branch from this project's integration branch; if an issue tracker is configured, resolve/create the issue and start work on it |
 | [next](skills/next/) | Continue through TASKS.md — find next task, execute with TDD flow, mark done |
+| [plan-feature](skills/plan-feature/) | Interrogate the developer with codebase-informed questions, then produce PLAN.md and DECISIONS.md; self-gated by the bundled plan-reviewer and surface-reviewer agents |
 | [pr](skills/pr/) | Create a pull request with automatic issue feedback; gates on this session's `/review-branch` report (or `bug-fix-verifier`'s BUG.md verdict on a bug branch) and embeds the docs-accuracy verdict when the diff touches `doc_paths` |
 | [research](skills/research/) | Run a research query, produce a structured markdown report, and file it so knowledge accumulates |
 | [retro](skills/retro/) | Write a numbered retrospective capturing what went wrong, why, and what changed |
@@ -58,8 +59,10 @@ root, auto-discovered, no `plugin.json` entry needed.
 |-------|-------------|
 | [bug-fix-verifier](agents/bug-fix-verifier.md) | Verify a bug fix actually resolves BUG.md's defect and glance at touched files for regressions; spawned by `/fix-bug` before PR |
 | [docs-accuracy-reviewer](agents/docs-accuracy-reviewer.md) | Grade every claim in the user-facing text a branch ships against the code it ships; spawned by `/review-branch` when the diff touches this project's `doc_paths` |
+| [plan-reviewer](agents/plan-reviewer.md) | Re-apply the module-shape lens independently and check a plan against codebase conventions (enums, auth, arch tests); spawned by `/plan-feature` Phase 5 in parallel with surface-reviewer |
 | [precedent-reviewer](agents/precedent-reviewer.md) | Check a branch against the repo's standing rules, sibling implementations, and its own plan prose; spawned always by `/review-branch` |
 | [runtime-integrity-reviewer](agents/runtime-integrity-reviewer.md) | Check a branch for invariants that only break across the whole system — transactions, concurrency, lifecycle, silent failure; spawned always by `/review-branch` |
+| [surface-reviewer](agents/surface-reviewer.md) | Audit a plan's Security & Cost Surface prose against the seven canonical row questions and the repo's standing rules; spawned by `/plan-feature` Phase 5 in parallel with plan-reviewer |
 | [wireframe-reviewer](agents/wireframe-reviewer.md) | Scores WIREFRAMES.md on screen coverage, token validity, component references, internal consistency, and AC traceability; spawned by `/wireframe` |
 
 ## Design record

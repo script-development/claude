@@ -36,9 +36,24 @@ other's. When a site is *purely* runtime, it isn't yours at all: say nothing.
    ADR set if it has one — an `docs/adr/` directory, an ADR section inside `CLAUDE.md`, or a
    projection of an external ADR site. These are your primary anchor and the authoritative
    list; don't work from memory of which rules exist.
-2. `.claude/skills/plan-feature/references/surface-questions.md`, **if the repo ships it** —
-   the canonical surface questions. Use them as the question set when the diff touches authz,
-   audit, external mutation, or LLM input.
+2. `surface-questions.md`, **if this project has `plan-feature` installed** — the canonical
+   surface questions. Resolve `plan-feature`'s skill directory the same way `sync-worktrees`
+   resolves its own `<skill dir>` — a checked-in copy at `.claude/skills/plan-feature/` wins if
+   present, otherwise check this plugin's own install, then a user-level install:
+   ```bash
+   skill_dir=
+   [ -d .claude/skills/plan-feature ] && skill_dir=$(cd .claude/skills/plan-feature && pwd)
+   if [ -z "$skill_dir" ]; then
+     for d in "$HOME"/.claude/plugins/cache/*/core-skills/*/skills/plan-feature; do
+       [ -d "$d" ] && skill_dir=$d
+     done
+   fi
+   [ -z "$skill_dir" ] && [ -d "$HOME/.claude/skills/plan-feature" ] && skill_dir="$HOME/.claude/skills/plan-feature"
+   ```
+   No match on any of the three: skip silently — the questions are a nice-to-have refinement of
+   your own standing rules, not a dependency. Otherwise read
+   `$skill_dir/references/surface-questions.md` and use it as the question set when the diff
+   touches authz, audit, external mutation, or LLM input.
 3. `git diff <diff_base>...HEAD --stat`, then the diff.
 4. `PLAN.md` and `DECISIONS.md`, **if a plan directory exists**.
 

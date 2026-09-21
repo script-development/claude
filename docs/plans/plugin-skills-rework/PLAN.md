@@ -52,7 +52,7 @@ field/section before adding a new one, add a new one only on demand, commit per 
   type list regardless of what that showed; now it actually matches the detected convention,
   falling back to conventional commits only when there's no clear pattern (D13).
 
-### Deferred — agent/reviewer dependency chain (now resolved except `plan-feature`)
+### Deferred — agent/reviewer dependency chain (now fully resolved)
 
 Originally skipped as a unit: `fix-bug`, `pr`, `plan-feature`, `implement-plan`. All four
 unconditionally invoke something outside a plain skill-to-skill call — `fix-bug` runs `/pr`
@@ -66,8 +66,8 @@ the plugin root, auto-discovered, no manifest entry needed) and then auditing th
 top of it. That was a bigger unit of work than one skill at a time, so it was set aside rather
 than picked apart skill-by-skill — revisited as its own pass, in dependency order:
 `review-branch` (unblocks the cluster), `pr`, `implement-plan`, `fix-bug` (each documented in its
-own section below). `plan-feature` is a separate cluster, unrelated to this one, and remains
-deferred — see "Up next".
+own section below). `plan-feature` is a separate cluster, unrelated to this one, and was deferred
+to be converted last, per the user's explicit instruction — see the `plan-feature` section below.
 
 - **`grill-me`** — needed **zero changes**: already fully project-agnostic as written (grounds
   itself in whatever CLAUDE.md/codebase it finds; writes nothing itself). Its one functional
@@ -334,12 +334,51 @@ creates `docs/bugs/<slug>/` itself (like `plan-feature` creates `docs/plans/`), 
 *resolve* an existing one, so the shared reference's read-time algorithm doesn't apply here. See
 D29 in `DECISIONS.md`.
 
-### Up next
+### `plan-feature` — bundled its cluster; the last Generic Skills table conversion
 
-Every Generic Skill in the README's table is now converted into `core-skills`. Only
-`plan-feature` remains — a separate cluster (spawns `plan-reviewer` + `surface-reviewer`,
-unrelated to `review-branch`'s three) still deferred on its own terms; nothing else in this
-plugin depends on it. `babysit` stays explicitly skipped (superseded by `shepard`).
+Converted, bundling both agents it unconditionally spawns at its own Phase 5
+(`plan-reviewer`, `surface-reviewer`) into `plugins/core-skills/agents/` in the same commit —
+confirmed clean by reading both in full first (D14's unverified "Kendo-shaped" parenthetical about
+`plan-feature` was not trusted on its own, per D23's standing caution — and turned out to name no
+placeholder or Kendo assumption in either agent).
+
+Phases 0, 1a, and 4a — issue-URL parsing, board search, issue creation — generalized to read
+`issue_tracker_skill` / `issue_tracker_project_id` (D8/D14), each under a "For the default
+tracker, `kendo-mcp`:" conditional, `newbranch`/`pr`'s concrete-spelled-out style rather than
+`catchup`/`fix-bug`'s abstract one, since these phases write as well as read. Phase 4a's
+issue-template lookup (previously a relative link into the unconverted `kendo-mcp` skill's own
+`references/issue-templates.md`) resolved the same way `newbranch`'s Step 2a already handles this
+exact shape: describe it generically rather than link or copy it.
+
+The plan/decisions directory naming (`docs/plans/{{ISSUE_KEY_PREFIX}}-XXXX-slug/`) generalized to
+`docs/plans/<slug>/` — **not** routed through `plan_dir`, since that field's `{issue_key}`-only
+contract doesn't fit the richer `<issue-key>-<description>` slug `plan-feature` mints (its own
+`plan-directory.md` already warns against forcing this without checking the fit). `plan-feature`
+owns this naming convention rather than reading an override of it. Three reference files
+(`module-shape-lens.md`, `quality-gates.md`, `surface-questions.md`) shipped byte-identical — the
+second reference-file set in this rework needing zero edits, after `fix-bug`'s three. The two
+scripts (`verify-citations.sh` and its 32-assertion test suite) were already fully
+project-agnostic and needed no changes beyond a `<skill dir>` path update in one comment —
+verified by running the suite from the plugin's install location post-copy, all 32 passing.
+
+**New pattern.** `plan-feature` resolves its own `<skill dir>` (D20's shape, needed because Phase
+1.4's script invocation can't be a relative markdown link) and, new here, hands that same
+resolved value to `plan-reviewer` and `surface-reviewer` at its Phase 5 spawn — the same
+pre-resolve-and-pass shape `review-branch` already uses for `docs-accuracy-reviewer`'s
+`<doc_paths>` (D26), rather than making two more agents re-derive the glob. `precedent-reviewer`'s
+own optional read of `surface-questions.md` (an open question carried since `review-branch`'s own
+conversion) is a different shape and stayed a self-resolution: `review-branch`, its actual spawning
+skill, has no reason to resolve anything `plan-feature`-specific for it, so `precedent-reviewer`
+now runs an independent copy of D20's multi-candidate glob and degrades to a silent skip on a
+total miss. Full reasoning: D30 in `DECISIONS.md`.
+
+### Rework complete
+
+Every Generic Skill in the catalog README's table is now converted into `core-skills`, at plugin
+version 0.20.0. `babysit` stays explicitly, permanently skipped (superseded by `shepard`). The
+remaining open items are the ones already recorded in "Out" below (fate of `skills/catchup/` /
+`skills/worktree/` / `templates/` / `.githooks/pre-commit`; no split threshold set for
+`core-skills`) — not blocking, revisit only if raised.
 
 ### Tooling: auto-sync the project-context template pair
 
@@ -347,8 +386,10 @@ plugin depends on it. `babysit` stays explicitly skipped (superseded by `shepard
 `plugins/core-skills/references/project-context-template.md` on every commit that touches the
 canonical file (D19). This replaces the manual-sync duty D9 accepted for that one pair — but
 deliberately *not* for `plan-directory.md` (D16): that pair is a curated derivative, not a
-mirror, and its catalog-side source (`plan-feature`) retires piecemeal as this rework's own
-remaining conversions land, so it stays manual. One-time setup per clone:
+mirror. Its catalog-side source, `plan-feature`, is now itself converted (D30) and confirmed to
+never consume the algorithm, so the shipped copy's own "Catalog origin" note is now fully settled
+rather than pending a future re-sync — it stays manual on principle (curated derivative, not a
+mirror), not because anything is still incomplete. One-time setup per clone:
 `git config core.hooksPath .githooks` (documented in `CLAUDE.md`).
 
 **Not permanent tooling.** If the "Fate of `skills/catchup/`..." question below (D6) ever
