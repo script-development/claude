@@ -9,9 +9,11 @@
 # named for the concern (not the skill), so unrelated skills can share a section.
 # Don't add a field speculatively; add it when a skill is converted that reads it.
 #
-# This is the canonical source. A plugin whose skills read this file (e.g. core-skills)
-# ships its own copy under its own references/ directory, since an installed plugin's
-# consumer never clones this catalog repo — keep every shipped copy in sync with this one.
+# Canonical source: templates/project-context-template.md in the claude-2 catalog. A plugin
+# whose skills read this file (e.g. core-skills) ships an identical mirror under its own
+# references/ directory, since an installed plugin's consumer never clones this catalog repo.
+# The mirror is generated — .githooks/pre-commit copies this file over it automatically
+# whenever this file changes. Edit only this copy; never hand-edit a shipped mirror.
 
 # --- Issue tracking (used by: catchup, newbranch) ---
 issue_tracker_skill:   # The skill/command that fetches issue details. Defaults to kendo-mcp

@@ -157,7 +157,10 @@ rather than once per plugin, which is a worse drift risk than one shipped copy o
 
 **Cost accepted.** Two copies of the template now need to move together (root, and each plugin
 that reads `project-context.md`) — the same manual-propagation duty `CLAUDE.md` already assigns
-to every shared skill mirrored across consumers, extended to this one template file.
+to every shared skill mirrored across consumers, extended to this one template file. **Superseded
+by D19**: this pair is now auto-synced by a pre-commit hook, since (unlike a mirrored skill or
+`plan-directory.md`, D16) this copy relationship is permanent, not one this rework expects to
+retire.
 
 ## D10 — `worktree` and `build-it` are already project-agnostic; only their customization
 storage needed to move
@@ -336,39 +339,13 @@ is deferred as a unit for reasons unrelated to this one reference doc. Reimpleme
 looser issue-key-only algorithm for `next` — rejected per plan-directory.md's own explicit
 warning not to unify the two.
 
-## D18 — `wireframe` bundles the `wireframe-reviewer` agent as a plugin agent (first one)
-
-**Chosen.** `wireframe` unconditionally spawns `wireframe-reviewer` every run (Step 5) — a real
-hard dependency under D12's rule, but on a single agent, not a multi-skill/multi-agent cluster
-the way `fix-bug`/`pr`/`implement-plan`/`plan-feature` are. Same shape as `worktree` being
-converted before `build-it`: one clean prerequisite jumps the queue rather than triggering a
-cluster deferral. Copied `agents/wireframe-reviewer.md` into `plugins/core-skills/agents/`
-byte-identical — it needed zero changes (no `{{PLACEHOLDER}}` tokens, no Kendo assumptions,
-already fully project-agnostic) — and added an "Agents" section to `plugins/core-skills/README.md`
-since this is the first plugin agent, not just the first plugin skill with an agent dependency.
-
-**Why.** This is the first time this rework actually exercises agent bundling, rather than just
-reasoning about it. D12's rule already distinguished a clean prerequisite (jump the queue) from a
-cluster (defer it) for skill-to-skill dependencies; `wireframe-reviewer` confirms the same split
-applies to skill-to-agent dependencies — it's one agent with no further dependencies of its own
-(verified: it doesn't spawn anything, read anything Kendo-specific, or reference any
-`{{PLACEHOLDER}}` token), so nothing about bundling it resembles the deferred cluster's tangle.
-
-**Rejected.** Deferring `wireframe` alongside the agent/reviewer cluster on the grounds that it
-also depends on an agent — rejected because the cluster's actual reason for deferral was its
-*size* (four skills, six-plus agents, `/review-branch` sitting underneath three of them), not
-"has an agent dependency" as a blanket rule. One clean agent is exactly what D12 already said
-should jump the queue instead.
-
-**Consequence.** The conversion workflow's step 6 ("agents are a hard dependency too") now has a
-worked example distinguishing "one clean agent — bundle and proceed" from "an agent nested under
-a whole cluster — defer the cluster." The next skill to hit a single-agent dependency should
-follow `wireframe`'s path, not treat every agent dependency as cluster-shaped by default.
-
 **Consequence.** Two copies of `plan-directory.md` now need to move together by hand, same
 maintenance duty D9 already established for the project-context template — extended here to a
-second shared file. When `implement-plan`/`review-branch`/`pr`/`fix-bug` eventually convert (the
-deferred cluster's own future pass), re-sync from the catalog original rather than re-deriving
+second shared file. Unlike D9's pair (D19), this one is **not** auto-synced: the shipped copy is
+a deliberately adapted derivative, not a mirror, and the catalog source is expected to disappear
+once the catalog itself retires (the pair is transient), so a hook was judged not worth building
+for it. When `implement-plan`/`review-branch`/`pr`/`fix-bug` eventually convert (the deferred
+cluster's own future pass), re-sync from the catalog original rather than re-deriving
 independently — noted inline in the shipped copy's own "Catalog origin" section.
 
 ## D17 — `task-writer` reuses D16's shared algorithm and D8/D14's tracker fields; a
@@ -404,3 +381,71 @@ based on who's consuming it). Treating the `/implement-plan` mention as a hard d
 deferring `task-writer` alongside the rest of the agent/reviewer cluster — rejected because the
 invocation genuinely never happens without the developer choosing it in the moment, unlike
 `build-it`'s unconditional `/worktree` call.
+
+## D18 — `wireframe` bundles the `wireframe-reviewer` agent as a plugin agent (first one)
+
+**Chosen.** `wireframe` unconditionally spawns `wireframe-reviewer` every run (Step 5) — a real
+hard dependency under D12's rule, but on a single agent, not a multi-skill/multi-agent cluster
+the way `fix-bug`/`pr`/`implement-plan`/`plan-feature` are. Same shape as `worktree` being
+converted before `build-it`: one clean prerequisite jumps the queue rather than triggering a
+cluster deferral. Copied `agents/wireframe-reviewer.md` into `plugins/core-skills/agents/`
+byte-identical — it needed zero changes (no `{{PLACEHOLDER}}` tokens, no Kendo assumptions,
+already fully project-agnostic) — and added an "Agents" section to `plugins/core-skills/README.md`
+since this is the first plugin agent, not just the first plugin skill with an agent dependency.
+
+**Why.** This is the first time this rework actually exercises agent bundling, rather than just
+reasoning about it. D12's rule already distinguished a clean prerequisite (jump the queue) from a
+cluster (defer it) for skill-to-skill dependencies; `wireframe-reviewer` confirms the same split
+applies to skill-to-agent dependencies — it's one agent with no further dependencies of its own
+(verified: it doesn't spawn anything, read anything Kendo-specific, or reference any
+`{{PLACEHOLDER}}` token), so nothing about bundling it resembles the deferred cluster's tangle.
+
+**Rejected.** Deferring `wireframe` alongside the agent/reviewer cluster on the grounds that it
+also depends on an agent — rejected because the cluster's actual reason for deferral was its
+*size* (four skills, six-plus agents, `/review-branch` sitting underneath three of them), not
+"has an agent dependency" as a blanket rule. One clean agent is exactly what D12 already said
+should jump the queue instead.
+
+**Consequence.** The conversion workflow's step 6 ("agents are a hard dependency too") now has a
+worked example distinguishing "one clean agent — bundle and proceed" from "an agent nested under
+a whole cluster — defer the cluster." The next skill to hit a single-agent dependency should
+follow `wireframe`'s path, not treat every agent dependency as cluster-shaped by default.
+
+## D19 — Auto-copy hook for the project-context template pair; `plan-directory.md` stays manual
+
+**Chosen.** `.githooks/pre-commit` copies `templates/project-context-template.md` over
+`plugins/core-skills/references/project-context-template.md` (and stages the result) whenever
+the canonical file is part of a commit. Made the two files byte-identical first — the one
+difference between them (a comment block saying which copy was "canonical" vs. "shipped") was
+harmonized into a single comment that reads correctly regardless of which copy you're looking
+at. `plugins/core-skills/references/plan-directory.md` (D16) deliberately gets **no** equivalent
+hook.
+
+**Why.** The user's distinction, made explicit when asked: this repo's catalog skills
+(`skills/`, including `plan-feature`, the canonical source for `plan-directory.md`) are expected
+to retire once plugin adoption replaces copy-adoption — D6's open question is *when*, not *if*.
+When that happens, `plan-feature/references/plan-directory.md` disappears and the duplication
+resolves itself; building sync tooling for a pair that's headed for retirement is wasted effort.
+`templates/project-context-template.md`, by contrast, is catalog-root scaffolding (same
+standing as `templates/skill-template/SKILL.md`) with no such expiry — it outlives any
+individual skill's conversion status, so the two copies are a permanent fact of this
+architecture, worth automating. The two pairs also differ in *kind*, not just lifespan: the
+template pair is a genuine mirror (byte-identical after D19's cleanup), while `plan-directory.md`
+is a curated, deliberately-trimmed derivative (D16) — a blind copy would silently regress that
+trimming, so even a permanent version of that pair couldn't use the same mechanism.
+
+**Rejected.** A symlink from the shipped copy to the canonical file — rejected on two independent
+grounds: this repo already has a standing no-symlinks policy for the analogous skill/agent
+mirroring case (`README.md`, `CLAUDE.md`), and a symlink pointing outside `plugins/core-skills/`
+has nothing to resolve against once a marketplace installer receives only that directory,
+independent of the rest of the repo checkout (the same reason `../plan-feature/references/...`
+didn't work as a live link either — D16). A verify-only (fail-if-different) hook for the
+template pair — rejected in favor of the stronger auto-copy, since unlike `plan-directory.md`
+there is no editorial judgment involved in producing the shipped copy from the canonical one;
+generating it is strictly better than merely detecting that someone forgot to.
+
+**Consequence.** The template's shipped copy is now generated, not hand-maintained — its own
+header comment says so explicitly ("Edit only this copy; never hand-edit a shipped mirror").
+One-time setup per clone: `git config core.hooksPath .githooks` (documented in `CLAUDE.md`'s
+Repository Structure section). `plan-directory.md` keeps the manual-resync note from D16 as its
+permanent (not just current) maintenance mode.

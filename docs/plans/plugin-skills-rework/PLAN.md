@@ -147,6 +147,16 @@ actual owner of the three-agent unconditional spawn (`runtime-integrity-reviewer
 `fix-bug` gate on. Converting it is the real unblock for that whole cluster — treat it as the
 cluster's first move whenever that pass starts, not a sixth independent Generic Skill.
 
+### Tooling: auto-sync the project-context template pair
+
+`.githooks/pre-commit` now copies `templates/project-context-template.md` over
+`plugins/core-skills/references/project-context-template.md` on every commit that touches the
+canonical file (D19). This replaces the manual-sync duty D9 accepted for that one pair — but
+deliberately *not* for `plan-directory.md` (D16): that pair is a curated derivative, not a
+mirror, and its catalog-side source is expected to disappear once catalog-skill retirement
+happens (D6's open question), so it stays manual. One-time setup per clone:
+`git config core.hooksPath .githooks` (documented in `CLAUDE.md`).
+
 ### Out (open questions — not resolved yet)
 
 - **Fate of `skills/catchup/` and `skills/worktree/`** (the pre-existing catalog copies). Left
