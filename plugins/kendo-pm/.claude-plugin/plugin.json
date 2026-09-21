@@ -1,0 +1,21 @@
+{
+  "name": "kendo-pm",
+  "displayName": "Kendo PM",
+  "version": "0.1.0",
+  "description": "Kendo project-management skills bundled into one installable plugin, for any project using Kendo (https://kendo.dev) for issue tracking. Requires the Kendo MCP server. Currently: kendo-mcp.",
+  "keywords": [
+    "kendo",
+    "project-management",
+    "issues",
+    "mcp",
+    "tracker",
+    "board",
+    "sprints",
+    "epics"
+  ],
+  "author": {
+    "name": "script-development"
+  },
+  "repository": "https://github.com/script-development/claude/tree/main/plugins/kendo-pm",
+  "license": "MIT"
+}
