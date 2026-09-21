@@ -27,9 +27,15 @@ plan_dir:              # e.g. docs/plans/{issue_key}/ — override for this proj
 # --- Worktrees (used by: worktree, build-it) ---
 integration_branch:    # Override when auto-detection (origin/development, origin/develop,
                        # then the remote default branch) would get it wrong for this project.
+                       # If this project's tracker auto-links branches, also document the
+                       # issue-key format under House rules below — a truncated or malformed
+                       # key silently breaks the auto-link.
 worktree_dir:          # e.g. .claude/worktrees/{slug} — override the default worktree
                        # location. Needed when repo tooling sweeps the whole repo root
-                       # (a docker build context, a globbing test runner, IDE indexing).
+                       # (a docker build context, a globbing test runner, IDE indexing), or
+                       # when the default path is already covered by this project's own
+                       # .gitignore (say so under House rules — worktree can then skip its
+                       # own ignore-list write).
                        # {slug} is substituted literally.
 ---
 
@@ -95,3 +101,8 @@ block an edit until a skill is loaded, formatters that run on save (and must nev
 hand), coverage expectations, shared state a worktree mutates that the primary checkout also
 sees (a shared database, cache, or tenant — say what's harmless and what breaks another
 branch), and the order skills should run in to ship.
+
+Also the place for two narrower notes, when they apply: the issue-key format this project's
+tracker expects if it auto-links branches (a truncated or malformed key silently breaks the
+link), and whether `worktree_dir`'s path is already covered by this project's own `.gitignore`
+(if so, `worktree` can skip writing its own ignore-list entry).
