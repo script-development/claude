@@ -160,6 +160,17 @@ correctly as same-plugin siblings.
 speculative "a later skill... should reuse" phrasing from D1 with a description of an actual
 reader.
 
+**Correction, caught by the user in review.** `triage-reports`' commit reused
+`issue_tracker_project_id` but never added itself to that field's "Used by" comment in
+`templates/project-context-template.md` — every within-`core-skills` reuse in the parent plan
+updated that comment when adding a new reader (D26 corrected two omissions in
+`integration_branch`'s list; D31 corrected `plan_dir`'s). Fixed by adding `triage-reports` to the
+comment, explicitly noting it's the field's *first cross-plugin* reader — every other name already
+there is a `core-skills` skill, so a bare name addition would have understated what changed. The
+canonical `templates/project-context-template.md` edit alone was sufficient: `.githooks/pre-commit`
+(D19, from the parent plan) auto-copied it over `plugins/core-skills/references/project-context-template.md`
+in the same commit, confirmed byte-identical after.
+
 **Consequence.** `kendo-pm` bundles three skills (`kendo-cli`, `kendo-mcp`, `triage-reports`) at
 version 0.3.0. `prepare-issue` is the only skill left in the queue, paused on the `/newbranch`
 question above.

@@ -85,6 +85,11 @@ this plugin ships on its own. Revisit only if a fact turns out to make no sense 
   gained a real `.claude/project-context.md` section (previously speculative, now describing an
   actual reader). `kendo-pm` bumped to 0.3.0.
 
+  **Follow-up, caught by the user:** the original commit reused `issue_tracker_project_id`
+  without registering `triage-reports` in that field's "Used by" comment in
+  `templates/project-context-template.md` — fixed, noting it's the field's first cross-plugin
+  reader. See D3's addendum.
+
 ### Paused
 
 - **`prepare-issue`** — picked up, then paused before any edits landed: it unconditionally
