@@ -10,8 +10,7 @@
     "context"
   ],
   "author": {
-    "name": "bjvle",
-    "url": "https://github.com/bjvle"
+    "name": "script-development"
   },
   "repository": "https://github.com/script-development/claude/tree/main/plugins/core-skills",
   "license": "MIT"
