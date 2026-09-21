@@ -151,14 +151,29 @@ sentence.
   `context-economy`'s already-proven plugin-cache glob (`~/.claude/plugins/cache/*/core-skills/*/skills/shepard`,
   last match wins) as a third candidate, checked-in copy still first (D20).
 
+- **`research`** — needed one **new field**, `research_dir` (under a new "Research" section):
+  the skill hardcoded a `research/` output directory (`ls research/`, `Save to
+  research/<name>.md`) with no override, the same shape `plan_dir` already covers for planning
+  artifacts but for filed research reports instead. No existing field covered it, so — per Step
+  3 of the conversion workflow — added one rather than overloading `plan_dir` for an unrelated
+  concern. No `{{PLACEHOLDER}}` tokens, no `Agent()`/`subagent_type` spawns, no reference doc
+  hosted by another catalog skill; single-file skill, shipped with the one field substitution
+  (D21).
+
 ### Up next
 
-Four Generic Skills remain unconverted and untouched by this rework so far: `research`, `retro`,
+Three Generic Skills remain unconverted and untouched by this rework so far: `retro`,
 `review-mcp-descriptions`, `sync-worktrees`. A quick dependency grep (`Agent(`,
-`subagent_type`, `spawn`) turned up nothing in any of the four — no known hard dependency, so any
-of them is a valid next pick, pending the same full check (Step 1 of the conversion workflow)
-this rework has applied to every skill so far. `babysit` stays explicitly skipped (superseded by
-`shepard`, now converted).
+`subagent_type`, `spawn`) turned up nothing in any of the three — no known hard dependency, so
+any of them is a valid next pick, pending the same full check (Step 1 of the conversion
+workflow) this rework has applied to every skill so far. `babysit` stays explicitly skipped
+(superseded by `shepard`, now converted).
+
+`review-mcp-descriptions` in particular needs the full check taken seriously, not assumed clean
+from the grep alone — it improves MCP tool/resource descriptions, and this org's MCP tool
+definitions live inside the Kendo repo itself rather than in this catalog, which may turn out to
+be a project-specific fact the skill currently assumes rather than reads from
+`.claude/project-context.md`.
 
 `review-branch` — not previously named in "Deferred" above, but it belongs there: it's the
 actual owner of the three-agent unconditional spawn (`runtime-integrity-reviewer` +

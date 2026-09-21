@@ -505,3 +505,26 @@ of divergence D10/D11 already established for `worktree` (per-repo customization
 skill-local reference file) and is expected: a plugin install is a genuinely different
 distribution shape than a copy-adopted catalog skill, and this is the first conversion where that
 showed up in a skill's own self-location logic rather than in where project facts are read from.
+
+## D21 — `research` gets a new field, `research_dir`, under a new "Research" section
+
+**Chosen.** Added `research_dir` as its own top-level section in `project-context-template.md`,
+not folded into "Plans". The original skill hardcodes `research/` in two places (`ls research/`
+in Step 2, `Save to research/<name>.md` in Step 5) with no override, so a project that keeps
+filed research somewhere else (`docs/research/`, a wiki-synced directory, ...) had no way to say
+so. Default stays `research/` when the field or file is absent.
+
+**Why.** `plan_dir` was the closest existing field, but it names branch-scoped planning
+artifacts (`PLAN.md`/`TASKS.md`/`DECISIONS.md`, substituted per `{issue_key}`) — a fundamentally
+different shape of thing from a flat, cumulative, topic-named knowledge base with no per-branch
+or per-issue keying at all. Reusing `plan_dir` for research output would conflate two concerns
+the template's own organizing principle (group by concern, not by skill) says to keep apart, and
+the field's `{issue_key}` substitution semantics don't even apply here. A new, single-scalar
+field costs nothing extra for a project that's happy with the default — it's simply absent.
+
+**Rejected.** Reusing `plan_dir` for research output — rejected for the reason above. Leaving
+`research/` hardcoded with no override, on the theory that "research" is generic enough not to
+need one — rejected because the same reasoning was already tried and rejected for `plan_dir`
+itself (`docs/plans/` isn't universal either), and this rework's whole premise is that a
+hardcoded project convention is a hardcoded project convention regardless of how common the
+default looks.

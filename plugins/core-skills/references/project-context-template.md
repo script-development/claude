@@ -30,6 +30,10 @@ plan_dir:              # e.g. docs/plans/{issue_key}/ — override for this proj
                        # directory convention. {issue_key} is substituted literally.
                        # Omit to use the skill's own generic default.
 
+# --- Research (used by: research) ---
+research_dir:          # e.g. docs/research/ — override for this project's filed-research
+                       # directory. Omit to use the skill's own default, research/.
+
 # --- Worktrees (used by: worktree, build-it) ---
 integration_branch:    # Override when auto-detection (origin/development, origin/develop,
                        # then the remote default branch) would get it wrong for this project.
@@ -69,6 +73,11 @@ means "use the generic fallback" — never a hard failure.
 - `plan_dir` overrides where a branch's planning artifacts (`PLAN.md`, `TASKS.md`,
   `DECISIONS.md`) live, for projects that don't use the default `docs/plans/{issue_key}/`
   layout. Leave unset to use the default.
+
+## Research
+
+- `research_dir` overrides where filed research reports live, for projects that don't use the
+  default `research/` directory. Leave unset to use the default.
 
 ## Worktrees
 
