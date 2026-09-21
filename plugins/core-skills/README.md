@@ -25,6 +25,7 @@ to `.claude/project-context.md` in the project and fill in only the fields that 
 | [worktree](skills/worktree/) | Cut a fresh git worktree: branch, deps, env files, project house rules, then hand back the path |
 | [build-it](skills/build-it/) | Implement the last grill-me alignment: cut a worktree, write plan docs if chosen, build, run gates, open the PR |
 | [commit](skills/commit/) | Small, focused commits matching this project's own message convention, + push |
+| [grill-me](skills/grill-me/) | Interview the developer through AskUserQuestion before any code is written; ends with docs-or-not and build-or-stop |
 
 ## Design record
 

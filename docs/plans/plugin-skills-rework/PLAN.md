@@ -66,10 +66,15 @@ the plugin root, auto-discovered, no manifest entry needed) and then auditing th
 top of it. That's a bigger unit of work than one skill at a time, so it's set aside rather than
 picked apart skill-by-skill. Revisit as its own pass.
 
+- **`grill-me`** — needed **zero changes**: already fully project-agnostic as written (grounds
+  itself in whatever CLAUDE.md/codebase it finds; writes nothing itself). Its one functional
+  dependency, `/build-it`, was already converted, so no ordering issue. Not every skill needs
+  the `project-context.md` mechanism — this is the first confirmed case of one that doesn't.
+
 ### Up next
 
-`grill-me` — next in README's Generic Skills order with no hard dependency (checked: no
-`Agent()` calls, no invocation of another skill).
+`implement-plan` was next in strict README order but is deferred (dependency cluster, see
+above). `memory-hygiene` — next skill with no hard dependency.
 
 ### Out (open questions — not resolved yet)
 
