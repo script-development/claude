@@ -1,7 +1,9 @@
 # Plan directory derivation
 
 Canonical algorithm for resolving a work directory — `docs/plans/<slug>/` — from the current git
-branch, used by `next` in this plugin to locate `TASKS.md` for the work in progress.
+branch. `next` in this plugin uses it to locate `TASKS.md`; `task-writer` uses it to find where
+`PLAN.md` already lives so it writes `TASKS.md` alongside it, and falls back to creating a new
+directory (see `task-writer`'s own Output section) only when the algorithm finds nothing.
 
 ## Algorithm
 

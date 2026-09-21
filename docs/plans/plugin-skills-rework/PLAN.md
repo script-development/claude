@@ -107,10 +107,24 @@ sentence.
   `plugins/core-skills/references/plan-directory.md` (D16), rather than treating `plan-feature`
   (itself in the deferred cluster) as a blocking dependency.
 
+- **`task-writer`** — no new field needed; reused two already-established patterns rather than
+  inventing anything. Its own six `references/*.md` files (task-sizing, quality-gates,
+  extraction-workflow, tasks-template, verification, example-frontend-feature — ~700 lines)
+  were already fully generic and shipped as-is, with the two illustrative
+  `{{ISSUE_KEY_PREFIX}}-0072`-style examples swapped for a concrete-looking one (`KD-0072`,
+  matching `newbranch`'s and `plan-directory.md`'s own examples). The Output section's directory
+  lookup now reuses the shared `references/plan-directory.md` (D16, added for `next`) instead of
+  hardcoding `{{ISSUE_KEY_PREFIX}}-XXXX`; its issue-backfill fallback (no plan directory found at
+  all) reuses `issue_tracker_skill` / `issue_tracker_project_id` (D8/D14, added for `newbranch`)
+  instead of hardcoding `mcp__kendo__create-issue-tool` and `{{PROJECT_ID}}` unconditionally. No
+  hard dependency: the Phase 0 hand-off to `/implement-plan` is conditional on the developer's
+  own confirmation (not an unconditional spawn), and the issue-tracker fallback is the same
+  optional/conditional shape already established for `newbranch`.
+
 ### Up next
 
-`task-writer` — next in README's Generic Skills order with no unconverted hard dependency
-(`wireframe` after that — `worktree`, `build-it`, and `next` are already done).
+`wireframe` — next in README's Generic Skills order with no unconverted hard dependency.
+`worktree`, `build-it`, `next`, and `task-writer` are already done.
 
 ### Out (open questions — not resolved yet)
 

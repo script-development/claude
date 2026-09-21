@@ -341,3 +341,37 @@ maintenance duty D9 already established for the project-context template — ext
 second shared file. When `implement-plan`/`review-branch`/`pr`/`fix-bug` eventually convert (the
 deferred cluster's own future pass), re-sync from the catalog original rather than re-deriving
 independently — noted inline in the shipped copy's own "Catalog origin" section.
+
+## D17 — `task-writer` reuses D16's shared algorithm and D8/D14's tracker fields; a
+user-confirmed hand-off is not a hard dependency
+
+**Chosen.** `task-writer` needed no new `project-context.md` field and no new shared reference
+file. Its Output section (previously `docs/plans/{{ISSUE_KEY_PREFIX}}-XXXX-short-description/`,
+plus an unconditional `mcp__kendo__create-issue-tool` call when no issue existed) now: (1) reuses
+`references/plan-directory.md` (D16) to find the directory that already holds `PLAN.md`, the same
+algorithm `next` uses to find it, just consumed for writing instead of reading; (2) falls back to
+`issue_tracker_skill` / `issue_tracker_project_id` (D8/D14) — the same tracker-delegation pattern
+`newbranch` already established — only when that algorithm finds nothing at all (an ad hoc plan
+with no tracked issue yet). Also confirmed Phase 0's conditional hand-off to `/implement-plan`
+(itself in the deferred cluster) is **not** a hard dependency under D12's rule: the skill's own
+text requires the developer's explicit confirmation before invoking it ("Want me to invoke
+`/implement-plan` now, or do you want TASKS.md anyway?"), and Phase 5 explicitly forbids invoking
+`/next` or `/implement-plan` after tasks are written. Contrast `build-it`, which invoked
+`/worktree` unconditionally on every run (D12) — that shape jumps the queue; a user-gated,
+declinable hand-off does not.
+
+**Why.** Nothing about this skill's actual needs was new — it's the same two problems D16 and
+D8/D14 already solved, encountered a second time from a different skill. Reuse-before-add (the
+conversion workflow's step 2) applies exactly as intended: recognizing a need is already covered
+is itself the work, not a reason to add a third mechanism. The conditional-hand-off distinction
+matters because without it, every skill that merely *mentions* another skill by name (`next`,
+`implement-plan`, `review-branch`, `pr` are all named in `task-writer`'s own text) would read as
+a hard dependency — the ordering rule was always about unconditional invocation, and this is the
+first conversion where that line was genuinely close enough to need stating explicitly.
+
+**Rejected.** Adding a `task-writer`-specific directory-naming field or re-deriving the
+plan-directory algorithm inline (duplicates D16 for no reason — the algorithm doesn't change
+based on who's consuming it). Treating the `/implement-plan` mention as a hard dependency and
+deferring `task-writer` alongside the rest of the agent/reviewer cluster — rejected because the
+invocation genuinely never happens without the developer choosing it in the moment, unlike
+`build-it`'s unconditional `/worktree` call.
