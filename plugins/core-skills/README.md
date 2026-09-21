@@ -37,6 +37,7 @@ back to, not re-explain the degrade-not-fail contract itself.
 | [memory-hygiene](skills/memory-hygiene/) | Audit the project memory store for stale, codified, duplicate entries; dry-run proposal, then sync worktree memory stores |
 | [newbranch](skills/newbranch/) | Create a new branch from this project's integration branch; if an issue tracker is configured, resolve/create the issue and start work on it |
 | [next](skills/next/) | Continue through TASKS.md — find next task, execute with TDD flow, mark done |
+| [shepard](skills/shepard/) | Drive one PR to green and answered: fix red CI, dispose every review finding, push once per cycle, arm a live watch |
 | [task-writer](skills/task-writer/) | Break down an approved PLAN.md into phased TASKS.md with a self-administered coverage checklist |
 | [wireframe](skills/wireframe/) | Generate WIREFRAMES.md (ASCII layouts, design tokens, interaction specs) from PLAN.md; self-gated by the bundled wireframe-reviewer agent |
 

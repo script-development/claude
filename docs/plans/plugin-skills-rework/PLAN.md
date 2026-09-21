@@ -132,14 +132,33 @@ sentence.
   issue-board — a 406-line worked example) shipped with two illustrative
   `{{ISSUE_KEY_PREFIX}}` fixes, same treatment as `task-writer`'s references.
 
+- **`shepard`** — needed **no new `project-context.md` field**, for the same "already
+  self-contained" reason as `grill-me` and `memory-hygiene`, but via a third mechanism: it doesn't
+  read `.claude/project-context.md` at all, because it already has its own per-repo reference-file
+  convention (`references/repos/<repo-name>.md`, one per consuming repo, defaulting cleanly when
+  absent — the same "missing file degrades, never blocks" contract `.claude/project-context.md`
+  itself follows). No `{{PLACEHOLDER}}` tokens, no `Agent()`/`subagent_type` spawns, no reference
+  doc hosted by another catalog skill (checked both the relative-link and the mention-vs-depend
+  angle per Step 1/5a). Its two bundled scripts (`ci-failures.sh`, `pr-watch.sh`, plus their
+  `.test.sh` companions) and its `references/reviewers/crit.md` reviewer contract shipped as-is,
+  executable bits preserved. Org-specific PR numbers in code comments (`kendo#2113`,
+  `emmie#1297`, `lokalekeuze#273`, …) are audit citations grounding a design decision, the same
+  worked-example treatment already given `task-writer`'s and `wireframe`'s reference docs, not
+  hardcoded behaviour needing genericization. It **did** need one real fix: its own `<skill dir>`
+  self-location logic (checked-in copy vs. user-level install) predated plugins entirely and had
+  no candidate path for a plugin-cache install, so `scripts/ci-failures.sh` would have silently
+  failed to resolve under the very install path this rework exists to support. Fixed by adopting
+  `context-economy`'s already-proven plugin-cache glob (`~/.claude/plugins/cache/*/core-skills/*/skills/shepard`,
+  last match wins) as a third candidate, checked-in copy still first (D20).
+
 ### Up next
 
-Five Generic Skills remain unconverted and untouched by this rework so far: `research`, `retro`,
-`review-mcp-descriptions`, `shepard`, `sync-worktrees`. A quick dependency grep (`Agent(`,
-`subagent_type`, `spawn`) turned up nothing in any of the five — no known hard dependency, so any
+Four Generic Skills remain unconverted and untouched by this rework so far: `research`, `retro`,
+`review-mcp-descriptions`, `sync-worktrees`. A quick dependency grep (`Agent(`,
+`subagent_type`, `spawn`) turned up nothing in any of the four — no known hard dependency, so any
 of them is a valid next pick, pending the same full check (Step 1 of the conversion workflow)
 this rework has applied to every skill so far. `babysit` stays explicitly skipped (superseded by
-`shepard`).
+`shepard`, now converted).
 
 `review-branch` — not previously named in "Deferred" above, but it belongs there: it's the
 actual owner of the three-agent unconditional spawn (`runtime-integrity-reviewer` +

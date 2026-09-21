@@ -462,3 +462,46 @@ maintenance mode until `plan-feature` itself retires. **Whoever eventually resol
 full catalog retirement should delete `.githooks/pre-commit` and `templates/` in the same pass**
 — at that point the plugin's copy becomes the sole, canonical file and there's nothing left to
 sync.
+
+## D20 — `shepard`'s own `<skill dir>` self-location gains a plugin-cache candidate
+
+**Chosen.** `shepard` needed no new `project-context.md` field — its per-repo facts already live
+in its own `references/repos/<repo-name>.md` convention, untouched by this rework, the same shape
+`grill-me`/`memory-hygiene` showed for "already project-agnostic" skills but via a third
+mechanism (its own reference-file convention rather than no project-specific need at all). What it
+*did* need: the catalog original's `<skill dir>` resolution (`.claude/skills/shepard` for a
+checked-in copy, `~/.claude/skills/shepard` for a user-level install) predates this whole rework
+and had no third candidate for a plugin-cache install — `<skill dir>/scripts/ci-failures.sh`
+would have resolved to nothing under `core-skills` installed via the marketplace, the exact
+distribution model this rework exists to support. Fixed by giving the plugin copy a bash
+resolution snippet in Step 0 that checks the checked-in path first, then globs
+`$HOME/.claude/plugins/cache/*/core-skills/*/skills/shepard` (last match wins, so a version bump
+never dangles it), then falls back to the user-level install.
+
+**Why.** Verified against this machine's actual plugin cache
+(`~/.claude/plugins/cache/script-development-plugins/context-economy/0.4.0/`) that the shape is
+`<marketplace>/<plugin>/<version>/...` — matching the glob `context-economy`'s own `handoff` skill
+already uses and has running in production (`plugins/context-economy/skills/handoff/SKILL.md`,
+"Plugin-cache glob first, last match wins (newest version)"). Reusing a pattern this repo has
+already shipped and proven, rather than inventing a second one, is the same reuse-before-add
+instinct Step 2 of the conversion workflow applies to `project-context.md` fields — it just
+applies here to a resolution mechanism instead of a data field. Wildcarding the marketplace
+segment (not hardcoding `script-development-plugins`) matches `handoff`'s own choice: a consumer
+could add this repo's marketplace under a different local name.
+
+**Rejected.** Leaving `<skill dir>` as catalog-original (checked-in + user-level only) and hoping
+a plugin install happens to also be readable some other way — rejected because it isn't: a
+plugin-cache install is neither of the two paths the original text names, so the bundled scripts
+would silently be unreachable the first time someone actually installed `core-skills` and ran
+`/shepard` without a checked-in copy. Hardcoding today's cache path
+(`.../script-development-plugins/core-skills/0.11.0/...`) instead of globbing — rejected for the
+same reason `handoff` rejected it: a version bump would dangle a version-embedded path, and this
+plugin bumps its version on every single skill conversion.
+
+**Consequence.** `plugins/core-skills/skills/shepard/SKILL.md` now genuinely diverges from
+`skills/shepard/SKILL.md` (the catalog original) in Step 0's resolution logic — not just in
+wording, the way most conversions differ, but in actual runtime behaviour. This is the same kind
+of divergence D10/D11 already established for `worktree` (per-repo customization moved out of a
+skill-local reference file) and is expected: a plugin install is a genuinely different
+distribution shape than a copy-adopted catalog skill, and this is the first conversion where that
+showed up in a skill's own self-location logic rather than in where project facts are read from.
