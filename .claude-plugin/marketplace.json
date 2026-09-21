@@ -12,7 +12,7 @@
     {
       "name": "core-skills",
       "source": "./plugins/core-skills",
-      "description": "Project-agnostic catalog skills bundled into one installable plugin. Each skill reads .claude/project-context.md for any project-specific facts it needs. Currently: catchup, worktree, build-it, commit, grill-me, memory-hygiene, newbranch, next, task-writer."
+      "description": "Project-agnostic catalog skills bundled into one installable plugin. Each skill reads .claude/project-context.md for any project-specific facts it needs. Currently: catchup, worktree, build-it, commit, grill-me, memory-hygiene, newbranch, next, task-writer, wireframe (with the wireframe-reviewer agent)."
     }
   ]
 }

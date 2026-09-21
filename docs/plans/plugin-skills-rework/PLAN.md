@@ -121,10 +121,31 @@ sentence.
   own confirmation (not an unconditional spawn), and the issue-tracker fallback is the same
   optional/conditional shape already established for `newbranch`.
 
+- **`wireframe`** — no new field needed; reused `references/plan-directory.md` (D16) for
+  Step 1's directory lookup, same as `next`/`task-writer`. The one new mechanic: `wireframe`
+  unconditionally spawns the `wireframe-reviewer` agent every run (Step 5), a "one clean
+  prerequisite" dependency in D12's sense, not a cluster — so it's the first skill in this
+  rework to actually exercise agent bundling (`plugins/core-skills/agents/`), confirming what
+  D12/step 6 of the workflow memory had only established in principle (D18). The agent itself
+  needed zero changes — no `{{PLACEHOLDER}}` tokens, no Kendo assumptions, already fully
+  project-agnostic. Its three reference files (anti-patterns, wireframes-template,
+  issue-board — a 406-line worked example) shipped with two illustrative
+  `{{ISSUE_KEY_PREFIX}}` fixes, same treatment as `task-writer`'s references.
+
 ### Up next
 
-`wireframe` — next in README's Generic Skills order with no unconverted hard dependency.
-`worktree`, `build-it`, `next`, and `task-writer` are already done.
+Five Generic Skills remain unconverted and untouched by this rework so far: `research`, `retro`,
+`review-mcp-descriptions`, `shepard`, `sync-worktrees`. A quick dependency grep (`Agent(`,
+`subagent_type`, `spawn`) turned up nothing in any of the five — no known hard dependency, so any
+of them is a valid next pick, pending the same full check (Step 1 of the conversion workflow)
+this rework has applied to every skill so far. `babysit` stays explicitly skipped (superseded by
+`shepard`).
+
+`review-branch` — not previously named in "Deferred" above, but it belongs there: it's the
+actual owner of the three-agent unconditional spawn (`runtime-integrity-reviewer` +
+`precedent-reviewer` + `docs-accuracy-reviewer`) that `pr`, `implement-plan`, and transitively
+`fix-bug` gate on. Converting it is the real unblock for that whole cluster — treat it as the
+cluster's first move whenever that pass starts, not a sixth independent Generic Skill.
 
 ### Out (open questions — not resolved yet)
 

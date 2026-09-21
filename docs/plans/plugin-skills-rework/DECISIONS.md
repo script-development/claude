@@ -336,6 +336,35 @@ is deferred as a unit for reasons unrelated to this one reference doc. Reimpleme
 looser issue-key-only algorithm for `next` — rejected per plan-directory.md's own explicit
 warning not to unify the two.
 
+## D18 — `wireframe` bundles the `wireframe-reviewer` agent as a plugin agent (first one)
+
+**Chosen.** `wireframe` unconditionally spawns `wireframe-reviewer` every run (Step 5) — a real
+hard dependency under D12's rule, but on a single agent, not a multi-skill/multi-agent cluster
+the way `fix-bug`/`pr`/`implement-plan`/`plan-feature` are. Same shape as `worktree` being
+converted before `build-it`: one clean prerequisite jumps the queue rather than triggering a
+cluster deferral. Copied `agents/wireframe-reviewer.md` into `plugins/core-skills/agents/`
+byte-identical — it needed zero changes (no `{{PLACEHOLDER}}` tokens, no Kendo assumptions,
+already fully project-agnostic) — and added an "Agents" section to `plugins/core-skills/README.md`
+since this is the first plugin agent, not just the first plugin skill with an agent dependency.
+
+**Why.** This is the first time this rework actually exercises agent bundling, rather than just
+reasoning about it. D12's rule already distinguished a clean prerequisite (jump the queue) from a
+cluster (defer it) for skill-to-skill dependencies; `wireframe-reviewer` confirms the same split
+applies to skill-to-agent dependencies — it's one agent with no further dependencies of its own
+(verified: it doesn't spawn anything, read anything Kendo-specific, or reference any
+`{{PLACEHOLDER}}` token), so nothing about bundling it resembles the deferred cluster's tangle.
+
+**Rejected.** Deferring `wireframe` alongside the agent/reviewer cluster on the grounds that it
+also depends on an agent — rejected because the cluster's actual reason for deferral was its
+*size* (four skills, six-plus agents, `/review-branch` sitting underneath three of them), not
+"has an agent dependency" as a blanket rule. One clean agent is exactly what D12 already said
+should jump the queue instead.
+
+**Consequence.** The conversion workflow's step 6 ("agents are a hard dependency too") now has a
+worked example distinguishing "one clean agent — bundle and proceed" from "an agent nested under
+a whole cluster — defer the cluster." The next skill to hit a single-agent dependency should
+follow `wireframe`'s path, not treat every agent dependency as cluster-shaped by default.
+
 **Consequence.** Two copies of `plan-directory.md` now need to move together by hand, same
 maintenance duty D9 already established for the project-context template — extended here to a
 second shared file. When `implement-plan`/`review-branch`/`pr`/`fix-bug` eventually convert (the

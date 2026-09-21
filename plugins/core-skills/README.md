@@ -38,6 +38,16 @@ back to, not re-explain the degrade-not-fail contract itself.
 | [newbranch](skills/newbranch/) | Create a new branch from this project's integration branch; if an issue tracker is configured, resolve/create the issue and start work on it |
 | [next](skills/next/) | Continue through TASKS.md — find next task, execute with TDD flow, mark done |
 | [task-writer](skills/task-writer/) | Break down an approved PLAN.md into phased TASKS.md with a self-administered coverage checklist |
+| [wireframe](skills/wireframe/) | Generate WIREFRAMES.md (ASCII layouts, design tokens, interaction specs) from PLAN.md; self-gated by the bundled wireframe-reviewer agent |
+
+## Agents
+
+Plugins bundle agent definitions the same way they bundle skills — `agents/` at the plugin
+root, auto-discovered, no `plugin.json` entry needed.
+
+| Agent | Description |
+|-------|-------------|
+| [wireframe-reviewer](agents/wireframe-reviewer.md) | Scores WIREFRAMES.md on screen coverage, token validity, component references, internal consistency, and AC traceability; spawned by `/wireframe` |
 
 ## Design record
 
