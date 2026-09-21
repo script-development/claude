@@ -72,6 +72,7 @@ Installed via this repo's marketplace, not copied.
 | Plugin | Skills | Description |
 |--------|--------|-------------|
 | [context-economy](plugins/context-economy/) | [handoff](plugins/context-economy/skills/handoff/) | Handoffs that survive a context reset: writes and verifies them, plus hooks that automate the write/inject cycle |
+| [core-skills](plugins/core-skills/) | [catchup](plugins/core-skills/skills/catchup/) | Project-agnostic catalog skills bundled into one plugin; reads `.claude/project-context.md` for project-specific facts |
 
 ## Agents Catalog
 

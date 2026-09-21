@@ -8,6 +8,11 @@
       "name": "context-economy",
       "source": "./plugins/context-economy",
       "description": "Handoffs that survive a context reset: a /handoff skill that writes and verifies them, plus hooks that write one automatically before compaction takes the session and inject the right one into the next."
+    },
+    {
+      "name": "core-skills",
+      "source": "./plugins/core-skills",
+      "description": "Project-agnostic catalog skills bundled into one installable plugin. Each skill reads .claude/project-context.md for any project-specific facts it needs. Currently: catchup."
     }
   ]
 }
