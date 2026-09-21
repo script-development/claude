@@ -989,3 +989,67 @@ hand-off pattern exists to avoid.
 open items are the ones already recorded in PLAN.md's "Out" section (fate of `skills/catchup/` /
 `skills/worktree/` / `templates/` / `.githooks/pre-commit`; no split threshold set for
 `core-skills`) — not blocking, revisit only if raised.
+
+## D31 — PR review trims six skills out of the plugin bundle (not out of the catalog); two
+orphaned template fields dropped
+
+**Chosen.** The team lead's review of the PR bundling every Generic Skill into `core-skills`
+asked for six of them back out of the *bundle*, for now: `memory-hygiene`, `build-it`,
+`grill-me`, `research`, `retro`, `wireframe`. Reasons given per skill, via PR review comments —
+`memory-hygiene`: keep the plugin implementation-focused for now; `build-it`: overlaps with
+`implement-plan` closely enough that shipping both makes it unclear which to reach for;
+`grill-me`: same ambiguity against `plan-feature`; `research` / `retro`: not
+implementation-focused, not interesting for this plugin yet; `wireframe`: out for now, a
+candidate to merge into `plan-feature` later rather than ship standalone. Removed the six
+`plugins/core-skills/skills/<name>/` directories and the one agent only `wireframe` spawned,
+`wireframe-reviewer` (`plugins/core-skills/agents/`) — `bug-fix-verifier`,
+`runtime-integrity-reviewer`, `precedent-reviewer`, `docs-accuracy-reviewer`, `plan-reviewer`,
+and `surface-reviewer` are untouched, each still owned by a skill that stays in.
+
+Checked every remaining bundled skill for a hard dependency on one of the six before removing
+anything (workflow Step 5's own concern, run in reverse): `grill-me`'s only functional dependency
+was `build-it` (both leaving together, no orphan); nothing else in the bundle spawns or
+unconditionally invokes any of the six. The handful of remaining mentions (`implement-plan`,
+`plan-feature`, `review-branch`, `task-writer` naming `/wireframe` as a possible next step, or
+checking `if WIREFRAMES.md exists`) are all Step 5a-shaped — naming, not depending — the same
+distinction D17 already established, so left as prose.
+
+`plugins/core-skills/references/plan-directory.md`'s intro paragraph named `wireframe` as a
+read-only consumer inside this plugin; removed that clause now that it's true again.
+
+**Two `.claude/project-context.md` fields dropped as orphaned**, per the user's explicit call
+that this is in scope alongside the skill removal: `research_dir` (sole reader was `research`)
+and `retro_dir` (sole reader was `retro`) — zero readers left anywhere in `plugins/core-skills/`
+after this removal, confirmed by grep, not assumed. Removed from `templates/` (canonical) and
+propagated to the shipped mirror. While touching the two fields' surviving neighbors' "used by"
+comments to drop `build-it` (`plan_dir`, `worktree_dir`, and the `## Worktrees` section header's
+`integration_branch` list), corrected two pre-existing omissions in that same
+`integration_branch` list, found by grep rather than assumed from the existing comment:
+`newbranch` and `review-branch` both already read it (D26 documented `review-branch`'s own read
+explicitly; `newbranch`'s was never added to this shared comment when `newbranch` converted). Left
+`issue_tracker_skill`'s own "(used by: catchup, newbranch)" header alone — also stale (`pr`,
+`task-writer`, `fix-bug`, `plan-feature` all read it too) but pre-existing and unrelated to this
+change; fixing it isn't part of what was asked here.
+
+**Why.** The team lead's scope call is a product decision about what ships in v1 of the plugin,
+not a technical one — nothing here disputes it. Dropping the two orphaned fields follows
+directly from the user's own instruction once the skill removal made them callerless; leaving an
+unused field in the template would document a mechanism nothing in the shipped bundle actually
+exercises, the opposite of the template's own "add a field when a skill is converted that reads
+it, never speculatively" rule (already stated in its header comment) applied in reverse.
+
+**Rejected.** Deleting the six skills from the catalog `skills/` tree too — rejected, out of
+scope: the ask was specifically about the plugin bundle, and the catalog remains the canonical
+source every consumer (including a future, differently-scoped plugin) draws from. Fixing
+`issue_tracker_skill`'s own stale "used by" header while in the file — rejected as scope creep
+against the user's specific ask (drop orphaned fields), unlike the `integration_branch` fixes,
+which were corrections to the exact line already being edited to remove `build-it`.
+
+**Consequence.** `core-skills` bundles 14 skills (`catchup`, `worktree`, `commit`, `fix-bug`,
+`implement-plan`, `newbranch`, `next`, `plan-feature`, `pr`, `review-branch`,
+`review-mcp-descriptions`, `shepard`, `sync-worktrees`, `task-writer`) and 6 agents, at plugin
+version 0.21.0. The catalog's own Generic Skills table is unaffected — all 19 entries (everything
+but `babysit`) still exist there, converted or not, as the baseline this bundle draws from.
+`memory-hygiene`, `build-it`, `grill-me`, `research`, `retro`, and `wireframe` remain candidates
+for a future re-add (or, for `wireframe`, a merge into `plan-feature`) — not recorded as a
+blocking open item, since the team lead's framing was "not now," not "never."

@@ -372,11 +372,22 @@ skill, has no reason to resolve anything `plan-feature`-specific for it, so `pre
 now runs an independent copy of D20's multi-candidate glob and degrades to a silent skip on a
 total miss. Full reasoning: D30 in `DECISIONS.md`.
 
-### Rework complete
+### Rework complete, then trimmed by PR review
 
-Every Generic Skill in the catalog README's table is now converted into `core-skills`, at plugin
-version 0.20.0. `babysit` stays explicitly, permanently skipped (superseded by `shepard`). The
-remaining open items are the ones already recorded in "Out" below (fate of `skills/catchup/` /
+Every Generic Skill in the catalog README's table was converted into `core-skills`, at plugin
+version 0.20.0. `babysit` stayed explicitly, permanently skipped (superseded by `shepard`).
+
+The team lead's review of that PR then asked for six of them back out of the **bundle** (not the
+catalog): `memory-hygiene`, `build-it`, `grill-me`, `research`, `retro`, `wireframe` — kept out for
+now to keep the plugin implementation-focused and avoid `build-it`/`grill-me` overlapping
+confusingly with `implement-plan`/`plan-feature`. Removed, along with `wireframe`'s own
+`wireframe-reviewer` agent, and two now-callerless `project-context.md` fields (`research_dir`,
+`retro_dir`). Full reasoning: D31 in `DECISIONS.md`.
+
+`core-skills` now bundles 14 skills and 6 agents, at plugin version 0.21.0. The catalog's own
+Generic Skills table is unaffected — all six removed skills still exist there as the baseline a
+future re-add (or, for `wireframe`, a merge into `plan-feature`) would draw from. The remaining
+open items are the ones already recorded in "Out" below (fate of `skills/catchup/` /
 `skills/worktree/` / `templates/` / `.githooks/pre-commit`; no split threshold set for
 `core-skills`) — not blocking, revisit only if raised.
 

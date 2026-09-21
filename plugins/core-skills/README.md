@@ -31,24 +31,18 @@ back to, not re-explain the degrade-not-fail contract itself.
 |-------|-------------|
 | [catchup](skills/catchup/) | Load branch context, show progress, sync with base branch |
 | [worktree](skills/worktree/) | Cut a fresh git worktree: branch, deps, env files, project house rules, then hand back the path |
-| [build-it](skills/build-it/) | Implement the last grill-me alignment: cut a worktree, write plan docs if chosen, build, run gates, open the PR |
 | [commit](skills/commit/) | Small, focused commits matching this project's own message convention, + push |
 | [fix-bug](skills/fix-bug/) | End-to-end bug-fix workflow: reproduce, diagnose, propose, implement, gate on the bundled bug-fix-verifier agent, and hand off to `/pr` |
-| [grill-me](skills/grill-me/) | Interview the developer through AskUserQuestion before any code is written; ends with docs-or-not and build-or-stop |
 | [implement-plan](skills/implement-plan/) | Execute a feature plan end-to-end without TASKS.md; gated by `/review-branch` (both reviewers ≥ 7) |
-| [memory-hygiene](skills/memory-hygiene/) | Audit the project memory store for stale, codified, duplicate entries; dry-run proposal, then sync worktree memory stores |
 | [newbranch](skills/newbranch/) | Create a new branch from this project's integration branch; if an issue tracker is configured, resolve/create the issue and start work on it |
 | [next](skills/next/) | Continue through TASKS.md — find next task, execute with TDD flow, mark done |
 | [plan-feature](skills/plan-feature/) | Interrogate the developer with codebase-informed questions, then produce PLAN.md and DECISIONS.md; self-gated by the bundled plan-reviewer and surface-reviewer agents |
 | [pr](skills/pr/) | Create a pull request with automatic issue feedback; gates on this session's `/review-branch` report (or `bug-fix-verifier`'s BUG.md verdict on a bug branch) and embeds the docs-accuracy verdict when the diff touches `doc_paths` |
-| [research](skills/research/) | Run a research query, produce a structured markdown report, and file it so knowledge accumulates |
-| [retro](skills/retro/) | Write a numbered retrospective capturing what went wrong, why, and what changed |
 | [review-branch](skills/review-branch/) | Full-branch review vs the integration branch: runtime-integrity-reviewer + precedent-reviewer in parallel, joined by docs-accuracy-reviewer when the diff touches this project's `doc_paths`; reports in chat |
 | [review-mcp-descriptions](skills/review-mcp-descriptions/) | Improve MCP tool/resource descriptions for Tool Search discoverability |
 | [shepard](skills/shepard/) | Drive one PR to green and answered: fix red CI, dispose every review finding, push once per cycle, arm a live watch |
 | [sync-worktrees](skills/sync-worktrees/) | Sync every secondary git worktree with the primary: env files, dependencies, optional fast-forward |
 | [task-writer](skills/task-writer/) | Break down an approved PLAN.md into phased TASKS.md with a self-administered coverage checklist |
-| [wireframe](skills/wireframe/) | Generate WIREFRAMES.md (ASCII layouts, design tokens, interaction specs) from PLAN.md; self-gated by the bundled wireframe-reviewer agent |
 
 ## Agents
 
@@ -63,7 +57,6 @@ root, auto-discovered, no `plugin.json` entry needed.
 | [precedent-reviewer](agents/precedent-reviewer.md) | Check a branch against the repo's standing rules, sibling implementations, and its own plan prose; spawned always by `/review-branch` |
 | [runtime-integrity-reviewer](agents/runtime-integrity-reviewer.md) | Check a branch for invariants that only break across the whole system — transactions, concurrency, lifecycle, silent failure; spawned always by `/review-branch` |
 | [surface-reviewer](agents/surface-reviewer.md) | Audit a plan's Security & Cost Surface prose against the seven canonical row questions and the repo's standing rules; spawned by `/plan-feature` Phase 5 in parallel with plan-reviewer |
-| [wireframe-reviewer](agents/wireframe-reviewer.md) | Scores WIREFRAMES.md on screen coverage, token validity, component references, internal consistency, and AC traceability; spawned by `/wireframe` |
 
 ## Design record
 

@@ -33,20 +33,16 @@ issue_tracker_project_id: # This project's id within that tracker (e.g. Kendo's 
 # when a skill hardcodes a directory convention with no override; don't add one speculatively.
 plan_dir:              # e.g. docs/plans/{issue_key}/ — this project's plan directory
                        # convention. {issue_key} is substituted literally. Omit to use the
-                       # skill's own generic default. Used by: catchup, build-it.
-research_dir:          # e.g. docs/research/ — this project's filed-research directory.
-                       # Omit to use the default, research/. Used by: research.
-retro_dir:             # e.g. docs/retrospectives/ — this project's retro directory.
-                       # Omit to use the default, retrospectives/. Used by: retro.
+                       # skill's own generic default. Used by: catchup.
 worktree_dir:          # e.g. .claude/worktrees/{slug} — override the default worktree
                        # location. {slug} is substituted literally. Needed when repo tooling
                        # sweeps the whole repo root (a docker build context, a globbing test
                        # runner, IDE indexing), or when the default path is already covered by
                        # this project's own .gitignore (say so under Worktrees > House rules
                        # below — worktree can then skip its own ignore-list write).
-                       # Used by: worktree, build-it.
+                       # Used by: worktree.
 
-# --- Worktrees (used by: worktree, build-it, commit, sync-worktrees) ---
+# --- Worktrees (used by: worktree, commit, newbranch, review-branch, sync-worktrees) ---
 integration_branch:    # Override when auto-detection (origin/development, origin/develop,
                        # then the remote default branch) would get it wrong for this project.
                        # sync-worktrees auto-detects differently (origin/HEAD, then main, then
@@ -92,8 +88,6 @@ section exists so that repetition doesn't accumulate one thin subsection per ski
 here, not a new `##` heading, the next time a skill hardcodes a directory convention.
 
 - `plan_dir` — a branch's planning artifacts (`PLAN.md`, `TASKS.md`, `DECISIONS.md`).
-- `research_dir` — filed research reports.
-- `retro_dir` — numbered retrospectives.
 - `worktree_dir` — where a cut worktree lives; see Worktrees below for the richer,
   worktree-specific knowledge this field's own section still carries.
 
@@ -101,7 +95,7 @@ here, not a new `##` heading, the next time a skill hardcodes a directory conven
 
 `integration_branch` is a simple one-line override — see the frontmatter comments above.
 `worktree_dir` lives in Directories above, since it's the same single-scalar-path shape as
-`plan_dir`/`research_dir`/`retro_dir`; it's still referenced here in House rules, because the
+`plan_dir`; it's still referenced here in House rules, because the
 knowledge of *why* its default might need overriding (a `.gitignore` that already covers it, a
 build context that sweeps it) is worktree-specific. Everything below `integration_branch` is
 richer, project-verified knowledge that doesn't fit a single scalar, so it lives here as prose
