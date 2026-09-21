@@ -27,12 +27,24 @@ of the "already generic" shape `grill-me`/`memory-hygiene`/`review-mcp-descripti
 the parent plan for a different reason: it discovers its project id at runtime
 (`kendo://projects`) rather than hardcoding one, so it has no project-specific fact to
 externalize. The only edit was swapping the three illustrative `{{ISSUE_KEY_PREFIX}}-00NN`
-placeholders in `SKILL.md`'s worked examples for the concrete `KD-00NN` style
-`newbranch`/`task-writer`/`pr` already established, per the parent workflow's own placeholder-style
-convention — no functional change. `references/setup.md` and `references/issue-templates.md`
-shipped byte-identical: `setup.md` already used a generic `<your-tenant>` placeholder rather than
-a `{{TENANT}}` token, and `issue-templates.md` carried no placeholder tokens of its own to begin
-with.
+placeholders in `SKILL.md`'s worked examples for `PROJ-00NN`.
+
+**Correction, caught by the user in review.** The first pass of this edit used `KD-00NN` — the
+concrete style `newbranch`/`task-writer`/`pr` established in the parent plan — without checking
+whether it actually fit *this* skill. It doesn't: `KD` isn't a generic stand-in in that convention,
+it's `core-skills`' own worked examples naming a real project code (this org's own "Kendo
+development" project inside its own Kendo tenant — those examples are grounded in a real
+consumer's usage, not written as pure placeholders). Reusing it here, inside `kendo-mcp` itself —
+the skill whose whole premise is "works with any project hosted on your Kendo tenant" — would
+misleadingly suggest `KD` is a reserved or expected value rather than one tenant's arbitrary
+project code. Fixed by using `PROJ-00NN` instead: the file's *own* pre-existing generic-issue-key
+example, already present a few lines above the first edited spot (the `key` field's example in
+Common Operations, `PROJ-0142`) before this conversion touched anything. Matching a skill's own
+established placeholder beats importing one from a different skill's worked examples, even when
+that skill's convention is otherwise a reasonable default. `references/setup.md` and
+`references/issue-templates.md` shipped byte-identical: `setup.md` already used a generic
+`<your-tenant>` placeholder rather than a `{{TENANT}}` token, and `issue-templates.md` carried no
+placeholder tokens of its own to begin with.
 
 **Rejected — re-pointing the parent plan's already-converted skills at the newly-real
 `kendo-mcp/references/issue-templates.md` path.** `newbranch`, `plan-feature`, and `task-writer`

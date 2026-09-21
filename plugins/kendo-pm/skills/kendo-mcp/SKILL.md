@@ -166,7 +166,7 @@ branch_name: "feature/my-branch"
 ```
 
 **Guard:** when the branch name already carries the issue key (e.g.
-`feat/KD-0003-target-context`), Kendo auto-links it — do not call `link-branch`
+`feat/PROJ-0003-target-context`), Kendo auto-links it — do not call `link-branch`
 for that branch. Reserve the tool for branches whose name does not contain the key.
 
 ### Log Time
@@ -194,13 +194,13 @@ project_id: <your-project-id> (optional)
 
 ### Parallel-gather pattern
 
-When a flow needs **both** project meta and issue payload (e.g. "pick up issue KD-0042"), fire
+When a flow needs **both** project meta and issue payload (e.g. "pick up issue PROJ-0042"), fire
 both gather tools in the same tool-call block — same wall-clock as one round-trip:
 
 ```
 parallel:
   mcp__kendo__prepare-project-context-tool(project_id: <your-project-id>)
-  mcp__kendo__prepare-issue-context-tool(issue_key: "KD-0042")
+  mcp__kendo__prepare-issue-context-tool(issue_key: "PROJ-0042")
 ```
 
 Use only the project tool when no specific issue is in play (triage queue scan, board alignment

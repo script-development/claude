@@ -51,9 +51,12 @@ this plugin ships on its own. Revisit only if a fact turns out to make no sense 
   discovers its project id at runtime (`kendo://projects`) rather than hardcoding one, the same
   "already generic" shape `grill-me`/`memory-hygiene`/`review-mcp-descriptions` each hit in the
   parent plan for a different reason. Only change: the three illustrative
-  `{{ISSUE_KEY_PREFIX}}-00NN` placeholders in `SKILL.md`'s worked examples swapped for the
-  concrete `KD-00NN` style already established in the parent plan. Both reference files
-  (`setup.md`, `issue-templates.md`) shipped byte-identical. See D1.
+  `{{ISSUE_KEY_PREFIX}}-00NN` placeholders in `SKILL.md`'s worked examples swapped for
+  `PROJ-00NN` — the file's *own* pre-existing generic-issue-key example (already used a few lines
+  above, for the `key` field in Common Operations), not the parent plan's `KD-00NN` convention,
+  which names a real project code (Kendo's own internal dev project within its own tenant) and so
+  is the wrong placeholder for a skill documenting integration with *any* Kendo tenant. See D1.
+  Both reference files (`setup.md`, `issue-templates.md`) shipped byte-identical.
 
 ### Out (open questions — not resolved yet)
 
