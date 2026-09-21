@@ -71,10 +71,16 @@ picked apart skill-by-skill. Revisit as its own pass.
   dependency, `/build-it`, was already converted, so no ordering issue. Not every skill needs
   the `project-context.md` mechanism — this is the first confirmed case of one that doesn't.
 
+- **`memory-hygiene`** — needed **zero changes**, for a different reason than `grill-me`: it
+  operates entirely on Claude Code's own platform-level conventions (the
+  `~/.claude/projects/<key>/memory/` store, `.claude/agents/`, `.claude/skills/`, `CLAUDE.md`),
+  none of which vary by business-domain project the way an issue tracker or plan directory
+  does. No `Agent()` spawns, no invocation of another skill — `claude-md-improver` is only
+  mentioned conditionally ("if one is installed"), never called.
+
 ### Up next
 
-`implement-plan` was next in strict README order but is deferred (dependency cluster, see
-above). `memory-hygiene` — next skill with no hard dependency.
+`newbranch` — next in README's Generic Skills order with no unconverted hard dependency.
 
 ### Out (open questions — not resolved yet)
 

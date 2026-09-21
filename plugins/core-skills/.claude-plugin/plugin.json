@@ -1,8 +1,8 @@
 {
   "name": "core-skills",
   "displayName": "Core Skills",
-  "version": "0.5.0",
-  "description": "Project-agnostic catalog skills bundled into one installable plugin. Each skill reads .claude/project-context.md for any project-specific facts it needs. Currently: catchup, worktree, build-it, commit, grill-me.",
+  "version": "0.6.0",
+  "description": "Project-agnostic catalog skills bundled into one installable plugin. Each skill reads .claude/project-context.md for any project-specific facts it needs. Currently: catchup, worktree, build-it, commit, grill-me, memory-hygiene.",
   "keywords": [
     "git",
     "workflow",
@@ -10,7 +10,8 @@
     "context",
     "worktree",
     "grill-me",
-    "commit"
+    "commit",
+    "memory"
   ],
   "author": {
     "name": "script-development"

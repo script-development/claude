@@ -26,6 +26,7 @@ to `.claude/project-context.md` in the project and fill in only the fields that 
 | [build-it](skills/build-it/) | Implement the last grill-me alignment: cut a worktree, write plan docs if chosen, build, run gates, open the PR |
 | [commit](skills/commit/) | Small, focused commits matching this project's own message convention, + push |
 | [grill-me](skills/grill-me/) | Interview the developer through AskUserQuestion before any code is written; ends with docs-or-not and build-or-stop |
+| [memory-hygiene](skills/memory-hygiene/) | Audit the project memory store for stale, codified, duplicate entries; dry-run proposal, then sync worktree memory stores |
 
 ## Design record
 
