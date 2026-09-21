@@ -49,11 +49,11 @@ gauge() {
 [ -f "$GAUGE" ] || { echo "FAIL: gauge not found at $GAUGE"; exit 1; }
 [ -f "$REAL_THRESHOLDS" ] || { echo "FAIL: thresholds not found at $REAL_THRESHOLDS"; exit 1; }
 
-# Confirm the file under test really is the 120k/200k pair, so a threshold change breaks a
+# Confirm the file under test really is the 200k/300k pair, so a threshold change breaks a
 # test rather than silently rewriting what these cases mean.
 ( . "$REAL_THRESHOLDS"
-  [ "$CTX_NOTICE_TOKENS" = "120000" ] || { echo "FAIL: CTX_NOTICE_TOKENS is $CTX_NOTICE_TOKENS, tests assume 120000"; exit 1; }
-  [ "$CTX_URGE_TOKENS" = "200000" ]   || { echo "FAIL: CTX_URGE_TOKENS is $CTX_URGE_TOKENS, tests assume 200000"; exit 1; }
+  [ "$CTX_NOTICE_TOKENS" = "200000" ] || { echo "FAIL: CTX_NOTICE_TOKENS is $CTX_NOTICE_TOKENS, tests assume 200000"; exit 1; }
+  [ "$CTX_URGE_TOKENS" = "300000" ]   || { echo "FAIL: CTX_URGE_TOKENS is $CTX_URGE_TOKENS, tests assume 300000"; exit 1; }
 ) || exit 1
 
 # ── Below NOTICE: bare token count, no colour, no denominator ─────
@@ -61,23 +61,23 @@ gauge() {
 # its token count, and where it differs, its thresholds file.
 assert_eq "zero tokens is bare"             "ctx:0k"    "$(gauge 0)"
 assert_eq "well below notice is bare"       "ctx:72k"   "$(gauge 72346)"
-assert_eq "one token below notice is bare"  "ctx:119k"  "$(gauge 119999)"
+assert_eq "one token below notice is bare"  "ctx:199k"  "$(gauge 199999)"
 
 # ── NOTICE stage: threshold named, because now it is close enough to act on ──
-assert_eq "exactly at notice is yellow"     "<YELLOW>ctx:120k/200k<RESET>" "$(gauge 120000)"
-assert_eq "mid-notice is yellow"            "<YELLOW>ctx:152k/200k<RESET>" "$(gauge 152400)"
-assert_eq "one token below urge is yellow"  "<YELLOW>ctx:199k/200k<RESET>" "$(gauge 199999)"
+assert_eq "exactly at notice is yellow"     "<YELLOW>ctx:200k/300k<RESET>" "$(gauge 200000)"
+assert_eq "mid-notice is yellow"            "<YELLOW>ctx:252k/300k<RESET>" "$(gauge 252400)"
+assert_eq "one token below urge is yellow"  "<YELLOW>ctx:299k/300k<RESET>" "$(gauge 299999)"
 
 # ── URGE stage ───────────────────────────────────────────────────
-assert_eq "exactly at urge is red"          "<BOLD><RED>ctx:200k/200k handoff?<RESET>" "$(gauge 200000)"
-assert_eq "deep session is red"             "<BOLD><RED>ctx:881k/200k handoff?<RESET>" "$(gauge 881000)"
+assert_eq "exactly at urge is red"          "<BOLD><RED>ctx:300k/300k handoff?<RESET>" "$(gauge 300000)"
+assert_eq "deep session is red"             "<BOLD><RED>ctx:881k/300k handoff?<RESET>" "$(gauge 881000)"
 
 # ── No percentage, ever ──────────────────────────────────────────
 # used_percentage is denominated in the auto-compaction ceiling, which is the signal this
-# advisory exists to replace: at the 200k reset threshold it reads 20% on a 1M window, which
+# advisory exists to replace: at the 300k reset threshold it reads 30% on a 1M window, which
 # invites the wrong conclusion at exactly the wrong depth. Assert it never appears, so
 # reintroducing it as a "nice extra" fails here rather than in a reader's head.
-for t in 0 72346 152400 881000; do
+for t in 0 72346 252400 881000; do
   seg="$(gauge "$t")"
   case "$seg" in
     *%*) FAIL=$((FAIL + 1)); echo "FAIL: percentage reappeared at $t tokens: $seg" ;;
@@ -188,7 +188,7 @@ assert_eq "sourcing and calling clobbers neither colours nor thresholds" \
 # "simplify it to $HOME/.claude/lib" change would silently break in the repo.
 # Act & Assert
 assert_eq "default resolution finds the nested thresholds unaided" \
-  "<BOLD><RED>ctx:881k/200k handoff?<RESET>" \
+  "<BOLD><RED>ctx:881k/300k handoff?<RESET>" \
   "$( ( unset CTX_THRESHOLDS_FILE; . "$GAUGE"; context_gauge 881000 ) | visible )"
 
 # It emits no trailing newline, so a consumer can interpolate it mid-line.

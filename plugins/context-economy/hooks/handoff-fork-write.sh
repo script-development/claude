@@ -11,6 +11,20 @@
 # `docs/measured.md` finding #27 -- not free, just not charged against the resource this whole
 # bundle exists to protect).
 #
+# ── D23: A SYNCHRONOUS SKELETON WRITE, BEFORE THE DETACHED TURN EVEN EXISTS ────────────────
+#
+# Detaching the write from compaction opens a race this file used to leave entirely to
+# `hooks/handoff-inject.sh`'s `SessionStart(source: compact)` read leg: compaction can finish, and
+# that read leg can fire, before the detached turn below has produced anything -- so the reader
+# either finds a stale `complete` handoff from a PREVIOUS cycle and mistakes it for coverage of
+# THIS one, or finds nothing and cannot tell "never asked for" apart from "asked for, not landed
+# yet". `docs/design.md` D23 fixes this with a `progress:` header field the write and read legs
+# both watch, and this hook writes its `writing` value ITSELF, synchronously, before the `nohup`
+# spawn further down -- never as that spawn's own first action. The reasoning for why it has to be
+# this script and not the detached turn: this script must fully return before the harness proceeds
+# to compaction, so a write placed here is program order, never a race against a cold `claude -p`
+# start. See the block below headed "D23: the synchronous skeleton write" for the mechanics.
+#
 # ── WHY NO TOKEN-THRESHOLD ARMING, UNLIKE THE MECHANISM THIS REPLACES ──────────────────────
 #
 # handoff-write.sh's `trigger = ceiling - 2*large_request - authoring_turn` exists to predict
@@ -69,6 +83,25 @@
 # reason (killing a spawned tree from Node) and worked around it with `taskkill /PID ... /T /F`
 # instead of relying on a plain kill signal; that fix was not ported here. Until it is,
 # CTX_FORK_TIMEOUT_SECONDS is best read as "when this SHOULD stop," not "when it WILL."
+#
+# ── D28: `--session-id`, ANSWERING "DIAGNOSING A SLOW RUN NEEDS stream-json" DIFFERENTLY ──────
+#
+# The paragraph above already named the problem this closes: `--output-format json` is silent
+# until the turn ends, so a genuinely slow (not hung) run is indistinguishable from a dead one from
+# the outside. Switching this hook's OWN output format to `stream-json` would fix that for THIS
+# process's stdout, but this process is `nohup`'d and disowned before that stream would ever be
+# read live -- there is nobody watching `$out_file` while it grows. What a reader (human or the
+# read leg's own poll loop, `hooks/handoff-inject.sh`) CAN watch live is the detached turn's own
+# transcript, which Claude Code writes incrementally regardless of `--output-format` (confirmed
+# directly, `docs/measured.md` Finding #36) -- but only if its filename is known ahead of time,
+# since `--output-format json`'s own `session_id` field is itself withheld until the run ends.
+#
+# `--session-id <uuid>`, generated here and passed below, makes that filename a KNOWN value instead
+# of something only the finished run's own stdout reveals. This does not replace `progress:`
+# polling (`docs/design.md` D23) -- that field is still the only CORRECTNESS signal, the one that
+# says the document actually landed and passed the gate. This is a LIVENESS signal only: whether
+# the transcript is still advancing tells a reader "still working, just slow" apart from "dead",
+# which elapsed wall time alone cannot.
 
 set -uo pipefail
 
@@ -100,9 +133,37 @@ mkdir -p "$lock_dir" 2>/dev/null || exit 0
 
 hook_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
-if [ -e "$lock" ] && [ -r "$hook_dir/../lib/handoff-store.sh" ]; then
-    # shellcheck source=../lib/handoff-store.sh
-    . "$hook_dir/../lib/handoff-store.sh"
+# `store` is located FIRST and unconditionally, ahead of the dedup lock and the gate/skill probes
+# below -- D23's synchronous skeleton write (further down) needs it, and that write has to happen
+# no matter what the lock says, so a session's own dedup accounting never decides whether the
+# race-closing placeholder gets written.
+store=
+for s in "$HOME"/.claude/plugins/cache/*/context-economy/*/lib/handoff-store.sh; do
+    [ -r "$s" ] && store=$s
+done
+[ -n "$store" ] || for s in "$hook_dir/../lib/handoff-store.sh" "$HOME/.claude/lib/handoff-store.sh"; do
+    [ -r "$s" ] && store=$s && break
+done
+# Degrade capability, never execution: no store found means the install is broken in a way this
+# hook cannot repair, same rule handoff-write.sh and SKILL.md's own Step 1 already follow.
+[ -n "$store" ] || exit 0
+# shellcheck source=../lib/handoff-store.sh
+. "$store"
+
+# Sourced for CTX_FORK_TIMEOUT_SECONDS alone, so this number has exactly one definition shared
+# with handoff-inject.sh's abandoned-write judgement (context-thresholds.sh's own D23 section
+# explains why). Missing or unreadable degrades to this script's own literal fallback further
+# down -- nothing here depends on the file existing.
+for t in "$hook_dir/../lib/context-economy/context-thresholds.sh" \
+         "$HOME/.claude/lib/context-economy/context-thresholds.sh"; do
+    if [ -r "$t" ]; then
+        # shellcheck source=../lib/context-economy/context-thresholds.sh
+        . "$t"
+        break
+    fi
+done
+
+if [ -e "$lock" ]; then
     lock_mtime=$(handoff_store_mtime "$lock" 2>/dev/null)
     now=$(date +%s)
     if [ -n "${lock_mtime:-}" ] && [ $(( now - lock_mtime )) -lt "$dedup_window" ]; then
@@ -111,23 +172,60 @@ if [ -e "$lock" ] && [ -r "$hook_dir/../lib/handoff-store.sh" ]; then
 fi
 : > "$lock" 2>/dev/null
 
-# Same three-way probe as SKILL.md's own Step 1: plugin-cache glob (newest wins), then this
-# checkout's own lib/skills (a session already inside this repo), then the pre-plugin ~/.claude
-# install. Kept in sync with Step 1 by hand -- there is no shared source for a bash snippet meant
-# to run both inside this repo's own hooks and inside a detached child that may not have it.
+# ── D23: the synchronous skeleton write, closing the compaction race ───────────────────────────
+#
+# Written HERE -- in this plain bash script, before anything below even considers spawning the
+# detached authoring turn -- and not as that turn's own first action. This script must fully
+# return before the harness proceeds to compaction, so a write placed IN it is not a race this
+# hook can lose: it is program order, not a bet that a cold `claude -p` start beats compaction to
+# the punch. See docs/design.md D23 for the failure this closes and why the ordering matters.
+#
+# Unconditional: every firing that reaches this point overwrites whatever was at this target's
+# path -- `complete`, `consumed`, or another stale `writing` from a run that never finished --
+# with the bare placeholder below. An unread `complete` handoff lost this way is an accepted
+# casualty of one file per target (see handoff_store_write_skeleton's own comment in
+# lib/handoff-store.sh), not a new failure mode this introduces.
+main=$(git -C "$cwd" worktree list 2>/dev/null | head -1 | awk '{print $1}')
+here=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)
+ref=$(git -C "$cwd" rev-parse --abbrev-ref HEAD 2>/dev/null)
+[ "$ref" = HEAD ] && ref=$(git -C "$cwd" rev-parse --short HEAD 2>/dev/null)
+[ -n "$main" ] && [ -n "$here" ] && [ -n "$ref" ] || exit 0
+slug=$(printf '%s' "$ref" | tr '/' '-')
+
+# ── D28: pin the detached turn's own session id, so its transcript can be found by exact name ──
+#
+# `--session-id <uuid>` (confirmed accepted by the CLI, `docs/measured.md` Finding #36) makes the
+# spawned turn's transcript filename a KNOWN value instead of something only the finished run's own
+# stdout reveals. `uuidgen` first (present on Linux/macOS); `openssl rand -hex` reformatted into the
+# same 8-4-4-4-12 hyphenated shape otherwise -- confirmed accepted too, and NOT a lesser substitute
+# for this purpose: the CLI only validates the general hex shape, not RFC4122 version/variant
+# nibbles, so a plain random-hex id serves exactly as well as a "real" v4 UUID here. `uuidgen`
+# itself is NOT installed on this machine (Windows/Git-Bash) -- confirmed directly -- which is
+# exactly why this is a fallback chain and not a hard dependency. Empty when NEITHER exists: the
+# write still proceeds with an auto-generated (unknown) session id, degrading only the liveness
+# feature this id enables, never the write itself.
+write_session_id=""
+if command -v uuidgen >/dev/null 2>&1; then
+    write_session_id=$(uuidgen 2>/dev/null)
+elif command -v openssl >/dev/null 2>&1; then
+    write_session_id=$(openssl rand -hex 16 2>/dev/null \
+        | sed -E 's/(.{8})(.{4})(.{4})(.{4})(.{12})/\1-\2-\3-\4-\5/')
+fi
+
+skeleton_path=$(handoff_store_path "$main" "$slug" 2>/dev/null) || exit 0
+mkdir -p "$(handoff_store_dir)" 2>/dev/null || exit 0
+handoff_store_write_skeleton "$skeleton_path" "$here" "$ref" "$write_session_id"
+
+# Same three-way probe as SKILL.md's own Step 1, now for the gate and skill -- needed only for
+# the detached turn's own prompt below, not for the skeleton just written. Kept in sync with
+# Step 1 by hand -- there is no shared source for a bash snippet meant to run both inside this
+# repo's own hooks and inside a detached child that may not have it.
 gate=
 for g in "$HOME"/.claude/plugins/cache/*/context-economy/*/lib/verify-handoff.sh; do
     [ -x "$g" ] && gate=$g
 done
 [ -n "$gate" ] || for g in "$hook_dir/../lib/verify-handoff.sh" "$HOME/.claude/lib/verify-handoff.sh"; do
     [ -x "$g" ] && gate=$g && break
-done
-store=
-for s in "$HOME"/.claude/plugins/cache/*/context-economy/*/lib/handoff-store.sh; do
-    [ -r "$s" ] && store=$s
-done
-[ -n "$store" ] || for s in "$hook_dir/../lib/handoff-store.sh" "$HOME/.claude/lib/handoff-store.sh"; do
-    [ -r "$s" ] && store=$s && break
 done
 skill=
 for k in "$HOME"/.claude/plugins/cache/*/context-economy/*/skills/handoff/SKILL.md; do
@@ -137,9 +235,9 @@ done
     [ -r "$k" ] && skill=$k && break
 done
 
-# Degrade capability, never execution: no gate/store/skill found means the install is broken in a
-# way this hook cannot repair, same rule handoff-write.sh and SKILL.md's own Step 1 already follow.
-[ -n "$store" ] || exit 0
+# Degrade capability, never execution: no skill found means the detached turn cannot be told what
+# to do. The skeleton above is left in place regardless -- an honest "a write was attempted"
+# signal is still strictly better than reverting to whatever was there before.
 [ -n "$skill" ] || exit 0
 
 scratch=$(mktemp -d "${TMPDIR:-/tmp}/handoff-fork.XXXXXX" 2>/dev/null) || exit 0
@@ -151,6 +249,8 @@ allowed_tools=${CTX_FORK_ALLOWED_TOOLS:-"Bash Write"}
 timeout_s=${CTX_FORK_TIMEOUT_SECONDS:-600}
 model_args=""
 [ -n "${CTX_FORK_AUTHOR_MODEL:-}" ] && model_args="--model ${CTX_FORK_AUTHOR_MODEL}"
+session_id_args=""
+[ -n "$write_session_id" ] && session_id_args="--session-id ${write_session_id}"
 
 cat > "$prompt_file" <<PROMPT
 You are authoring a context handoff for a session you were not part of. A documented skill
@@ -195,11 +295,11 @@ async_script="$scratch/run.sh"
 cat > "$async_script" <<RUNNER
 #!/usr/bin/env bash
 ${HANDOFF_STORE_DIR:+export HANDOFF_STORE_DIR="${HANDOFF_STORE_DIR}"}
-timeout ${timeout_s} "${claude_bin}" -p --output-format json ${model_args} --allowedTools "${allowed_tools}" --strict-mcp-config < "${prompt_file}" > "${out_file}" 2> "${err_file}"
+timeout ${timeout_s} "${claude_bin}" -p --output-format json ${model_args} ${session_id_args} --allowedTools "${allowed_tools}" --strict-mcp-config < "${prompt_file}" > "${out_file}" 2> "${err_file}"
 rc=\$?
 log_dir="\$HOME/.claude/state/handoff-fork"
 mkdir -p "\$log_dir" 2>/dev/null
-printf '%s session=%s rc=%s scratch=%s\n' "\$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${session_id}" "\$rc" "${scratch}" >> "\$log_dir/log.txt" 2>/dev/null
+printf '%s session=%s write_session=%s rc=%s scratch=%s\n' "\$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${session_id}" "${write_session_id:-none}" "\$rc" "${scratch}" >> "\$log_dir/log.txt" 2>/dev/null
 RUNNER
 
 nohup bash "$async_script" >/dev/null 2>&1 &

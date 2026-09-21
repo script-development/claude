@@ -5,6 +5,52 @@ incrementally — see `RELEASING.md` for why. Format follows [Keep a Changelog](
 versioning follows [Semantic Versioning](https://semver.org/), scoped to this plugin's own
 convention in `RELEASING.md`.
 
+## [1.0.0] - 2026-09-21
+
+`1.0.0` was earmarked in `RELEASING.md` for if/when this plugin moved under an organization; the
+`script-development/claude` migration already happened, and this release is the deliberate bump
+to match, not a claim of new breaking surface beyond what's listed below.
+
+### Added
+
+- `progress:` header field on the handoff (`writing` / `complete` / `consumed`), with a synchronous
+  placeholder skeleton written before the detached authoring turn even exists — closing a race
+  where a `SessionStart(source: compact)` read could arrive before the fork had produced anything,
+  and either find a stale `complete` document from a previous cycle or nothing at all (D23).
+- `write_session:` header field and `--session-id` pinning on the detached authoring turn
+  (`uuidgen`, falling back to an `openssl`-derived id when absent), giving the read leg a liveness
+  signal independent of `progress:`: past the nominal `CTX_FORK_TIMEOUT_SECONDS` budget, a
+  still-advancing transcript — found by exact filename via the new `handoff_store_find_transcript`,
+  never by reconstructing Claude Code's own unpublished project-directory naming — keeps a write
+  classified active instead of abandoned, and its path is surfaced so a reader can check on it
+  directly (D28). New `CTX_FORK_LIVENESS_WINDOW_SECONDS` threshold (90s default) governs it.
+
+### Changed
+
+- `hooks/handoff-inject.sh` and `hooks/session-end-marker.sh` now key off `write_attempted`
+  (whether `hooks/handoff-fork-write.sh`'s own dedup lock exists for a session) instead of the
+  retired `trigger_fired`/`urge_fired` pair. Fixes a real bug: the dead latch those two read was
+  never written by the current write leg, so the injected text unconditionally claimed "the write
+  trigger never armed this session" directly above a real handoff the current mechanism had just
+  produced (D27).
+- `compacted:` header field dropped entirely — the gate only ever checked it was present, never
+  what it said, so it was pure ceremony (D24).
+- The statusline's advisory grid moved up one step: NOTICE 120k→200k, URGE 200k→300k (D25).
+- The read leg now waits for the detached write to finish before continuing, on explicit
+  instruction — implemented as an executable poll the model runs itself, never as a block inside
+  the hook (D26).
+- `skills/handoff/SKILL.md` Write mode Step 4 no longer describes a "fired by the Stop hook
+  itself" case; nothing registers `Stop` on this skill any more (D27).
+
+### Removed
+
+- `hooks/handoff-write.sh` and its test suite, deleted outright rather than left as an
+  unregistered backstop — D22's original reversibility deliberately traded away (D27) — along with
+  the ~190-line ceiling-detection/trigger-derivation block in
+  `lib/context-economy/context-thresholds.sh` that only it consumed.
+- `tools/measure-large-request.js`, its sole subject (`large_request`) no longer existing anywhere
+  in the codebase (D27).
+
 ## [0.4.0] - 2026-09-17
 
 ### Changed

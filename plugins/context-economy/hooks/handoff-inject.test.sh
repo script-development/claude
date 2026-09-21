@@ -34,7 +34,7 @@
 #       SHA. Both are how the writer names the file, so a mismatch here means the reader silently
 #       finds nothing on exactly the branches most likely to be mid-task.
 #
-# No framework, matching handoff-write.test.sh. Run it as:
+# No framework, matching this bundle's other hook suites. Run it as:
 #
 #   bash hooks/handoff-inject.test.sh
 
@@ -102,7 +102,7 @@ write_handoff() {  # write_handoff <slug> [target-main] [checkout] [branch]
     local path="$store/$(store_name "$target" "$slug")"
     {
     printf '# Handoff — a hostile document\n\n'
-    printf 'branch: %s\ncheckout: %s\ncompacted: no\nstatus: fixture\n' "$branch" "$checkout"
+    printf 'branch: %s\ncheckout: %s\nstatus: fixture\n' "$branch" "$checkout"
     cat <<'EOF'
 
 ## Do not re-derive
@@ -220,100 +220,28 @@ assert_field 'source: clear injects, tagged as a SessionStart result' \
 assert_field 'source: compact injects, tagged as a SessionStart result' \
     '.hookSpecificOutput.hookEventName' 'SessionStart' "$(payload compact)" VERIFY_HANDOFF_GATE="$gate"
 
-# --- COMPACT: the token-distance coverage check -----------------------------
+# --- COMPACT: was an automatic write attempted? -----------------------------
 #
-# `hooks/handoff-write.sh`'s own latch/sidecar files are the contract this branch reads. Written
-# by hand here rather than by running that hook first -- this suite tests handoff-inject.sh's
-# READ of the contract, not handoff-write.sh's WRITE of it, which has its own suite.
+# `hooks/handoff-fork-write.sh`'s own per-session dedup lock is the only contract this branch
+# reads now (2026-09-18, replacing the retired `handoff-write.sh` latch/sidecar files this suite
+# used to fixture). Written by hand here rather than by running that hook first -- this suite
+# tests handoff-inject.sh's READ of the lock, not handoff-fork-write.sh's WRITE of it, which has
+# its own suite.
 
-usage_transcript() {  # usage_transcript <name> <resident-total>
-    local path="$fixture/$1.jsonl"
-    jq -nc --argjson t "$2" \
-        '{type:"assistant", message:{model:"claude-opus-5",
-          usage:{input_tokens:$t, cache_creation_input_tokens:0, cache_read_input_tokens:0, output_tokens:400}}}' \
-        > "$path"
-    printf '%s' "$path"
-}
+fork_lock_dir="$fixture/home/.claude/state/handoff-fork"
+write_fork_lock() { mkdir -p "$fork_lock_dir"; : > "$fork_lock_dir/$1.lock"; }
 
-latch_dir="$fixture/home/.claude/state/handoff-trigger"
-write_latch() { mkdir -p "$latch_dir"; : > "$latch_dir/$1"; }
-write_sidecar() {  # write_sidecar <session-id> <written-at-tokens> [expected-gap-tokens]
-    mkdir -p "$latch_dir"
-    # No `expected_gap_tokens` unless a case asks for one: a sidecar written before D18 has no
-    # such field, and the default here keeps that the suite's baseline rather than an exotic case.
-    if [ -n "${3:-}" ]; then
-        jq -nc --argjson w "$2" --argjson g "$3" \
-            '{written_at_tokens: $w, written_at_epoch: 0, handoff_path: "x", expected_gap_tokens: $g}' \
-            > "$latch_dir/$1.written"
-    else
-        jq -nc --argjson w "$2" '{written_at_tokens: $w, written_at_epoch: 0, handoff_path: "x"}' \
-            > "$latch_dir/$1.written"
-    fi
-}
-some_tr=$(usage_transcript compact-some 210000)
+# No write was attempted this session at all: no lock.
+rm -rf "$fork_lock_dir"
+assert_context_has 'compact: no write having been attempted is stated' \
+    'No automatic write was attempted' "$(payload compact "$repo" sess-ct-1)" VERIFY_HANDOFF_GATE="$gate"
 
-# The write trigger never armed this session at all: no latch.
-rm -rf "$latch_dir"
-assert_context_has 'compact: the write trigger never having armed is stated' \
-    'never armed this session' "$(payload compact "$repo" sess-ct-1 "$some_tr")" VERIFY_HANDOFF_GATE="$gate"
-
-# Armed, but the write was never confirmed (no sidecar) before this compaction hit.
-rm -rf "$latch_dir"
-write_latch sess-ct-2
-assert_context_has 'compact: an armed-but-unconfirmed write says so' \
-    'no record of the write' "$(payload compact "$repo" sess-ct-2 "$some_tr")" VERIFY_HANDOFF_GATE="$gate"
-
-# Armed and confirmed, gap within CTX_HANDOFF_ACCEPTABLE_GAP_TOKENS (default 10,350): covered.
-rm -rf "$latch_dir"
-write_latch sess-ct-3
-write_sidecar sess-ct-3 205000
-covered_tr=$(usage_transcript compact-covered 210000)   # gap = 5,000
-assert_context_has 'compact: a small gap reads as likely covering the compaction' \
-    'likely covers' "$(payload compact "$repo" sess-ct-3 "$covered_tr")" VERIFY_HANDOFF_GATE="$gate"
-
-# Armed and confirmed, gap past the threshold: flagged, not silently trusted.
-rm -rf "$latch_dir"
-write_latch sess-ct-4
-write_sidecar sess-ct-4 205000
-stale_tr=$(usage_transcript compact-stale 260000)   # gap = 55,000
-assert_context_has 'compact: a large gap is flagged as likely-undocumented' \
-    'likely-undocumented' "$(payload compact "$repo" sess-ct-4 "$stale_tr")" VERIFY_HANDOFF_GATE="$gate"
-
-# --- D18: the gap the WRITER reserved beats the manual-path constant --------
-#
-# The automatic trigger fires 2*fat_turn below the ceiling by construction, so an auto-written
-# handoff arrives at compaction ~120k behind — twelve times CTX_HANDOFF_ACCEPTABLE_GAP_TOKENS.
-# Judged against that constant alone it would be flagged every single time, for landing exactly
-# where it was aimed. So the writer records the gap it reserved and this branch judges against
-# whichever bound is larger. The same 55,000 gap as sess-ct-4 above, which that case flags.
-rm -rf "$latch_dir"
-write_latch sess-ct-4b
-write_sidecar sess-ct-4b 205000 100000
-assert_context_has 'compact: a gap inside the reserved band reads as covering, not stale' \
-    'likely covers' "$(payload compact "$repo" sess-ct-4b "$stale_tr")" VERIFY_HANDOFF_GATE="$gate"
-
-# Past the reserved band as well: flagged, and the verdict names the bound it actually used so a
-# reader can tell which of the two paths' expectations were exceeded.
-rm -rf "$latch_dir"
-write_latch sess-ct-4c
-write_sidecar sess-ct-4c 205000 100000
-very_stale_tr=$(usage_transcript compact-very-stale 350000)   # gap = 145,000
-assert_context_has 'compact: a gap past the reserved band is still flagged' \
-    'likely-undocumented' "$(payload compact "$repo" sess-ct-4c "$very_stale_tr")" VERIFY_HANDOFF_GATE="$gate"
-
-assert_context_has 'compact: the flag names the reserved band it exceeded' \
-    'more than the 100k this write allowed for' \
-    "$(payload compact "$repo" sess-ct-4c "$very_stale_tr")" VERIFY_HANDOFF_GATE="$gate"
-
-# LARGER of the two, not "the writer's if present". A writer that reserved less than the constant
-# must not be able to TIGHTEN the verdict -- otherwise a small recorded band would make an
-# ordinarily-acceptable gap read as stale, which is the constant's judgement to make, not the
-# trigger's. Gap 5,000: inside the constant's 10,350, outside a reserved 1,000.
-rm -rf "$latch_dir"
-write_latch sess-ct-4d
-write_sidecar sess-ct-4d 205000 1000
-assert_context_has 'compact: a reserved band below the constant does not tighten the verdict' \
-    'likely covers' "$(payload compact "$repo" sess-ct-4d "$covered_tr")" VERIFY_HANDOFF_GATE="$gate"
+# A write was attempted (the lock exists) and a real handoff for this exact branch is present:
+# says so, and points at the handoff's own age rather than a token-distance gap.
+rm -rf "$fork_lock_dir"
+write_fork_lock sess-ct-2
+assert_context_has 'compact: an attempted write with a handoff present says so' \
+    'An automatic write was attempted' "$(payload compact "$repo" sess-ct-2)" VERIFY_HANDOFF_GATE="$gate"
 
 # Armed, but no handoff exists for THIS branch at all -- must still surface (the early "nothing
 # to say" exit must not fire just because the store's only handoff belongs to a different repo).
@@ -323,17 +251,20 @@ git -C "$no_handoff_repo" init -q -b main
 git -C "$no_handoff_repo" config user.email t@example.com
 git -C "$no_handoff_repo" config user.name  Test
 git -C "$no_handoff_repo" commit -q --allow-empty -m init
-rm -rf "$latch_dir"
-write_latch sess-ct-5
-assert_context_has 'compact: an armed session with no handoff for this branch still surfaces' \
+rm -rf "$fork_lock_dir"
+write_fork_lock sess-ct-5
+assert_context_has 'compact: an attempted write with no handoff for this branch still surfaces' \
     'No handoff exists' "$(payload compact "$no_handoff_repo" sess-ct-5)" VERIFY_HANDOFF_GATE="$gate"
+
+assert_context_has 'compact: and says the attempt may have failed silently' \
+    'attempt may have failed silently' "$(payload compact "$no_handoff_repo" sess-ct-5)" VERIFY_HANDOFF_GATE="$gate"
 
 # And a "recent" pick (the store's only handoff, for an unrelated repo) must never be surfaced
 # as if it were this session's own -- unlike `clear`, `compact` trusts only an exact match.
 assert_context_lacks 'compact: a recent (not exact) pick is never surfaced as this session'"'"'s own' \
     'a hostile document' "$(payload compact "$no_handoff_repo" sess-ct-5)" VERIFY_HANDOFF_GATE="$gate"
 
-rm -rf "$latch_dir"
+rm -rf "$fork_lock_dir"
 
 # --- i2 — the output must be valid JSON ------------------------------------
 
@@ -449,9 +380,6 @@ assert_context_has 'the reader is told not to re-derive eagerly' \
 assert_context_has 'the reader is pointed at the first unblocked Next item' \
     '**not** blocked on a task that has yet to report' "$(payload clear)" VERIFY_HANDOFF_GATE="$gate"
 
-assert_context_has 'the reader is told to check compacted:' \
-    'compacted:' "$(payload clear)" VERIFY_HANDOFF_GATE="$gate"
-
 # --- i5 — branch slugging --------------------------------------------------
 
 # Arrange
@@ -556,13 +484,13 @@ state="$fixture/last-clear"
 # read as "the feature does not work" rather than "the test computed the wrong key".
 marker_key=$(printf '%s' "$(git -C "$repo" worktree list | head -1 | awk '{print $1}')" | md5sum | cut -c1-32)
 
-write_marker() {  # write_marker <slug> <resident> <handoff_mtime> <ended_epoch> <trigger_fired>
+write_marker() {  # write_marker <slug> <resident> <handoff_mtime> <ended_epoch> <write_attempted>
     mkdir -p "$state"
     jq -n --argjson r "$2" --argjson hm "$3" --argjson ee "$4" --argjson uf "$5" \
         --arg tp 'C:/Users/Bart/.claude/projects/x/prev.jsonl' \
         '{ended_at:"2026-08-26T10:00:00Z", ended_at_epoch:$ee, reason:"clear",
           session_id:"prev-sess", transcript_path:$tp, branch:"main",
-          resident_tokens:$r, handoff:{present:true,path:"x",mtime:$hm}, trigger_fired:$uf}' \
+          resident_tokens:$r, handoff:{present:true,path:"x",mtime:$hm}, write_attempted:$uf}' \
         > "$state/$marker_key-$1.json"
 }
 
@@ -600,33 +528,15 @@ write_marker main 250000 "$((now_epoch - 259200))" "$now_epoch" false
 assert_context_has 'the reader is warned off opening that transcript eagerly' \
     'ONLY if the work turns out to matter' "$(payload clear)" VERIFY_HANDOFF_GATE="$gate" LAST_CLEAR_STATE_DIR="$state"
 
-# Two different mistakes, two different sentences: the clear beat the threshold, versus the human
-# cleared past a handoff that had already been asked for.
+# Two different mistakes, two different sentences: no compaction reached this session before the
+# clear, versus the human cleared past a handoff that a compaction had already asked for.
 write_marker main 250000 "$now_epoch" "$now_epoch" false
-assert_context_has 'a clear that beat the trigger says the trigger never armed' \
-    'never armed' "$(payload clear)" VERIFY_HANDOFF_GATE="$gate" LAST_CLEAR_STATE_DIR="$state"
+assert_context_has 'a clear with no write attempted says so' \
+    'No automatic write was attempted' "$(payload clear)" VERIFY_HANDOFF_GATE="$gate" LAST_CLEAR_STATE_DIR="$state"
 
 write_marker main 250000 "$now_epoch" "$now_epoch" true
-assert_context_has 'a clear after the trigger fired says a handoff had been asked for' \
-    'HAD already fired' "$(payload clear)" VERIFY_HANDOFF_GATE="$gate" LAST_CLEAR_STATE_DIR="$state"
-
-# THE LEGACY KEY. `trigger_fired` was `urge_fired` until the 2026-09-09 rename, and the marker on
-# disk is written by whichever install is installed -- an older plugin copy keeps emitting the old
-# name until it is updated, while this hook is already reading the new one. Both directions are
-# asserted on purpose: `true` proves the fallback is reached at all, and `false` proves it is
-# reached by `has` and not by jq's `//`, which treats `false` as empty and would fall through.
-write_legacy_marker() {  # write_legacy_marker <urge_fired>
-    mkdir -p "$state"
-    jq -n --argjson uf "$1" --argjson ee "$now_epoch"         '{ended_at:"2026-08-26T10:00:00Z", ended_at_epoch:$ee, reason:"clear",
-          session_id:"prev-sess", transcript_path:"C:/x/prev.jsonl", branch:"main",
-          resident_tokens:250000, handoff:{present:true,path:"x",mtime:$ee}, urge_fired:$uf}'         > "$state/$marker_key-main.json"
-}
-
-write_legacy_marker true
-assert_context_has 'a pre-rename marker saying the trigger fired is still read as fired'     'HAD already fired' "$(payload clear)" VERIFY_HANDOFF_GATE="$gate" LAST_CLEAR_STATE_DIR="$state"
-
-write_legacy_marker false
-assert_context_has 'a pre-rename marker saying the trigger did not fire is not inverted'     'never armed' "$(payload clear)" VERIFY_HANDOFF_GATE="$gate" LAST_CLEAR_STATE_DIR="$state"
+assert_context_has 'a clear after a write was attempted says a handoff had been asked for' \
+    'An automatic write WAS attempted' "$(payload clear)" VERIFY_HANDOFF_GATE="$gate" LAST_CLEAR_STATE_DIR="$state"
 
 # --- The marker must fire even with no handoff at all ----------------------
 #
@@ -640,7 +550,7 @@ mkdir -p "$state"
 jq -n --argjson ee "$now_epoch" \
     '{ended_at:"2026-08-26T10:00:00Z", ended_at_epoch:$ee, reason:"clear", session_id:"prev",
       transcript_path:"C:/x/prev.jsonl", branch:"orphan", resident_tokens:310000,
-      handoff:{present:false,path:"x",mtime:null}, trigger_fired:false}' \
+      handoff:{present:false,path:"x",mtime:null}, write_attempted:false}' \
     > "$state/$orphan_key-orphan.json"
 
 # Act & Assert
@@ -720,7 +630,7 @@ write_cross_marker() {  # write_cross_marker <handoff_mtime> <ended_epoch>
     jq -n --argjson hm "$1" --argjson ee "$2" \
         '{ended_at:"2026-08-26T10:00:00Z", ended_at_epoch:$ee, reason:"clear",
           session_id:"prev-sess", transcript_path:"C:/x/prev.jsonl", branch:"driving",
-          resident_tokens:300000, handoff:{present:true,path:"x",mtime:$hm}, trigger_fired:true}' \
+          resident_tokens:300000, handoff:{present:true,path:"x",mtime:$hm}, write_attempted:true}' \
         > "$state/$driving_key-driving.json"
 }
 h_mtime=$(stat -c %Y "$store/$(store_name "$other_main" other-work)")
@@ -782,6 +692,200 @@ assert_context_has 'the clear is still reported when its guessed handoff was rej
 
 git -C "$repo" checkout -q main
 rm -f "$store/$(store_name "$other_main" other-work)" "$state"/*.json
+
+# --- D23 — the write leg's placeholder, and the consumed handshake ---------
+#
+# hooks/handoff-fork-write.sh writes a `progress: writing` placeholder synchronously, before its
+# detached authoring turn produces anything, to close the race where SessionStart(compact) reads
+# the store before that turn has finished. This hook must recognise that placeholder before it
+# ever reaches the gate or the body -- and must flip a genuine `complete` document to `consumed`
+# once it has actually shown it to a reader, so a later, no-op reset says so honestly.
+
+# write_progress_handoff <slug> <progress> [age-seconds] [target-main] [checkout] [branch] [write-session-id]
+write_progress_handoff() {
+    local slug=$1 progress=$2 age=${3:-0} target=${4:-$main_git} checkout=${5:-$repo_top} branch=${6:-main} wsid=${7:-}
+    local path="$store/$(store_name "$target" "$slug")"
+    {
+        printf '# Handoff — progress fixture\n'
+        printf 'branch: %s\ncheckout: %s\nstatus: fixture\nprogress: %s\n' \
+            "$branch" "$checkout" "$progress"
+        [ -n "$wsid" ] && printf 'write_session: %s\n' "$wsid"
+        cat <<'EOF'
+
+## Do not re-derive
+
+### Decisions
+None.
+
+### Dead ends
+None.
+
+### Traps
+None.
+
+## Next
+None.
+
+## Pointers
+
+```
+```
+EOF
+    } > "$path"
+    if [ "$age" -ne 0 ]; then
+        touch -d "@$(( $(date +%s) - age ))" "$path" 2>/dev/null \
+            || touch -t "$(date -d "@$(( $(date +%s) - age ))" +%Y%m%d%H%M.%S)" "$path"
+    fi
+    printf '%s' "$path"
+}
+
+# This file's own assert_* helpers all inline their pass/fail bookkeeping; a couple of the cases
+# below need a bare pass/fail instead (asserting against the FILE on disk, not the injected
+# context), so those two get defined here rather than importing the sibling suites' convention
+# wholesale.
+pass() { passed=$((passed + 1)); echo "ok   $1"; }
+fail() { failed=$((failed + 1)); echo "FAIL $1 — $2"; }
+
+# Every case below resolves as an EXACT pick: `$repo` really is on `main` right now (the cross-repo
+# section above already returned it there), so the slug the hook derives from cwd really is `main`
+# — these fixtures MUST use that same slug, or handoff_store_resolve never finds them by exact
+# match at all. This section is the last thing in the suite to use the shared `main` fixture, so
+# overwriting it repeatedly below breaks nothing that runs after it.
+
+# `writing`, fresh: the ordinary in-flight case. Must not run the (stubbed) gate and must not
+# leak the placeholder's own body as if it were content.
+progress_path=$(write_progress_handoff main writing 0)
+assert_context_has 'a fresh `writing` placeholder says a handoff is being authored' \
+    'is being authored' "$(payload compact)" VERIFY_HANDOFF_GATE="$gate"
+assert_context_lacks 'a fresh `writing` placeholder never reaches the gate' \
+    'STUB GATE ran on' "$(payload compact)" VERIFY_HANDOFF_GATE="$gate"
+
+# `writing`, past CTX_FORK_TIMEOUT_SECONDS: the authoring turn almost certainly died.
+progress_path=$(write_progress_handoff main writing 10)
+assert_context_has 'a `writing` placeholder past the timeout reads as an abandoned write' \
+    'appears to have failed' "$(payload compact)" VERIFY_HANDOFF_GATE="$gate" CTX_FORK_TIMEOUT_SECONDS=1
+
+# --- D28 — the transcript liveness override, past the nominal timeout ------
+#
+# write_transcript_fixture <session-id> [age-seconds]
+# Lands under an arbitrary slug directory on purpose: handoff_store_find_transcript searches by
+# exact filename precisely so the slug it happens to land under never matters.
+write_transcript_fixture() {
+    local sid=$1 age=${2:-0}
+    local dir="$fixture/home/.claude/projects/some-slug" path
+    mkdir -p "$dir"
+    path="$dir/$sid.jsonl"
+    printf '{"type":"assistant","message":{"content":[{"type":"text","text":"still going"}]}}\n' > "$path"
+    if [ "$age" -ne 0 ]; then
+        touch -d "@$(( $(date +%s) - age ))" "$path" 2>/dev/null \
+            || touch -t "$(date -d "@$(( $(date +%s) - age ))" +%Y%m%d%H%M.%S)" "$path"
+    fi
+    printf '%s' "$path"
+}
+
+# Past the nominal timeout, but the transcript is still fresh: genuine evidence of life outranks
+# the frozen skeleton mtime alone. Must NOT read as abandoned, and must surface the transcript path
+# so a reader (or their own poll loop) can check on it directly.
+write_transcript_fixture write-sess-fresh 5 >/dev/null
+progress_path=$(write_progress_handoff main writing 10 "$main_git" "$repo_top" main write-sess-fresh)
+assert_context_lacks 'a `writing` placeholder past the timeout is NOT abandoned while its transcript is still fresh' \
+    'appears to have failed' "$(payload compact)" VERIFY_HANDOFF_GATE="$gate" \
+    CTX_FORK_TIMEOUT_SECONDS=1 CTX_FORK_LIVENESS_WINDOW_SECONDS=90
+assert_context_has 'that still-active case says it is running past its nominal budget' \
+    'past its nominal budget' "$(payload compact)" VERIFY_HANDOFF_GATE="$gate" \
+    CTX_FORK_TIMEOUT_SECONDS=1 CTX_FORK_LIVENESS_WINDOW_SECONDS=90
+assert_context_has 'that still-active case surfaces the transcript path to check directly' \
+    'write-sess-fresh.jsonl' "$(payload compact)" VERIFY_HANDOFF_GATE="$gate" \
+    CTX_FORK_TIMEOUT_SECONDS=1 CTX_FORK_LIVENESS_WINDOW_SECONDS=90
+
+# Past the nominal timeout AND the transcript has ALSO gone quiet past the (short) liveness window:
+# genuinely abandoned, same verdict as the no-session-id case above, now with the last-activity
+# path offered instead of nothing.
+write_transcript_fixture write-sess-stale 120 >/dev/null
+progress_path=$(write_progress_handoff main writing 10 "$main_git" "$repo_top" main write-sess-stale)
+assert_context_has 'a `writing` placeholder past the timeout WITH a stale transcript too still reads as abandoned' \
+    'appears to have failed' "$(payload compact)" VERIFY_HANDOFF_GATE="$gate" \
+    CTX_FORK_TIMEOUT_SECONDS=1 CTX_FORK_LIVENESS_WINDOW_SECONDS=90
+assert_context_has 'the abandoned case with a known transcript points at its last activity' \
+    'write-sess-stale.jsonl' "$(payload compact)" VERIFY_HANDOFF_GATE="$gate" \
+    CTX_FORK_TIMEOUT_SECONDS=1 CTX_FORK_LIVENESS_WINDOW_SECONDS=90
+
+# A write_session id that names no real transcript (e.g. the write leg had no uuidgen/openssl and
+# left the field out, or the run has not created its transcript file yet) must degrade to exactly
+# the pre-D28 behaviour -- never a false "abandoned" from an unreadable mtime.
+progress_path=$(write_progress_handoff main writing 10 "$main_git" "$repo_top" main no-such-session)
+assert_context_has 'a write_session naming no real transcript degrades to the plain timeout verdict' \
+    'appears to have failed' "$(payload compact)" VERIFY_HANDOFF_GATE="$gate" \
+    CTX_FORK_TIMEOUT_SECONDS=1 CTX_FORK_LIVENESS_WINDOW_SECONDS=90
+
+# `complete`, first time: injects normally, and the ON-DISK file is flipped to `consumed` once
+# shown to a reader -- never before.
+progress_path=$(write_progress_handoff main complete 0)
+out=$(run "$(payload compact)" VERIFY_HANDOFF_GATE="$gate")
+case "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext // empty')" in
+    *'progress fixture'*) pass 'a `complete` handoff is injected' ;;
+    *) fail 'a `complete` handoff is injected' 'body missing from injected context' ;;
+esac
+case "$(cat "$progress_path" 2>/dev/null)" in
+    *'progress: consumed'*) pass 'a `complete` handoff is flipped to consumed after being shown to a reader' ;;
+    *) fail 'a `complete` handoff is flipped to consumed after being shown to a reader' \
+        "got [$(cat "$progress_path" 2>/dev/null)]" ;;
+esac
+
+# `consumed`, already: still injected (an explicit ask, or a later reset, still wants the content)
+# but framed honestly as a repeat, not as news.
+assert_context_has 'an already-consumed handoff is still injected' \
+    'progress fixture' "$(payload compact)" VERIFY_HANDOFF_GATE="$gate"
+assert_context_has 'an already-consumed handoff says so, rather than reading as fresh news' \
+    'already delivered at an earlier' "$(payload compact)" VERIFY_HANDOFF_GATE="$gate"
+
+# A pre-D23 handoff (no progress: field at all) is treated as `complete` and, once shown, ALSO
+# acquires the field going forward -- this is how a document written before this feature existed
+# becomes field-complete rather than staying permanently unrecognised by anything that expects it.
+write_handoff main >/dev/null
+legacy_path="$store/$(store_name "$main_git" main)"
+run "$(payload compact)" VERIFY_HANDOFF_GATE="$gate" >/dev/null
+case "$(cat "$legacy_path" 2>/dev/null)" in
+    *'progress: consumed'*) pass 'a pre-D23 handoff with no progress: field acquires one after being read' ;;
+    *) fail 'a pre-D23 handoff with no progress: field acquires one after being read' \
+        "got [$(cat "$legacy_path" 2>/dev/null)]" ;;
+esac
+rm -f "$progress_path"
+
+# A `recent` (guessed, cross-repo) pick must never be mutated -- it is a guess about a DIFFERENT
+# branch's own handoff, not this reader's bookkeeping to touch.
+other_progress="$fixture/other-repo-2"
+mkdir -p "$other_progress"
+git -C "$other_progress" init -q -b feature/guess
+git -C "$other_progress" config user.email t@example.com
+git -C "$other_progress" config user.name  Test
+git -C "$other_progress" commit -q --allow-empty -m init
+op_main=$(git -C "$other_progress" worktree list | head -1 | awk '{print $1}')
+op_top=$(git -C "$other_progress" rev-parse --show-toplevel)
+guess_path=$(write_progress_handoff other-guess complete 0 "$op_main" "$op_top" feature/guess)
+git -C "$repo" checkout -q -b no-handoff-branch
+
+# Corroborate the guess (same rule the earlier cross-repo section exercises) so this actually
+# injects with handoff_pick=recent, rather than being demoted to nothing for lack of a marker --
+# the case worth testing is "injected as a guess, and still not mutated", not "not injected at all".
+guess_mtime=$(stat -c %Y "$guess_path" 2>/dev/null || stat -f %m "$guess_path" 2>/dev/null)
+jq -n --argjson hm "$guess_mtime" --argjson ee "$((guess_mtime + 60))" \
+    '{ended_at:"2026-09-18T00:00:00Z", ended_at_epoch:$ee, reason:"clear",
+      session_id:"prev-sess", transcript_path:"C:/x/prev.jsonl", branch:"no-handoff-branch",
+      resident_tokens:300000, handoff:{present:true,path:"x",mtime:$hm}, write_attempted:true}' \
+    > "$state/$driving_key-no-handoff-branch.json"
+
+out=$(run "$(payload clear)" VERIFY_HANDOFF_GATE="$gate" LAST_CLEAR_STATE_DIR="$state")
+case "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext // empty')" in
+    *'That is a GUESS'*) pass 'the recent-pick scenario really is a guess, not an exact match' ;;
+    *) fail 'the recent-pick scenario really is a guess, not an exact match' 'guess wording absent — test setup is not exercising handoff_pick=recent' ;;
+esac
+case "$(cat "$guess_path" 2>/dev/null)" in
+    *'progress: complete'*) pass 'a recent (guessed) pick is never rewritten to consumed' ;;
+    *) fail 'a recent (guessed) pick is never rewritten to consumed' "got [$(cat "$guess_path" 2>/dev/null)]" ;;
+esac
+git -C "$repo" checkout -q main
+rm -rf "$other_progress" "$guess_path" "$state/$driving_key-no-handoff-branch.json"
 
 echo
 if [ "$failed" -gt 0 ]; then

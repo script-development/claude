@@ -55,7 +55,7 @@ assert_eq() {  # assert_eq <label> <expected> <actual>
 put() {
     local target=$1 slug=$2 branch=$3 checkout=$4 offset=${5:-0} path
     path="$(handoff_store_path "$target" "$slug")"
-    printf '# Handoff — fixture\nbranch: %s\ncheckout: %s\ncompacted: no\nstatus: x\n' \
+    printf '# Handoff — fixture\nbranch: %s\ncheckout: %s\nstatus: x\n' \
         "$branch" "$checkout" > "$path"
     if [ "$offset" -ne 0 ]; then
         touch -d "@$(( $(date +%s) - offset ))" "$path" 2>/dev/null \
@@ -204,6 +204,108 @@ assert_eq 'an empty candidate is skipped' "$newer" "$HANDOFF_FILE"
 case "$HANDOFF_OTHERS" in
     *"$third"*) fail 'an empty candidate is not listed either' "OTHERS contained it" ;;
     *)          pass 'an empty candidate is not listed either' ;;
+esac
+
+# --- D23 — the skeleton and the progress field ------------------------------
+#
+# handoff_store_write_skeleton is the WRITE leg's half of the compaction-race fix: called
+# synchronously, before any detached authoring turn exists, so a reader arriving mid-write finds
+# an honest placeholder rather than silence or a stale `complete` document. handoff_store_set_progress
+# is the READ leg's half: it flips `progress:` after a document has actually been shown to someone.
+
+skel="$fixture/skeleton.md"
+printf '# Handoff — old real content\nbranch: old\ncheckout: /c/old\nstatus: ok\nprogress: complete\n\nstale body\n' > "$skel"
+# Act
+handoff_store_write_skeleton "$skel" /c/checkouts/target feature/x
+# Assert
+assert_eq 'the skeleton carries progress: writing' 'writing' "$(handoff_store_field "$skel" progress)"
+assert_eq 'the skeleton carries the checkout it was given' '/c/checkouts/target' "$(handoff_store_field "$skel" checkout)"
+assert_eq 'the skeleton carries the branch it was given' 'feature/x' "$(handoff_store_field "$skel" branch)"
+case "$(cat "$skel")" in
+    *'stale body'*) fail 'the skeleton replaces prior real content, not appends to it' 'old body survived' ;;
+    *)              pass 'the skeleton replaces prior real content, not appends to it' ;;
+esac
+for label_pattern in '### Decisions' '### Dead ends' '### Traps' '## Next' '## Pointers'; do
+    case "$(cat "$skel")" in
+        *"$label_pattern"*) pass "the skeleton's required section '$label_pattern' is present" ;;
+        *) fail "the skeleton's required section '$label_pattern' is present" 'missing from skeleton' ;;
+    esac
+done
+
+# --- D28 — the optional write_session field, and finding its transcript ----
+
+# Act — the 4th arg is optional; omitted, exactly as every call before D28 already did.
+handoff_store_write_skeleton "$skel" /c/checkouts/target feature/x
+# Assert
+case "$(cat "$skel")" in
+    *'write_session:'*) fail 'write_session: is absent when no id was given' 'field present anyway' ;;
+    *) pass 'write_session: is absent when no id was given' ;;
+esac
+
+# Act — the 4th arg present.
+handoff_store_write_skeleton "$skel" /c/checkouts/target feature/x abcd-1234
+# Assert
+assert_eq 'the skeleton carries write_session: when given one' 'abcd-1234' \
+    "$(handoff_store_field "$skel" write_session)"
+
+# handoff_store_find_transcript — searches by exact filename, never by reconstructing Claude
+# Code's own (unpublished, and on this machine confirmed DIFFERENT) project-slug scheme.
+sid="11111111-2222-3333-4444-555555555555"
+projects="$fixture/home-projects/.claude/projects"
+mkdir -p "$projects/some-unrelated-slug"
+printf '{"type":"user"}\n' > "$projects/some-unrelated-slug/$sid.jsonl"
+
+assert_eq 'find_transcript locates a transcript by exact session id, regardless of its slug directory' \
+    "$projects/some-unrelated-slug/$sid.jsonl" \
+    "$(HOME="$fixture/home-projects" handoff_store_find_transcript "$sid")"
+assert_eq 'find_transcript returns empty for an unknown session id' '' \
+    "$(HOME="$fixture/home-projects" handoff_store_find_transcript "no-such-session")"
+assert_eq 'find_transcript returns empty for an empty session id' '' \
+    "$(HOME="$fixture/home-projects" handoff_store_find_transcript '')"
+assert_eq 'find_transcript returns empty when HOME has no projects directory at all' '' \
+    "$(HOME="$fixture/no-such-home" handoff_store_find_transcript "$sid")"
+
+# handoff_store_set_progress — replacing an existing field
+f=$(put /c/checkouts/emmie EMMIE-0900 EMMIE-0900 /c/worktrees/emmie-900)
+printf 'progress: complete\n' >> "$f"
+# Act
+handoff_store_set_progress "$f" consumed
+# Assert
+assert_eq 'set_progress replaces an existing progress: line' 'consumed' "$(handoff_store_field "$f" progress)"
+assert_eq 'set_progress leaves the other envelope fields alone' 'EMMIE-0900' "$(handoff_store_field "$f" branch)"
+
+# handoff_store_set_progress — inserting when the field is absent entirely (a pre-D23 handoff)
+legacy=$(put /c/checkouts/kendo KENDO-1 KENDO-1 /c/checkouts/kendo)
+assert_eq 'a pre-D23 fixture has no progress: field yet' '' "$(handoff_store_field "$legacy" progress)"
+# Act
+handoff_store_set_progress "$legacy" consumed
+# Assert
+assert_eq 'set_progress inserts the field when the envelope has none' 'consumed' "$(handoff_store_field "$legacy" progress)"
+
+# Bounded to the head, same rule as handoff_store_field itself — a body that happens to contain
+# a progress:-shaped line must never be mistaken for the document's own header.
+hostile=$(put /c/checkouts/mc body-progress body-progress /c/checkouts/mc)
+{ printf '\n\n'; for i in $(seq 30); do echo "- padding $i"; done; echo 'progress: complete'; } >> "$hostile"
+body_before=$(tail -1 "$hostile")
+# Act
+handoff_store_set_progress "$hostile" consumed
+# Assert
+assert_eq 'set_progress does not touch a progress:-shaped line deep in the body' \
+    "$body_before" "$(tail -1 "$hostile")"
+assert_eq 'set_progress still inserted its own header field, ahead of the body decoy' \
+    'consumed' "$(handoff_store_field "$hostile" progress)"
+
+# The rest of the file, including hostile characters, must survive byte-for-byte.
+hostile_body=$(put /c/checkouts/mc hostile-body hostile-body /c/checkouts/mc)
+printf '\nA tab\tand a backslash \\ and a backtick ` and a "quote".\r\n' >> "$hostile_body"
+# Act
+handoff_store_set_progress "$hostile_body" consumed
+# Assert
+after_body=$(tail -1 "$hostile_body")
+case "$after_body" in
+    *'A tab'*'backslash \'*'backtick `'*'"quote".'*)
+        pass 'set_progress preserves hostile body characters untouched' ;;
+    *) fail 'set_progress preserves hostile body characters untouched' "got [$after_body]" ;;
 esac
 
 # A store that does not exist at all is the state of every machine before the first handoff.

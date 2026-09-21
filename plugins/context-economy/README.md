@@ -1,64 +1,69 @@
 # Content economy
 
-## Goal
+A plugin bundling the /handoff skill and supporting hooks.
 
-A plugin bundling tools and skills intended to control over context growth and reduce token usage.
+The /handoff skill aims to reduce context growth post-compaction by providing the post-compaction session with references to decisions, traps and dead-ends from the pre-compaction session, which would otherwise be lost in compaction and then re-derived.
 
-## Contents
+## /handoff
 
-# /handoff
+The /handoff skill writes a handoff file to a location outside the work tree, ... by default.
 
-The /handoff skill builds on Claude's (auto)compaction mechanism. Compaction summarizes the session's history, but loses the evidence that decisions, implementations and dead-ends are based on. The skill complements the compaction summary with a handoff containing decisions, implementations, dead-ends with relevant citations so the next session does not rederive supporting evidence. The handoff ends with a Next (work items) and Traps section to give the next session direction.
+### Handoff structure
 
-## Manual trigger
+The handoff file is structured as follows:
+1 Preamble -> Metadata and session outline
+
+- Branch | Branch name
+- Checkout | Path the branch is checked out in
+- Status | Verification status
+- Progress | Lifecycle stage of the handoff: writing / complete / consumed
+
+2 Do not re-derive -> What the post-compaction session needs to know to prevent re-deriving it - Decisions(/implementation) - Dead ends - Traps
+3 Next -> Ordered work items for the post-compaction session
+4 Pointers -> Where evidence can be found
+5 Unverifiable -> What not to bother looking for
+
+### Automatic trigger
+
+The automatic trigger hooks into Claude's auto-compaction mechanism through a PreCompact hook. At the latest possible moment before compaction, the hook does two things
+1 Create a skeleton handoff file - mostly empty with two notable exceptions:
+
+- Progress (field) | Lifecycle stage of the handoff: Writing / Complete / Consumed
+- Next (section) | Contains an instruction to wait for the progress field to be overwritten to "Complete"
+
+By design the skill uses one handoff file per worktree, and overwrites stale handoffs with the skeleton for a fresh handoff.
+
+2 Spawn a detached session forked just before auto-compaction
+
+After this point there are two sessions, which do the following:
+
+A - Main session: Starts writing the auto-compacting summary
+B - Forked session: Starts drafting the handoff
+
+The forked session is run without a binding auto-compaction threshold as it must keep its context to write the handoff.
+
+The Main session generally completes compaction before the Forked session finishes the handoff process. When the post-compaction session starts, a SessionStart hook detects the skeleton's Progress field still says "writing" and, instead of blocking itself, hands the model a bounded Bash poll loop to run as its own first tool call — waiting until Progress flips to "Complete" before continuing.
+
+The Forked session drafts a handoff per the /handoff skill and writes it to the skeleton file only when finished overwriting the Progress field with "Complete".
+
+From the Main session's perspective new Next items appear at the same time as Progress flips to Complete, the signal to start the first real Next item.
+
+To configure when a handoff is written simply change the auto-compact threshold:
+
+`claude  --autocompact <auto|tokens>           Auto-compact window size (auto, or 100k–1M tokens)`
+
+### Manual trigger
 
 /handoff invokes the skills write branch manually. Use it instead of /compact whenever you want to pro-actively shrink your context.
 
-The write branch produces the handoff and will end with an instruction to /clear, and then start the next session with /handoff --read. However, you can replace /handoff -read with anything starts a session: e.g. starting with a "." prompt will also start the handoff skill's read branch.
+The write branch produces the handoff and will end with an instruction to /clear, and then start the next session with /handoff --read.
 
-The handoff skill automatically injects the handoff and standard compaction summary into the next session.
+Using /handoff --read is just as suggestion. Any prompt after /clear has finished works, e.g. starting with a "." prompt will also activate the handoff skill's read branch.
 
-## Automatic trigger
+The handoff file is automatically injected into the post-compaction session.
 
-The handoff skill's write branch automatically triggers when you near your auto-compaction threshold. Unlike manual invocation, an automatic trigger of the write branch does not replace compaction but adds to it. The write branch produces a handoff, then auto-compaction triggers and writes the summary. Auto-compaction starts a new session, consuming the summary and handoff as part of the same request.
+#### Orchestrated trigger
 
-### Automatic vs manual trigger
+An agent may also invoke the handoff skill "manually". This can be useful when you want an orchestrator agent to monitor (and intervene in) their subagents' context growth.
 
-Upside: Fully hands off, configurable through the auto-compact threshold.
-
-Downside: The automatically triggered handoff is slightly stale compared to its manually triggered counterpart. The automatic handoff must be written before auto-compaction triggers. If not, compaction itself interrupts the handoff writing process and only the summary survives.
-
-### Setting the auto-compact window
-
-CLAUDE_CODE_AUTO_COMPACT_WINDOW - A Claude Code harness setting (100k to model_max -> 1M for a 1M plan). Actual compaction takes place when context grows to the compact_threshold=min(CLAUDE_CODE_AUTO_COMPACT_WINDOW, model_max) − reserved_output_tokens − safety margin. Current measurements suggest that the compact_threshold is at least 36K below CLAUDE_CODE_AUTO_COMPACT_WINDOW.  
-CTX_COMPACT_THRESHOLD_TOKENS - A constant in context-thresholds.sh (part of the plugin). Hooks cannot access CLAUDE_CODE_AUTO_COMPACT_WINDOW because it is part of the harness. The value must be supplied either by default (887K) or by an env variable in the user's settings.json.
-
-Advice: Set CTX_COMPACT_THRESHOLD_TOKENS below compact_threshold by a generous safety margin.
-
-Reason: The handoff must be written before auto-compaction kicks in. Writing the handoff can push context past the auto-compaction threshold. Auto-compaction interrupts the handoff writing process.
-
-An example settings.json block:
-
-"env": {
-"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "400000",
-"CTX_COMPACT_THRESHOLD_TOKENS": "350000"
-},
-
-These settings mean:
-
-- The harness aims to keep context below 400K, but since it builds in a safety margin and needs to reserve tokens for output compactions triggers around 364K context.
-- The skill aims to have finished written a handoff by 350K context, a 14K safety margin to auto-compaction.
-- The handoff skill triggers well before 350K context is reached, because 1) it triggers at the start of a turn (and must thus have slack to account for the current turn`s work) , and 2) writing the handoff adds to pre-compact context.
-
-## Handoff structure
-
-Sections:
-1 Preamble: branch, checkout, compacted, status
-2 Do not re-derive: Decisions(/implementation), Dead-ends, Traps
-3 Next
-4 Pointers
-5 Unverifiable
-
-##
-
-###
+A subagent cannot instruct itself to clear or compact its session, but its parent agent can do so.

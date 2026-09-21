@@ -103,7 +103,7 @@ it from the shape below and let the tool correct you.
 
 ```
 # Handoff — <task>
-branch: / checkout: / compacted: / status:
+branch: / checkout: / status: / progress:
                                     envelope + one-line orientation
 ## Do not re-derive                 the reason the file exists (heading only; a container)
 ### Decisions                       what was chosen AND what it beat
@@ -114,10 +114,19 @@ branch: / checkout: / compacted: / status:
 ## Unverifiable                     optional: real files the gate cannot resolve
 ```
 
-- `compacted: no | yes | unknown` is gated for one reason: it says whether the expensive half of the
-  document is first-hand. If the session auto-compacted before writing, its decisions were
-  reconstructed from a summary produced by the very process that drops them. `unknown` is a
-  legitimate answer; omitting it is the only answer that tells a reader nothing.
+- `progress: writing | complete | consumed` says where THIS document is in its own write/read
+  cycle, not anything about the task (`docs/design.md` D23). It exists because the automated write
+  leg (`hooks/handoff-fork-write.sh`) authors out of band: it writes a bare placeholder with
+  `progress: writing` *before* the real content even starts being composed, so a `SessionStart`
+  read racing against that authoring turn finds an honest "not ready yet" instead of either
+  silence or a stale document from a previous cycle. A live write — this skill's own Step 2,
+  whether invoked by a human or the detached turn — never writes `writing`: by the time Step 2
+  runs, the document is composed in full in one `Write` call, so it goes straight to
+  `progress: complete`. The read leg then flips `complete` to `consumed` once it has actually
+  shown the document to a reader, so a later reset on the same branch, with nothing new written
+  since, can say so honestly rather than presenting the same content as if it were news. **Not
+  gate-required** — a handoff written before this field existed has none, and the gate and every
+  reader treat an absent `progress:` the same as `complete`, so nothing already on disk breaks.
 - **Decisions record what the decision beat**, not just what it was. A decision without its rejected
   alternative gets re-litigated by the next session, which is the expensive failure this document
   exists to prevent.
@@ -257,6 +266,11 @@ One `Write` call, to the path Step 1 printed. Author in section order, which is 
 order: do Decisions, Dead ends and Traps *first* and best, while there is still budget for them.
 `## Next` and `## Pointers` are the cheap half, and the half that survives without you.
 
+Write `progress: complete`. This step composes the whole document in one call, so it is never
+`writing` — that value belongs only to the placeholder `hooks/handoff-fork-write.sh` writes
+*before* this step runs, as its own separate, earlier act (`docs/design.md` D23). By the time
+Step 2 runs at all, whatever this call produces supersedes that placeholder outright.
+
 Recall the one rule — if a sentence needs a file open to write, it is a Pointer.
 
 ## Write mode — Step 3: verify
@@ -300,14 +314,13 @@ had to be long, say why in the handoff.
 Print `>> STEP: handoff — 4 (write)` before doing anything else in this step.
 
 No tool call. Report the path, the exit status, and any warning worth acting on. What happens next is
-decided by **why this write is happening, not by who is watching**:
-
-**Fired by the Stop hook itself** — this turn opens with `Stop hook feedback:` and tells you to run
-this skill "now, before anything else." This path exists to be as invisible as real auto-compaction:
-nobody asked for a pause, only for insurance against one. Report the write in one line and **keep
-going with whatever was in flight.** Do not tell anyone to `/clear`. The handoff may be stale by the
-time anything reads it back — that is the accepted cost of the margin `CTX_COMPACT_THRESHOLD_TOKENS`
-keeps against racing real auto-compaction, not a defect in this step to correct for.
+decided by **why this write is happening, not by who is watching** — and the automatic path never
+reaches this step at all: it runs as a detached, headless spawn on `PreCompact`
+(`hooks/handoff-fork-write.sh`), and that spawn's own prompt explicitly overrides this step with "there
+is no human to hand back to and no Step 4 report to give" before ever getting here. (A predecessor
+mechanism ran this skill in-band, inside the live session's own turn, on a `Stop` hook — superseded
+2026-09-17, `docs/design.md` D22 — and Step 4 used to carry a case for it. Removed along with that
+mechanism: nothing registers `Stop` on this skill any more, so that case could never fire.)
 
 **Invoked directly** — a human asked for one, or an orchestrator watching this session's growth from
 outside sent the instruction. Either way, someone chose the manual path *because* they want the pause,
@@ -353,6 +366,36 @@ Newest first. Pick by the branch and checkout, not by position: several may be l
 the SessionStart hook already surfaced one it says in its own output whether that was an exact match
 or a guess made on recency.
 
+**Check `progress:` before verifying anything** (`docs/design.md` D23):
+
+```bash
+grep -m1 '^progress:' "$handoff"
+```
+
+- **Absent, `complete`, or `consumed`** — a real document. Proceed below.
+- **`writing`** — the automated write leg's placeholder, mid-authoring. Do not treat its own body
+  as content to act on (it is a signal, not a handoff), and do not just report this and move on to
+  other work — a real handoff exists specifically to prevent re-deriving what this session would
+  otherwise lose, and starting other work before it lands defeats that. Wait for it instead, the
+  same way the automatic `SessionStart` injection does (`hooks/handoff-inject.sh`, D26): run this
+  now, as its own Bash tool call with `timeout` set to at least 610000ms (covers the default
+  `CTX_FORK_TIMEOUT_SECONDS` of 600, `lib/context-economy/context-thresholds.sh`, with margin —
+  raise it if that constant was customized higher):
+
+  ```bash
+  until grep -qm1 '^progress: complete' "$handoff" 2>/dev/null; do
+    m=$(stat -c %Y "$handoff" 2>/dev/null || stat -f %m "$handoff" 2>/dev/null)
+    [ -z "$m" ] && break
+    [ $(( $(date +%s) - m - ${CTX_FORK_TIMEOUT_SECONDS:-600} )) -ge 0 ] && break
+    sleep 10
+  done
+  grep -m1 '^progress:' "$handoff"
+  ```
+
+  If that now prints `progress: complete`, proceed below as normal. If it still prints
+  `progress: writing`, the authoring run most likely died before finishing — say so, and proceed
+  as if no handoff exists for this target at all.
+
 Then verify with **one argument**:
 
 ```bash
@@ -371,8 +414,7 @@ If the gate is unreachable, read the handoff anyway and treat every pointer as u
 
 Print `>> STEP: handoff — 2 (read)` before doing anything else in this step.
 
-One `Read` of the handoff. Note `compacted:` — on `yes` or `unknown` the body was reconstructed from
-a summary, so its Decisions may be lossy.
+One `Read` of the handoff.
 
 ## Read mode — Step 3: act on the verdicts
 
@@ -394,6 +436,14 @@ Then start the first `## Next` item that is **not** blocked on a task that has y
 simply item 1. A blocked step names the task it waits on and what to do if it never lands; check that
 before assuming the step is ready. Say which path the run took: verified clean, verified with rot in
 listed pointers, or unverified.
+
+If `progress:` read `complete` in Step 1, flip it to `consumed` now, one small edit to the
+envelope line only — the document has just been shown to a reader, so leaving it `complete` would
+let a later reset on this branch present the same, already-seen content as if it were news
+(`docs/design.md` D23). Skip this if it already read `consumed`, `writing` was handled in Step 1
+and never reaches here, and skip it too on a `recent` (guessed, cross-repo) pick — this is
+bookkeeping for THIS branch's own handoff, not something a guess on someone else's is entitled to
+mutate.
 
 ## Feedback — a deliberate divergence, stated so it does not read as an omission
 

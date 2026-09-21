@@ -2,13 +2,12 @@
 #
 # SessionEnd hook: record that a /clear happened (build-order item 4, piece 4).
 #
-# This closes the one hole in the write leg. `handoff-write.sh` fires on `Stop`, at a turn boundary,
-# once resident context reaches the threshold. But `/clear` does NOT fire `Stop` (F9 -- the
-# binary's own hook table says otherwise and is wrong), so a clear typed at 180k, below the
-# threshold, or before the trigger's turn boundary arrives, discards the session with no handoff
-# and nothing anywhere saying so. The next session simply begins, blank, as though nothing had
-# been lost. That silence is the defect: an undocumented reset and a properly handed-off one look
-# exactly alike.
+# This closes the one hole in the write leg. The automatic write leg (`hooks/handoff-fork-write.sh`)
+# fires on `PreCompact`, which only fires ahead of a compaction. `/clear` triggers no compaction at
+# all, so a clear typed before compaction ever reached this session discards the session with no
+# handoff and nothing anywhere saying so. The next session simply begins, blank, as though nothing
+# had been lost. That silence is the defect: an undocumented reset and a properly handed-off one
+# look exactly alike.
 #
 # ── WHAT THIS CAN AND CANNOT DO ────────────────────────────────────────────────────────────
 #
@@ -170,11 +169,20 @@ if [ -r "$handoff_path" ] && [ -s "$handoff_path" ]; then
     case "${m:-}" in ''|*[!0-9]*) handoff_mtime=null ;; *) handoff_mtime=$m ;; esac
 fi
 
-# Did the write trigger ever arm for this session? The latch is the only evidence, and its absence
-# is informative in its own right: it means the clear beat the threshold rather than overrode a
-# demand for a handoff. Those are different mistakes and deserve different wording downstream.
-trigger_fired=false
-[ -n "$session_id" ] && [ -e "$HOME/.claude/state/handoff-trigger/$session_id" ] && trigger_fired=true
+# Was an automatic write ever attempted for this session? `hooks/handoff-fork-write.sh` (the
+# current PreCompact write leg) drops a per-session dedup lock the first firing it reaches, win
+# or lose, and never removes it -- the only evidence on disk that a write was attempted before
+# this clear. Its absence means no compaction reached this session before the clear, not that a
+# demand for a handoff was ignored; those are different mistakes and deserve different wording
+# downstream.
+#
+# (Superseded 2026-09-18: the previous write leg, `handoff-write.sh`, armed a latch at
+# `~/.claude/state/handoff-trigger/$session_id` instead. Removed along with that file, which no
+# longer runs, so that latch is never written any more -- checking it here would always read
+# false. `write_attempted` is a new name, not a rename, because the underlying question changed:
+# "did a write get predicted and asked for" versus "did compaction actually reach this session".)
+write_attempted=false
+[ -n "$session_id" ] && [ -e "$HOME/.claude/state/handoff-fork/$session_id.lock" ] && write_attempted=true
 
 # ── Write ──────────────────────────────────────────────────────────────────────────────────
 #
@@ -207,7 +215,7 @@ if [ "$have_jq" = true ]; then
         --arg handoff_path "$handoff_path" \
         --argjson handoff_present "$handoff_present" \
         --argjson handoff_mtime "$handoff_mtime" \
-        --argjson trigger_fired "$trigger_fired" \
+        --argjson write_attempted "$write_attempted" \
         '{
             ended_at: $ended_at,
             ended_at_epoch: $ended_at_epoch,
@@ -223,7 +231,7 @@ if [ "$have_jq" = true ]; then
                 path: $handoff_path,
                 mtime: $handoff_mtime
             },
-            trigger_fired: $trigger_fired
+            write_attempted: $write_attempted
         }' > "$marker" 2>/dev/null
 else
     # No jq to build the object, so escape by hand: backslash first (a Windows path is the
@@ -250,7 +258,7 @@ else
     "path": "$(json_str "$handoff_path")",
     "mtime": $handoff_mtime
   },
-  "trigger_fired": $trigger_fired,
+  "write_attempted": $write_attempted,
   "degraded_no_jq": true
 }
 EOF

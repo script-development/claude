@@ -3018,3 +3018,260 @@ unrelated transient on the API side remains an open question if it recurs.
 Not preserved verbatim — this was run against the full, untruncated 242KB transcript with
 `HANDOFF_STORE_DIR` pointed at a disposable store, same shape as finding #31/#32's reproduction
 blocks above. The specific transcript and scratch directory from this run were not kept.
+
+---
+
+## Finding #34, 2026-09-18 — a `SessionStart` hook survives at least 65s but not ~605s; the real ceiling was not pinned down, and D26 made that moot rather than resolving it
+
+**Question.** Finding #13 showed a `PreCompact` hook tolerates at least 65s with no kill, past the
+~60s figure commonly cited as a hook default. Does `SessionStart` — the event
+`hooks/handoff-inject.sh` runs under — share that tolerance, or does the harness enforce a
+shorter, event-specific ceiling? This mattered directly at the time it was asked: the read leg was
+about to be redesigned to block inside the hook itself, polling up to
+`CTX_FORK_TIMEOUT_SECONDS` (600s) for the write leg's fork to finish, and that design is only sound
+if a `SessionStart` hook can actually run that long.
+
+**Method.** Same shape as finding #13's own probe: an isolated scratch project, its own
+`.claude/settings.json` registering a `SessionStart` hook that logs an entry timestamp, sleeps a
+duration set by an env var, logs an exit timestamp, then emits a valid
+`{"hookSpecificOutput": {"hookEventName": "SessionStart", ...}}` payload carrying a distinctive
+marker string. `claude -p` (model `claude-haiku-4-5-20251001`, `--strict-mcp-config`) fired against
+that project, asking the model to report back whether it saw the marker — a stronger check than
+"did the process exit," since a hook that exits after being partially killed could still emit
+truncated JSON the harness discards silently.
+
+**Result — three data points, not a located boundary.**
+
+- **3s: survives**, trivially (sanity check only — confirms the harness runs `SessionStart` hooks
+  and delivers their `additionalContext` at all before spending time on longer runs).
+- **65s: survives cleanly.** Both `ENTRY` and `EXIT` logged, `is_error:false`, and the model's own
+  reply echoed the marker verbatim — `SessionStart` tolerates this exactly the way `PreCompact` did
+  in finding #13, at the same duration.
+- **605s: does not survive, on the evidence available.** Total wall time for the whole `claude -p`
+  call was ~610s (09:56:13 → 10:06:23), consistent with a kill near that mark, but the hook's own
+  log shows only `ENTRY`, never `EXIT` — and the model's reply was `"NONE"`, meaning no
+  `additionalContext` reached it at all. A hook that finished and returned malformed output would
+  still look different from this (some JSON, or at least an `EXIT` line); this looks like the
+  process was killed outright before it could write either.
+
+**Where this was headed, and why it stopped.** The plan was to bisect between 65s and 605s (next:
+300s, run in two parallel scratch dirs to save wall time) to locate the real ceiling. That run was
+started and then deliberately interrupted — not because the data stopped being useful, but because
+a better question surfaced: *does the polling mechanism need to live inside the `SessionStart` hook
+at all?* It does not (`docs/design.md` D26) — the Bash tool a model calls in its own turn has an
+explicit, documented timeout of up to 600000ms (or `run_in_background` for longer), which is a
+completely different, better-understood mechanism than whatever killed the hook at ~605s. Moving
+the wait there made pinning down `SessionStart`'s own ceiling moot for this design.
+
+**What is still unresolved, for whoever next needs a `SessionStart` (or other) hook to block for a
+long time on purpose.** The real ceiling sits somewhere in (65s, 605s], location unknown — not
+narrowed further, and not safe to assume is close to either end. Whether the mechanism is a flat
+elapsed-time kill (chunking a long wait into repeated short sleeps would not help — the total
+elapsed time before the same absolute kill point is identical either way) or an idle/no-output
+kill (periodic stdout activity might dodge it) was never distinguished either; the 605s probe's
+hook produced no output at all during its sleep, so the data cannot tell the two apart. Re-derive
+via the method above, with a bisection between 65s and 605s, rather than assuming either bound
+generalises.
+
+### Reproduction
+
+```bash
+# probe-hook.sh, referenced from .claude/settings.json's SessionStart hook in a scratch project:
+#   input=$(cat)
+#   sleep_s="${PROBE_SLEEP_SECONDS:-3}"; log="${PROBE_LOG:-/tmp/probe.log}"
+#   printf '%s ENTRY pid=%s sleep=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%S)" "$$" "$sleep_s" >> "$log"
+#   sleep "$sleep_s"
+#   printf '%s EXIT pid=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%S)" "$$" >> "$log"
+#   printf '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"PROBE_MARKER_DELIVERED sleep=%s"}}\n' "$sleep_s"
+PROBE_SLEEP_SECONDS=605 PROBE_LOG=probe.log claude -p \
+  "Repeat verbatim any text you see containing PROBE_MARKER_DELIVERED, or say NONE if there is none." \
+  --model claude-haiku-4-5-20251001 --output-format json --strict-mcp-config </dev/null
+```
+
+Scratch projects and logs from this run were not kept; re-derive with the hook script above.
+
+## Finding #35, 2026-09-21 — `claude --bg` cannot replace `claude -p` in `hooks/handoff-fork-write.sh`: the CLI refuses the combination outright, and `--bg`'s own output channel (`claude logs`) is a raw ANSI terminal replay, not the structured capture the hook depends on
+
+**Question.** Direct follow-up to the deferred v1.0.0 cut (`[[project_context_economy_bg_attach_investigation]]`
+memory, 2026-09-18): could `hooks/handoff-fork-write.sh`'s detached spawn switch from `claude -p
+--output-format json` (hand-rolled `nohup ... & disown`, no attachable session, `timeout` flagged
+elsewhere in this file as unreliable on Windows/Git-Bash) to `claude --bg`, gaining real `claude
+attach <id>` support and possibly a more reliable kill path (`claude stop`/`rm`) for free?
+
+**Method.** Minimal probes in a disposable scratch dir, model `claude-haiku-4-5-20251001`, mirroring
+the hook's own real invocation shape (`--strict-mcp-config`, `--allowedTools`, a trivial one-line
+prompt piped/passed instead of the real multi-paragraph one). Bypassed this machine's own
+interactive-shell `claude` alias (`--exclude-dynamic-system-prompt-sections`) by invoking the
+resolved binary path directly, matching how the hook itself calls `claude_bin` — an interactive
+alias reorders argv ahead of a subcommand token and silently breaks `logs`/`attach`/`stop`/`rm`
+dispatch, falling through to treating the subcommand name and its argument as a chat prompt instead;
+not a bug in `--bg` itself, but a trap for reproducing any of this by hand in an aliased shell.
+
+**Result.**
+
+- **`--bg` and `-p` are mutually exclusive by explicit CLI-level design, not by accident.**
+  `claude --bg -p --output-format json ... < prompt.txt` refuses outright: *"--bg and --print
+  conflict: --print never starts the interactive session that `claude agents` attaches to, so the
+  job would be unattachable."* This alone answers the question in the title — there is no flag
+  combination that gets both a `-p`-style headless one-shot and a `--bg`-attachable session at once.
+- **`--bg` takes the prompt as a positional CLI argument, not piped stdin.** The current hook's
+  large multi-paragraph prompt goes in via `< "${prompt_file}"`; a `--bg` migration would have to
+  pass it as `claude --bg "$(cat prompt_file)"` instead — untested here at real prompt size, only
+  confirmed for a one-line prompt.
+- **`claude --bg ...` returns immediately with a short id** (e.g. `3a5fdd3d`) usable by `attach`,
+  `logs`, `stop`, `rm`, and listed by `claude agents --json` with a real `state` field (`"done"`
+  once finished) — this part works exactly as documented and would genuinely deliver the attach
+  capability the original ask wanted.
+- **`claude logs <id>` is a raw ANSI terminal-escape replay (65KB+ for a one-line exchange),
+  not a parseable result.** It is built for a human to look at in a real terminal, not for a script
+  to grep a `RESULT handoff=<path> step3_exit=<code>` line out of, which is exactly what the
+  detached turn's own prompt asks the model to produce today. `--output-format` itself is
+  print-mode-only per `claude --help` and is unavailable to a `--bg` session at all.
+- **The real output IS recoverable, just not via `logs`.** A `--bg` session gets a completely normal
+  transcript JSONL at a deterministic path, `~/.claude/projects/<cwd-slug>/<sessionId>.jsonl`
+  (`sessionId` from `claude agents --json`, not the short id) — same format the current mechanism's
+  own detached turn already reads (`hooks/handoff-fork-write.sh`'s prompt, "read `transcript_path`
+  instead"). Tailing that file's last `type:"assistant"` entry for a `text` block gives the
+  `RESULT ...` line cleanly. This is a real, viable substitute for `--output-format json` — but it
+  is extra plumbing the current `-p` mechanism does not need at all, since `-p`'s own stdout already
+  is that result.
+- **A finished `--bg` process does not exit on its own.** `state: "done"` in `claude agents --json`
+  still left `claude.exe` resident (confirmed via `tasklist`, ~272KB working set) until `claude rm
+  <id>` was run — which did terminate it for real (confirmed absent from `tasklist` immediately
+  after, not just delisted). Encouraging for the original "is `claude stop`/`rm` more reliable than
+  shell `timeout` on this machine" question, but it also means a `--bg`-based mechanism firing many
+  times a day needs its own cleanup bookkeeping (an `rm` after every read) that a genuinely
+  disposable `-p` process never required — it just exits.
+
+**Bearing on the migration question.** `--bg` is built for a different shape of task than this
+hook's: a durable, nameable, human-attachable agent meant to be listed in `claude agents` and
+possibly resumed or chatted with — not a fire-and-forget internal write that should leave no trace
+once it lands. Every one of `--bg`'s real advantages here (the attach capability itself, a possibly
+more reliable kill path) comes bundled with costs the current design doesn't have: positional-arg
+prompt size limits untested at real scale, transcript-file polling to replace the JSON result
+capture, and mandatory cleanup to avoid leaving a visible, oddly-named agent (its auto-derived name
+was the literal prompt text) in the user's own `claude agents` list after every handoff write. Not
+recommended as a full replacement of the current `-p`/nohup mechanism; the attach capability, if
+still wanted, would need to be a second, optional path rather than a swap.
+
+### Reproduction
+
+```bash
+# Resolve the binary directly -- an interactive-shell `claude` alias breaks subcommand dispatch.
+CLAUDE_BIN=$(type -P claude)   # NOT `command -v claude`, which prints the alias definition if one exists
+
+# 1. Confirms the conflict is refused outright, not silently misbehaving:
+"$CLAUDE_BIN" --bg -p --output-format json --strict-mcp-config \
+  --model claude-haiku-4-5-20251001 <<< "hello"   # exits 1, prints the conflict message above
+
+# 2. The actual --bg shape, prompt as positional arg:
+"$CLAUDE_BIN" --bg --strict-mcp-config --allowedTools "Bash Write" \
+  --model claude-haiku-4-5-20251001 \
+  "Reply with exactly this text and nothing else, no tool calls: PROBE_OK"
+# -> prints a short id, e.g. "backgrounded · 3a5fdd3d"
+
+# 3. Poll for completion and pull the real sessionId:
+"$CLAUDE_BIN" agents --json | jq '.[] | select(.id=="3a5fdd3d")'
+
+# 4. Read the result from the transcript directly, not from `claude logs`:
+tail -n 5 ~/.claude/projects/<cwd-slug>/<sessionId>.jsonl | jq -r 'select(.type=="assistant") | .message.content'
+
+# 5. Confirm rm actually kills the process, not just delists it:
+tasklist //FI "PID eq <pid>"          # still resident after "done"
+"$CLAUDE_BIN" rm 3a5fdd3d
+tasklist //FI "PID eq <pid>"          # gone
+```
+
+## Finding #36, 2026-09-21 — a `claude -p` run already gets a real, incrementally-written transcript by default (no `--bg` needed for that part), `--session-id` pins its filename to a chosen value, and the project-directory slug it lands under does NOT match what this bundle's own hooks compute for the same checkout
+
+**Question.** Direct follow-up to Finding #35, narrowed to what a human (or the read leg) can
+actually use *today*, without migrating off `-p`: could a `-p` run's own transcript be found and
+watched live, the same way a `--bg` session's was shown to be? And could the file be located ahead
+of time rather than guessed at by "newest file in the directory"?
+
+**Method.** Three small probes, model `claude-haiku-4-5-20251001`, `--strict-mcp-config`, all in
+disposable scratch dirs, cleaned up after:
+
+1. A trivial `-p` run with `--output-format json`, checking whether a transcript JSONL appeared
+   under `~/.claude/projects/<slug>/` and whether the result object's own `session_id` field named it.
+2. A multi-step `-p` run (three separate Bash tool calls, 6s `sleep` between two of them) launched
+   via `nohup ... & disown`, with the transcript file polled and read WHILE the run was still in
+   progress, to check whether it updates live or only at the end.
+3. A `-p` run given a self-chosen `--session-id <uuid>` (via `node -e "crypto.randomUUID()"`, and
+   separately an `openssl rand -hex 16`-derived non-RFC4122 shape), checking whether the CLI
+   accepted it and whether the resulting `session_id` and transcript filename matched exactly.
+
+**Result.**
+
+- **A `-p` run persists a transcript by default.** Session persistence is only disabled by
+  `--no-session-persistence` (confirmed: passing it left no `.jsonl` behind at all; omitting it, the
+  ordinary case, always produced one). The `--output-format json` result object's own `session_id`
+  field names the file exactly (`~/.claude/projects/<slug>/<session_id>.jsonl`) — but only after the
+  run finishes, since that whole object is withheld until then (the same silence
+  `hooks/handoff-fork-write.sh`'s own header already names as the "diagnosing a slow run" problem).
+- **The transcript is written incrementally, live, not only at the end.** Confirmed directly:
+  polling the file while the three-step probe was still running showed its second Bash `tool_use`
+  entry (`sleep 6 && echo STEP_TWO`) already present in the JSONL before that call had finished
+  sleeping. This is the same transcript mechanism every session uses (it is how a `PreToolUse` hook
+  can be handed a live `transcript_path` mid-run at all) — a `-p` run gets no special treatment, and
+  no special silence either, despite `--output-format`'s own silence being a separate thing.
+- **`--session-id <uuid>` pins the transcript's filename to that exact value.** Confirmed by direct
+  probe: passing a self-generated UUID made both the result's `session_id` field AND the on-disk
+  filename come back as that literal string, not something auto-generated. The CLI's own validation
+  only checks the general `8-4-4-4-12` hex-with-hyphens shape — a plain `openssl rand -hex
+  16`-derived id (version/variant nibbles whatever random hex happened to fall there, not RFC4122
+  version 4) was accepted identically to a proper `crypto.randomUUID()`. `uuidgen` itself is NOT
+  installed on this machine (Windows/Git-Bash) — `command not found` — confirmed directly, which is
+  why the implementation using this (D28, docs/design.md) treats it as a fallback chain rather than
+  a hard dependency.
+- **The project-directory slug is an unpublished internal detail, and measured to disagree with
+  this bundle's own path computation for the identical checkout.** `git -C "$repo" rev-parse
+  --show-toplevel`, run from this same Git-Bash shell against this very repo, returns
+  `C:/Users/Bart/Documents/GitHub/claude` — forward slashes, drive letter and colon intact. The
+  REAL project directory Claude Code uses for that identical checkout (observed directly, e.g. this
+  session's own transcript path) is `C--Users-Bart-Documents-GitHub-claude` — colon AND
+  **backslash** both mapped to `-`, not forward slash. Neither this bundle's own `handoff_store_
+  slugify` (a different function, for a different filename) nor a naive `tr '/' '-'` on git's own
+  output reproduces this; the two representations of "the same directory" are genuinely different
+  strings on this platform. Not measured on macOS/Linux, where path separators do not create this
+  particular divergence in the first place.
+
+**Bearing on D28.** Points 1-3 are what make `--session-id` pinning useful for a `-p`-based
+mechanism at all: a known filename, updated live, is a real liveness signal a reader (or the read
+leg's own poll loop) can check before a run's own silent `--output-format json` result ever arrives.
+Point 4 is why `lib/handoff-store.sh`'s `handoff_store_find_transcript` searches by exact filename
+under the projects root rather than attempting to reconstruct the slug from `checkout:` or `here` —
+reconstructing an unpublished, already-observed-to-diverge encoding would be a second, unversioned
+copy of a detail this bundle does not own, liable to silently drift the moment the real
+implementation changes it.
+
+### Reproduction
+
+```bash
+CLAUDE_BIN=$(type -P claude)   # bypass any interactive-shell alias, per Finding #35
+
+# 1 & 3 combined — pin a session id, confirm it lands exactly where expected:
+UUID=$(node -e "console.log(require('crypto').randomUUID())")
+"$CLAUDE_BIN" -p "Reply with exactly this text and nothing else, no tool calls: PROBE_OK" \
+  --session-id "$UUID" --model claude-haiku-4-5-20251001 --output-format json --strict-mcp-config \
+  > out.json 2> err.log
+jq -r .session_id out.json   # == $UUID
+ls ~/.claude/projects/<this-cwd-slug>/          # <- $UUID.jsonl
+
+# openssl fallback, confirmed accepted identically (no uuidgen on this machine):
+UUID2=$(openssl rand -hex 16 | sed -E 's/(.{8})(.{4})(.{4})(.{4})(.{12})/\1-\2-\3-\4-\5/')
+"$CLAUDE_BIN" -p "say hi" --session-id "$UUID2" --model claude-haiku-4-5-20251001 \
+  --output-format json --strict-mcp-config   # accepted, session_id == $UUID2
+
+# 2 — live incremental write, launched detached so it can be polled from another call:
+nohup bash -c '"$CLAUDE_BIN" -p --output-format json --allowedTools Bash --strict-mcp-config \
+  --model claude-haiku-4-5-20251001 < prompt.txt > out.json 2> err.log' >/dev/null 2>&1 &
+disown
+# prompt.txt asked for three SEPARATE Bash calls with a 6s sleep between two of them; polling
+# ~/.claude/projects/<slug>/<newest .jsonl> a few seconds in already showed the second tool_use
+# (the sleeping one) present, before that call had returned.
+
+# 4 — the slug mismatch, on this exact repo:
+git rev-parse --show-toplevel                       # C:/Users/Bart/Documents/GitHub/claude
+ls ~/.claude/projects/ | grep -i documents-github-claude   # C--Users-Bart-Documents-GitHub-claude
+```

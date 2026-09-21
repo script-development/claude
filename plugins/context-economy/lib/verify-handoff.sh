@@ -220,23 +220,14 @@ grep -qE '^#[[:space:]]+Handoff' <<< "$content" \
 grep -qE '^branch:' <<< "$content" || fail_contract 'header field missing: branch:'
 grep -qE '^status:' <<< "$content" || fail_contract 'header field missing: status:'
 
-# Gated, cheap, and the one header field that says whether the expensive half of
-# this document is first-hand. If the session had already auto-compacted before
-# the handoff was written, its decisions and dead ends were reconstructed from a
-# summary produced by the very process D6 argues drops them -- so the reader needs
-# to know, and "unknown" is a legitimate answer. Ungated it would simply be
-# omitted, which is the one answer that tells a reader nothing.
-grep -qE '^compacted:' <<< "$content"     || fail_contract 'header field missing: compacted: (no | yes | unknown)'
-
-# Gated for the same reason, one step further. `compacted:` says whether to trust
-# the expensive half; `checkout:` says which tree the cheap half even refers to.
-# Once the document stopped living inside that tree, nothing else in the file
-# identifies it: `branch:` names a ref, and the same ref name exists in every
-# sibling checkout on this machine. Omitted, the tool falls back to $PWD and
-# reports verdicts about whichever repository the caller happened to be standing
-# in — a full page of MISSING that looks exactly like citation rot. That is the
-# one failure this whole script exists to prevent, so the field is required
-# rather than defaulted.
+# Gated: `checkout:` says which tree the cheap half even refers to. Once the
+# document stopped living inside that tree, nothing else in the file identifies
+# it: `branch:` names a ref, and the same ref name exists in every sibling
+# checkout on this machine. Omitted, the tool falls back to $PWD and reports
+# verdicts about whichever repository the caller happened to be standing in — a
+# full page of MISSING that looks exactly like citation rot. That is the one
+# failure this whole script exists to prevent, so the field is required rather
+# than defaulted.
 grep -qE '^checkout:' <<< "$content"      || fail_contract 'header field missing: checkout: (absolute path of the tree the citations resolve against)'
 
 # Heading only: this one is a container, and its body is the three subsections

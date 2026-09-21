@@ -124,6 +124,105 @@ run "$(payload "other-$$" "$transcript" "$repo")" CTX_FORK_TIMEOUT_SECONDS=1 >/d
 assert_eq 'a different session_id gets its own lock, unaffected by an unrelated one' \
     "$((out_count_before + 1))" "$(lock_count)"
 
+# --- D23: the synchronous skeleton write ---------------------------------------------------
+#
+# Written by hand, not sourced from lib/handoff-store.sh, for the same reason
+# handoff-inject.test.sh's own store_name() is: an oracle that called the function under test
+# would agree with any change to it, including a wrong one.
+store_name() {  # store_name <target-main> <slug>
+    printf '%s-%s-%s.md' \
+        "$(printf '%s' "$(basename "$1")" | tr -c 'A-Za-z0-9._-' '_')" \
+        "$(printf '%s' "$2" | tr -c 'A-Za-z0-9._-' '_')" \
+        "$(printf '%s' "$1" | md5sum | cut -c1-8)"
+}
+
+store="$fixture/store"
+mkdir -p "$store"
+main_git=$(git -C "$repo" worktree list | head -1 | awk '{print $1}')
+skeleton_path="$store/$(store_name "$main_git" main)"
+
+# Snapshotted before firing, not read as "newest by mtime" afterward: several earlier cases in
+# this file (the dedup-lock quartet) also pass every guard and each leave their own scratch dir
+# behind, so a diff is the unambiguous way to name the ONE this specific firing created.
+scratch_before=$(ls -d /tmp/handoff-fork.* 2>/dev/null)
+
+# Act — passes every guard (real session_id, real transcript, real repo) and reaches the
+# skeleton write. CTX_FORK_TIMEOUT_SECONDS=1 still bounds whatever real detached turn follows to
+# a near-instant kill, exactly as the dedup-lock cases above rely on; HANDOFF_STORE_DIR isolates
+# the skeleton from both the real store and the other cases' own $home/.local/share default.
+run "$(payload "skel-$$" "$transcript" "$repo")" CTX_FORK_TIMEOUT_SECONDS=1 HANDOFF_STORE_DIR="$store" >/dev/null
+
+# Assert
+[ -s "$skeleton_path" ] && pass 'a firing that passes every guard writes a skeleton at the resolved store path' \
+    || fail 'a firing that passes every guard writes a skeleton at the resolved store path' 'no file at expected path'
+
+case "$(cat "$skeleton_path" 2>/dev/null)" in
+    *'progress: writing'*) pass 'the skeleton carries progress: writing' ;;
+    *) fail 'the skeleton carries progress: writing' "got [$(cat "$skeleton_path" 2>/dev/null)]" ;;
+esac
+
+case "$(cat "$skeleton_path" 2>/dev/null)" in
+    *"checkout: $main_git"*) pass 'the skeleton declares the repo it was fired for as checkout:' ;;
+    *) fail 'the skeleton declares the repo it was fired for as checkout:' "got [$(cat "$skeleton_path" 2>/dev/null)]" ;;
+esac
+
+case "$(cat "$skeleton_path" 2>/dev/null)" in
+    *'branch: main'*) pass 'the skeleton declares the branch it was fired for' ;;
+    *) fail 'the skeleton declares the branch it was fired for' "got [$(cat "$skeleton_path" 2>/dev/null)]" ;;
+esac
+
+# --- D28: the pinned write-session id, real on this machine (no `claude` stub, per the file
+# header) -- so this is measuring the ACTUAL fallback chain a real firing takes, not a mock of it.
+if command -v uuidgen >/dev/null 2>&1 || command -v openssl >/dev/null 2>&1; then
+    case "$(cat "$skeleton_path" 2>/dev/null)" in
+        *write_session:\ ????????-????-????-????-????????????*)
+            pass 'the skeleton carries a UUID-shaped write_session: on a machine with uuidgen or openssl' ;;
+        *) fail 'the skeleton carries a UUID-shaped write_session: on a machine with uuidgen or openssl' \
+            "got [$(cat "$skeleton_path" 2>/dev/null)]" ;;
+    esac
+else
+    # The other half of the fallback: neither tool exists, so the field is correctly omitted
+    # rather than left empty (lib/handoff-store.test.sh already covers the omitted-arg case
+    # directly; this confirms the write leg's OWN detection reaches the same empty value).
+    case "$(cat "$skeleton_path" 2>/dev/null)" in
+        *'write_session:'*) fail 'write_session: is omitted with neither uuidgen nor openssl available' \
+            'field present anyway' ;;
+        *) pass 'write_session: is omitted with neither uuidgen nor openssl available' ;;
+    esac
+fi
+
+# The id the skeleton recorded must be the EXACT one this same firing passed to `--session-id` --
+# not merely "a plausible-looking value", which would pass even if the two had silently diverged.
+# Checked against the async runner script itself (written synchronously, before its own nohup
+# spawn -- no race to wait out) rather than the real detached turn's own behaviour, which
+# docs/measured.md's own probes already cover directly.
+new_scratch=$(comm -13 <(printf '%s\n' "$scratch_before" | sort) <(ls -d /tmp/handoff-fork.* 2>/dev/null | sort))
+recorded_id=$(grep -m1 '^write_session: ' "$skeleton_path" 2>/dev/null | sed 's/^write_session: //')
+if [ -n "$recorded_id" ] && [ -n "$new_scratch" ] && [ -r "$new_scratch/run.sh" ]; then
+    case "$(cat "$new_scratch/run.sh")" in
+        *"--session-id $recorded_id"*) pass 'the id recorded in the skeleton is the exact one passed to --session-id' ;;
+        *) fail 'the id recorded in the skeleton is the exact one passed to --session-id' \
+            "run.sh: $(cat "$new_scratch/run.sh")" ;;
+    esac
+elif [ -z "$recorded_id" ]; then
+    pass 'the id recorded in the skeleton is the exact one passed to --session-id (skipped: no id was generated)'
+else
+    fail 'the id recorded in the skeleton is the exact one passed to --session-id' \
+        "could not locate this firing's own scratch dir (before=[$scratch_before] new=[$new_scratch])"
+fi
+
+# Unconditional overwrite: a REAL, already-complete handoff sitting at this path must still be
+# replaced by the placeholder on the next firing -- D23's whole point is that the reset cannot be
+# contingent on anything, including what was there before.
+printf '# Handoff — real work\nbranch: main\ncheckout: %s\nstatus: ok\nprogress: complete\n\nreal content nobody should lose silently, but D23 accepts they will\n' \
+    "$main_git" > "$skeleton_path"
+run "$(payload "skel2-$$" "$transcript" "$repo")" CTX_FORK_TIMEOUT_SECONDS=1 HANDOFF_STORE_DIR="$store" >/dev/null
+case "$(cat "$skeleton_path" 2>/dev/null)" in
+    *'progress: writing'*) pass 'a real, already-complete handoff is unconditionally reset to writing on the next firing' ;;
+    *) fail 'a real, already-complete handoff is unconditionally reset to writing on the next firing' \
+        "got [$(cat "$skeleton_path" 2>/dev/null)]" ;;
+esac
+
 # --- Cleanup: every spawn above that passed the guards genuinely launched a real detached
 # `claude -p` call (this machine's own install, no stub). Give them a moment, then sweep whatever
 # they left in the real HOME's own state dir and scratch space so this test suite does not leave
