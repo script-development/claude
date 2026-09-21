@@ -674,3 +674,78 @@ open a new top-level section for it, per that section's own stated purpose. D21 
 "Chosen"/"Why" text is left as an accurate record of what was decided *then* (a real, reasoned
 choice, not an error to correct like D19's) — this decision supersedes their section placement,
 not their reasoning for adding the fields in the first place.
+
+## D26 — `review-branch` converts, bundling its three always-on reviewer agents; unblocks the
+deferred cluster
+
+**Chosen.** Converted `review-branch`, the actual owner of the three-agent unconditional spawn
+(`runtime-integrity-reviewer`, `precedent-reviewer`, `docs-accuracy-reviewer`) that `pr` and
+`implement-plan` gate on and `fix-bug` transitively depends on through `pr`. All three agents
+bundled into `plugins/core-skills/agents/` in the same commit. Two catalog placeholder tokens
+resolved: `{{DEFAULT_BRANCH}}` **reuses** `integration_branch` (no new field) — falling back to
+`worktree`'s own auto-detect chain (`origin/development`, `origin/develop`, then the remote
+default branch) when unset, the same fallback `commit` and `sync-worktrees` already lean on.
+`{{DOC_PATHS}}` gets a **new field**, `doc_paths`, under a new `## Docs` section: a list of
+directory-prefix pathspecs (not `**` globs, may carry `:(exclude)` entries), with no generic
+default — unset means `docs-accuracy-reviewer` never fires, not a degraded version of firing.
+
+Of the three agents, only `docs-accuracy-reviewer` needed edits — its `{{DOC_PATHS}}` occurrences
+(both as a concept name and inside literal `git diff ... -- {{DOC_PATHS}}` / `grep {{DOC_PATHS}}`
+commands) became `<doc_paths>`, a value the parent skill resolves from `.claude/project-context.md`
+and hands over in the spawn prompt, the same shape `<diff_base>` already used — the agent does not
+read `.claude/project-context.md` itself. `runtime-integrity-reviewer` and `precedent-reviewer`
+shipped byte-identical, same as `wireframe-reviewer` (D18): neither referenced a `{{PLACEHOLDER}}`
+token, a Kendo assumption, or an unconverted-skill dependency (`precedent-reviewer`'s optional read
+of `.claude/skills/plan-feature/references/surface-questions.md` is a check against the *consuming
+project's own* copy-adopted files, not this plugin's bundled ones — already degrades cleanly via
+"if the repo ships it", no D16-style shipped copy needed).
+
+`plugins/core-skills/references/plan-directory.md` (D16) was re-synced from the catalog original
+per that decision's own standing instruction: added back the dual-root (`docs/plans/` then
+`docs/bugs/`) resolution and `review-branch`'s own fallback note, both previously trimmed out
+because no bundled consumer needed them yet.
+
+**Workflow gap resolved first.** The previous handoff flagged that Step 5/5a of the
+`feedback-plugin-skill-conversion-workflow` memory didn't cleanly cover `docs-accuracy-reviewer`'s
+spawn condition: gated on the diff's own content, not a developer's confirmation, so neither
+Step 5's "unconditional" default nor 5a's developer-confirmation exemption named it precisely.
+Resolved by asking who or what makes the call — a developer answering a prompt exempts it (5a);
+anything else, including a mechanical diff-content check, does not — and recorded as Step 5b
+before converting `review-branch`, so the next diff-gated (not developer-gated) spawn has a named
+rule to apply rather than re-deriving the distinction.
+
+**Also fixed, found while updating `README.md`'s Plugins table row for this conversion.** That
+row had drifted stale independently of `review-branch`: still missing `research`, `retro`,
+`review-mcp-descriptions`, `shepard`, and `sync-worktrees` — five skills converted in the
+previous session whose entries never reached that one summary line, even though the plugin's own
+`README.md` and `plugin.json` were both kept current for them. Same two-tier staleness shape
+D24/D25 already found and fixed for "used by" field comments, recurring one level up, in a
+plugin-level summary row instead of a per-field comment.
+
+**Why.** Reuse-before-add (workflow Step 2) applies to `{{DEFAULT_BRANCH}}` exactly as it did for
+`commit`'s D13 and `sync-worktrees`'s D24: a third catalog concept mapping onto a field this
+rework already has, not a reason to add a second branch-naming field. `doc_paths` gets a real new
+field because nothing existing covers "a list of text-prefix pathspecs" — `plan_dir` and its
+`## Directories` siblings are single-scalar output paths, a different shape entirely, and forcing
+`doc_paths` into that section would misrepresent both what it holds and what reads it (an input
+filter, not an output location). Bundling all three agents in one commit, rather than converting
+`review-branch` first and its agents in a follow-up, keeps every commit in a working state — the
+same reason D12 gives for ordering a hard dependency ahead of its dependent in the first place,
+applied here to "spawns three agents" instead of "invokes one skill".
+
+**Rejected.** Giving `docs-accuracy-reviewer` its own `.claude/project-context.md` read instead of
+having the parent skill resolve `doc_paths` and pass it in — rejected because `review-branch`
+already has to resolve `doc_paths` itself, before spawning, to decide whether the third `Agent()`
+block even joins the message; having the agent re-resolve the same field a second time duplicates
+a read the orchestrator already did, for no independent benefit (the agent has no way to act on
+a different answer than what triggered its own spawn). Treating `docs-accuracy-reviewer`'s
+diff-content gating as covered by 5a's existing developer-confirmation exemption instead of
+writing a new sub-step — rejected because it isn't the same shape, and stretching 5a's wording to
+cover it would make the next genuinely-different conditional spawn harder to classify correctly,
+not easier.
+
+**Consequence.** `pr`, `implement-plan`, and (transitively, through `pr`) `fix-bug` are now
+unblocked — `plan-feature` remains separately deferred (spawns `plan-reviewer` +
+`surface-reviewer`, unrelated to this cluster). `integration_branch` now has five consumers
+across the catalog's `{{DEFAULT_BRANCH}}`-and-`integration_branch` shapes combined once `pr` and
+`implement-plan` convert and reuse it the same way, per this decision's own pattern.

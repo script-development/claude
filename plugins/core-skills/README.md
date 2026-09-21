@@ -39,6 +39,7 @@ back to, not re-explain the degrade-not-fail contract itself.
 | [next](skills/next/) | Continue through TASKS.md — find next task, execute with TDD flow, mark done |
 | [research](skills/research/) | Run a research query, produce a structured markdown report, and file it so knowledge accumulates |
 | [retro](skills/retro/) | Write a numbered retrospective capturing what went wrong, why, and what changed |
+| [review-branch](skills/review-branch/) | Full-branch review vs the integration branch: runtime-integrity-reviewer + precedent-reviewer in parallel, joined by docs-accuracy-reviewer when the diff touches this project's `doc_paths`; reports in chat |
 | [review-mcp-descriptions](skills/review-mcp-descriptions/) | Improve MCP tool/resource descriptions for Tool Search discoverability |
 | [shepard](skills/shepard/) | Drive one PR to green and answered: fix red CI, dispose every review finding, push once per cycle, arm a live watch |
 | [sync-worktrees](skills/sync-worktrees/) | Sync every secondary git worktree with the primary: env files, dependencies, optional fast-forward |
@@ -52,6 +53,9 @@ root, auto-discovered, no `plugin.json` entry needed.
 
 | Agent | Description |
 |-------|-------------|
+| [docs-accuracy-reviewer](agents/docs-accuracy-reviewer.md) | Grade every claim in the user-facing text a branch ships against the code it ships; spawned by `/review-branch` when the diff touches this project's `doc_paths` |
+| [precedent-reviewer](agents/precedent-reviewer.md) | Check a branch against the repo's standing rules, sibling implementations, and its own plan prose; spawned always by `/review-branch` |
+| [runtime-integrity-reviewer](agents/runtime-integrity-reviewer.md) | Check a branch for invariants that only break across the whole system — transactions, concurrency, lifecycle, silent failure; spawned always by `/review-branch` |
 | [wireframe-reviewer](agents/wireframe-reviewer.md) | Scores WIREFRAMES.md on screen coverage, token validity, component references, internal consistency, and AC traceability; spawned by `/wireframe` |
 
 ## Design record

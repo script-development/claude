@@ -211,16 +211,61 @@ add another directory-shaped field of their own (D25). Also fixed `plan_dir`'s s
 comment — it named only `catchup`, missing `build-it` (confirmed reading
 `plugins/core-skills/skills/build-it/SKILL.md:70`).
 
+### `review-branch` — unblocks the deferred cluster
+
+Converted, bundling all three reviewer agents it unconditionally spawns
+(`runtime-integrity-reviewer`, `precedent-reviewer`, `docs-accuracy-reviewer`) into
+`plugins/core-skills/agents/` in the same commit — the actual "convert the dependency first"
+move D12/Step 5 of the workflow memory call for, since a skill and the agents it always spawns
+have to land together for the plugin to stay in a working state at every commit.
+
+Two placeholder tokens needed resolving, one reused an existing field and one didn't:
+
+- **`{{DEFAULT_BRANCH}}` reuses `integration_branch`** (no new field) — the same concept
+  `worktree`/`build-it`/`commit`/`sync-worktrees` already read, just a second placeholder token
+  naming it in the still-unconverted catalog. Falls back to `worktree`'s own auto-detect chain
+  (`origin/development`, `origin/develop`, then the remote default branch) when unset.
+- **`{{DOC_PATHS}}` gets a new field, `doc_paths`**, under a new "Docs" section — a list of
+  directory-prefix pathspecs (not `**` globs, may carry `:(exclude)` entries), read by
+  `docs-accuracy-reviewer` via `review-branch` to decide whether it joins a review at all. No
+  generic default exists for "where does this project's user-facing text live", so an unset
+  field means the reviewer never fires — not a degraded version of it, an absent one.
+
+Of the three bundled agents, only `docs-accuracy-reviewer` needed changes: its `{{DOC_PATHS}}`
+tokens (used both as a concept name and inside literal `git diff ... -- {{DOC_PATHS}}` /
+`grep {{DOC_PATHS}}` commands) became `<doc_paths>`, a caller-supplied value the parent skill
+resolves and hands over in the spawn prompt — the same pattern `<diff_base>` already used, not a
+second project-context read inside the agent itself. `runtime-integrity-reviewer` and
+`precedent-reviewer` shipped byte-identical, same as `wireframe-reviewer` (D18) — neither
+referenced a `{{PLACEHOLDER}}` token or a Kendo assumption.
+
+Also resolved, before conversion started, a gap the previous handoff flagged in the conversion
+workflow: `docs-accuracy-reviewer`'s spawn is conditional, but on the diff's own content, not a
+developer's confirmation — 5a's exemption only covers the latter shape. Recorded as workflow
+Step 5b (see the `feedback-plugin-skill-conversion-workflow` memory): a diff-content-gated spawn
+is still a hard, always-bundle dependency once its condition holds.
+
+`plugins/core-skills/references/plan-directory.md` (D16) was re-synced from the catalog original
+per that decision's own instruction — added back the dual-root (`docs/plans/` /
+`docs/bugs/`) resolution and `review-branch`'s fallback note, both previously trimmed out because
+no bundled consumer needed them yet.
+
+Also fixed, found while updating the root `README.md` Plugins table row for this conversion: that
+row had drifted stale independently of this pass — it was still missing `research`, `retro`,
+`review-mcp-descriptions`, `shepard`, and `sync-worktrees`, five skills converted in the previous
+session that never made it into that one line (the plugin's own README and `plugin.json` were
+both kept current; only the catalog root's summary row lagged). Same two-tier staleness pattern
+D24/D25 already flagged for "used by" comments, one level up — see D26 in `DECISIONS.md`.
+
 ### Up next
 
-Every Generic Skill in the README's table is now converted into `core-skills`, except the
-deferred agent-cluster chain below. `babysit` stays explicitly skipped (superseded by `shepard`).
-
-`review-branch` — not previously named in "Deferred" above, but it belongs there: it's the
-actual owner of the three-agent unconditional spawn (`runtime-integrity-reviewer` +
-`precedent-reviewer` + `docs-accuracy-reviewer`) that `pr`, `implement-plan`, and transitively
-`fix-bug` gate on. Converting it is the real unblock for that whole cluster — treat it as the
-cluster's first move whenever that pass starts, not a sixth independent Generic Skill.
+Every Generic Skill in the README's table is now converted into `core-skills`, except `pr`,
+`implement-plan`, and `fix-bug` — the remaining members of the agent/reviewer cluster, now
+unblocked by `review-branch`'s own conversion above — and `plan-feature`, a separate cluster
+(spawns `plan-reviewer` + `surface-reviewer`, unrelated to `review-branch`'s three) still
+deferred on its own terms. `fix-bug` depends on `pr` per its own note in the "Deferred" section
+above, so convert `pr` before `fix-bug`; `implement-plan` has no ordering constraint relative to
+either. `babysit` stays explicitly skipped (superseded by `shepard`).
 
 ### Tooling: auto-sync the project-context template pair
 

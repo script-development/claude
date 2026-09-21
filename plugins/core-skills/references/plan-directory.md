@@ -1,24 +1,35 @@
 # Plan directory derivation
 
-Canonical algorithm for resolving a work directory — `docs/plans/<slug>/` — from the current git
-branch. `next` in this plugin uses it to locate `TASKS.md`; `task-writer` uses it to find where
-`PLAN.md` already lives so it writes `TASKS.md` alongside it, falling back to creating a new
-directory (see `task-writer`'s own Output section) only when the algorithm finds nothing;
-`wireframe` uses it the same read-only way as `next`, to find `PLAN.md` before writing
-`WIREFRAMES.md` alongside it.
+Canonical algorithm for resolving a work directory — `docs/plans/<slug>/`, or `docs/bugs/<slug>/`
+for `review-branch` — from the current git branch. `next` in this plugin uses it to locate
+`TASKS.md`; `task-writer` uses it to find where `PLAN.md` already lives so it writes `TASKS.md`
+alongside it, falling back to creating a new directory (see `task-writer`'s own Output section)
+only when the algorithm finds nothing; `wireframe` uses it the same read-only way as `next`, to
+find `PLAN.md` before writing `WIREFRAMES.md` alongside it; `review-branch` uses it read-only too,
+against both roots (see *Which root* below).
 
 ## Algorithm
 
-Steps 1-3 derive a slug; steps 4-6 resolve it against `docs/plans/`.
+Steps 1-3 derive a slug; steps 4-6 resolve it against a directory root.
 
 1. Run `git branch --show-current` to get the branch name.
 2. Strip any prefix up to and including the first `/` (e.g. `claude/foo` → `foo`, `feature/foo` → `foo`).
 3. Strip the trailing random suffix — the last `-XXXXX` segment where `X` is alphanumeric (e.g. `-0L8sI`, often appended by automated tooling).
-4. Look for `docs/plans/<result>/`.
+4. Look for `<root>/<result>/`.
 5. If that directory does not exist, extract any leading issue-key-shaped prefix (any
-   `[A-Z]+-\d+` token, e.g. `KD-0461`) from the branch and search `docs/plans/` for a single
+   `[A-Z]+-\d+` token, e.g. `KD-0461`) from the branch and search `<root>/` for a single
    directory whose name starts with it. If exactly one match is found, use it.
 6. If still nothing matches, ask the user where the work lives — don't guess.
+
+### Which root
+
+`<root>` is `docs/plans/` for every consumer in this plugin **except `review-branch`**, which is
+the one skill that serves both pipelines. It tries `docs/plans/` first, then `docs/bugs/`, using
+the identical slug from steps 1-3 against each.
+
+**If both exist for the same slug, `docs/plans/` wins** and the branch is treated as plan-driven.
+That case means a branch carries both a plan and a bug investigation; the plan is the richer
+artifact.
 
 ## Examples
 
@@ -28,6 +39,14 @@ Steps 1-3 derive a slug; steps 4-6 resolve it against `docs/plans/`.
 | `claude/claude-code-sdk-integration-0L8sI` | `claude-code-sdk-integration-0L8sI` | `claude-code-sdk-integration` | `docs/plans/claude-code-sdk-integration/` |
 | `feature/KD-0530-english-user-stories-9k2Bx` | `KD-0530-english-user-stories-9k2Bx` | `KD-0530-english-user-stories` | `docs/plans/KD-0530-english-user-stories/` |
 | `KD-0463-foo` (directory only contains `KD-0463-foo-bar-baz`) | `KD-0463-foo` | `KD-0463-foo` | `docs/plans/KD-0463-foo-bar-baz/` (via step 5 prefix match) |
+
+## Skill-specific fallbacks
+
+- **`next`** — falls back to `TASKS.md` in the repository root, then asks the user.
+- **`review-branch`** — still spawns the always-on reviewers; neither requires `PLAN.md`. Per
+  *Which root* above it resolves `docs/plans/` then `docs/bugs/` and reads whichever it found
+  for context. It reports in chat on every branch shape and writes nothing, so a missing
+  directory changes the context the reviewers get, not the deliverable.
 
 ## Catchup variant (intentional)
 
@@ -44,7 +63,7 @@ unify the two, and don't route this algorithm through `plan_dir` without checkin
 
 This is a trimmed copy of `plan-feature/references/plan-directory.md` in the `claude-2` catalog
 (the `{{ISSUE_KEY_PREFIX}}` placeholder token replaced with a generic regex description, and the
-catalog's other, still-unconverted consumers — `implement-plan`, `review-branch`, `pr`, and the
-bug-side parallel in `fix-bug` — trimmed out since they don't apply here yet). If any of those
-get converted into this plugin later, re-sync from the catalog original rather than
-re-deriving independently.
+catalog's other, still-unconverted consumers — `implement-plan`, `pr`, and the bug-side parallel
+in `fix-bug` — trimmed out since they don't apply here yet; `review-branch`'s own dual-root
+behaviour and fallback were re-synced in when it converted). If any of those get converted into
+this plugin later, re-sync from the catalog original rather than re-deriving independently.
