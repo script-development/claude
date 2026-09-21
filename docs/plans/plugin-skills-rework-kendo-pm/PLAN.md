@@ -2,9 +2,10 @@
 
 ## Goal
 
-Convert the README's Kendo PM Skills table (`board-sync`, `kendo-cli`, `kendo-mcp`,
-`lint-issues`, `prepare-issue`, `triage-reports`) — currently consumed by copy-into-project,
-Kendo-specific by design — into plugin skills installed via this repo's marketplace.
+Convert the README's Kendo PM Skills table — currently consumed by copy-into-project,
+Kendo-specific by design — into plugin skills installed via this repo's marketplace. Of the
+table's six skills, four are in scope: `kendo-cli`, `kendo-mcp`, `prepare-issue`,
+`triage-reports`. `board-sync` and `lint-issues` are excluded per the team lead — see D2.
 
 ## Relationship to `plugin-skills-rework`
 
@@ -29,7 +30,8 @@ memory): check what the skill actually needs, reuse an existing `project-context
 before adding a new one — this plugin's own, or `core-skills`' (see below) — add a new one only on
 demand, commit per skill. Default order is the README's Kendo PM Skills table, except a skill with
 a hard functional dependency on another not-yet-converted skill jumps the queue ahead of it, so
-every commit leaves `kendo-pm` in a working state.
+every commit leaves `kendo-pm` in a working state. `board-sync` and `lint-issues` are skipped
+entirely (D2), the same "not converting this one" treatment the parent plan gave `babysit`.
 
 **`.claude/project-context.md` ownership.** `core-skills` already owns this file's canonical
 template (`templates/project-context-template.md` in the catalog, mirrored into

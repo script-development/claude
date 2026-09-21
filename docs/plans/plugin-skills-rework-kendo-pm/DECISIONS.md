@@ -62,9 +62,36 @@ one file. See this plan's own PLAN.md, *Rollout approach*, for where a future `k
 would land instead.
 
 **Consequence.** `kendo-pm` exists as a new plugin (registered in the root marketplace and both
-READMEs) at version 0.1.0, bundling one skill, `kendo-mcp`. The other five Kendo PM Skills
-(`board-sync`, `kendo-cli`, `lint-issues`, `prepare-issue`, `triage-reports`) remain catalog-only,
-next in queue for this branch. Whether any of them need a `.claude/project-context.md` field of
-their own (added to `core-skills`' template per this plan's ownership call, not a `kendo-pm`-local
-one) is an open question for whichever of them converts first and actually needs one — not decided
-speculatively here.
+READMEs) at version 0.1.0, bundling one skill, `kendo-mcp`. Of the other five Kendo PM Skills,
+`kendo-cli`, `prepare-issue`, and `triage-reports` remain catalog-only, next in queue for this
+branch (`board-sync` and `lint-issues` are excluded — see D2). Whether any of the remaining three
+need a `.claude/project-context.md` field of their own (added to `core-skills`' template per this
+plan's ownership call, not a `kendo-pm`-local one) is an open question for whichever converts first
+and actually needs one — not decided speculatively here.
+
+## D2 — `board-sync` and `lint-issues` excluded from this conversion pass entirely
+
+**Chosen.** The user relayed the team lead's call: skip `board-sync` and `lint-issues` — both go
+unused and are candidates for deprecation. Excluded from the `kendo-pm` conversion queue outright,
+the same "not converting this one" treatment the parent plan gave `babysit` (superseded by
+`shepard`, no reason to convert it) rather than the D31 treatment (convert into the bundle, then
+pull back out on review) — there was never a version of either in `kendo-pm` to remove, since
+neither had been picked up yet when the call came in.
+
+Checked both for a hard dependency from a skill that *is* staying in scope, the same reverse-check
+D31 ran before its own removal: `kendo-cli`, `prepare-issue`, and `triage-reports` each call
+`mcp__kendo__*` tools directly and link to `kendo-mcp`'s `references/issue-templates.md`, but none
+of them call, spawn, or otherwise depend on `board-sync` or `lint-issues` themselves. Clear to
+exclude both without orphaning anything still in scope.
+
+**Rejected — marking them deprecated in the catalog's own `README.md` now** (the way `babysit`'s
+row already reads "Superseded by shepard"). The team lead's framing was "candidates for
+deprecation," not a decided, executed deprecation — `babysit`'s annotation states a fact that
+already held before this rework touched it; writing a similar note for `board-sync`/`lint-issues`
+now would assert a decision that hasn't actually been made yet. Left the catalog `README.md`
+untouched; revisit if/when the team lead confirms the deprecation itself.
+
+**Consequence.** The `kendo-pm` conversion queue is now `kendo-cli`, `prepare-issue`,
+`triage-reports` — three skills, not five. `board-sync` and `lint-issues` remain exactly as they
+are in `skills/`, neither converted nor marked deprecated in the catalog; that's a separate,
+not-yet-made call for the team lead.
