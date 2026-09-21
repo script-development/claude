@@ -71,7 +71,10 @@ unify the two, and don't route this algorithm through `plan_dir` without checkin
 
 This is a trimmed copy of `plan-feature/references/plan-directory.md` in the `claude-2` catalog
 (the `{{ISSUE_KEY_PREFIX}}` placeholder token replaced with a generic regex description, and the
-catalog's one remaining still-unconverted consumer — the bug-side parallel in `fix-bug` — trimmed
-out since it doesn't apply here yet; `review-branch`'s, `pr`'s, and `implement-plan`'s own
-behaviour and fallbacks were re-synced in as each converted). If `fix-bug` gets converted into
-this plugin later, re-sync from the catalog original rather than re-deriving independently.
+catalog's "Bug-side parallel" section trimmed out — `fix-bug` is converted into this plugin, but
+it creates `docs/bugs/<slug>/` itself rather than resolving an existing one, so it was never a
+consumer of this algorithm and needed no re-sync; `review-branch`'s, `pr`'s, and
+`implement-plan`'s own behaviour and fallbacks were re-synced in as each converted). The only
+remaining unconverted name this file's own catalog original mentions is `plan-feature` itself,
+which — like `fix-bug` — creates its directory rather than resolving one, so it was never
+expected to need this algorithm either.
