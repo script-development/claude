@@ -834,3 +834,56 @@ machinery; divergent wording for an identical mechanism is drift, not design.
 **Consequence.** `fix-bug` — the last member of the deferred agent/reviewer cluster — is now
 unblocked (`review-branch`, `pr`, and `implement-plan` are all converted). `plan-feature` remains
 separately deferred on its own terms.
+
+## D29 — `fix-bug` bundles `bug-fix-verifier`; formalizes Phase 1's issue-tracker read via
+`issue_tracker_skill`
+
+**Chosen.** Converted `fix-bug`, the last member of the deferred agent/reviewer cluster.
+`bug-fix-verifier` (Phase 8's unconditional spawn) bundled byte-identical into
+`plugins/core-skills/agents/` — a single clean agent dependency, same shape D18/D26 already
+established, not a cluster. Its three reference files (`repro-paths.md`, `bug-md-template.md`,
+`diagnose-and-propose.md`) shipped byte-identical: none referenced a `{{PLACEHOLDER}}` token or a
+project-specific assumption, the first reference-file set in this rework needing zero edits.
+
+The catalog original had **no** `{{PLACEHOLDER}}` tokens of its own. Phase 1 ("Read the issue
+from your project's issue tracker (Linear, Jira, Kendo, GitHub Issues, etc.)") was already
+written in generic prose, but — unlike `catchup`, `newbranch`, `task-writer`, and `pr`, every
+other tracker-reading skill in this plugin — it never pointed at `issue_tracker_skill` (D8) at
+all; "how" to read the issue was left entirely undefined rather than delegated to a resolvable
+mechanism. Formalized it: reads `issue_tracker_skill`, defaults to `kendo-mcp` when unset
+(provided it's installed), and `none` means asking the user for the issue's title, type, and
+description directly instead of reading them from a tracker. Follows `catchup`'s read-only
+degrade style (fully abstract, no concrete tool names spelled out) rather than
+`newbranch`/`pr`'s write-and-document-kendo-mcp-concretely style, since Phase 1 here only reads,
+the same shape `catchup`'s own issue-tracker row has. No new field.
+
+`plugins/core-skills/references/plan-directory.md` needed **no** changes for this conversion —
+`fix-bug` creates `docs/bugs/<slug>/` itself (the same relationship `plan-feature` has to
+`docs/plans/<slug>/`, per the catalog original's own "Bug-side parallel" section), it never
+*resolves* an existing directory the way `next`/`task-writer`/`wireframe`/`review-branch`/`pr`/
+`implement-plan` all do, so the shared reference's read-time algorithm doesn't apply to it.
+
+**Why.** Reuse-before-add (workflow Step 2) applies to Phase 1 the same way it did to D28's
+`implement-plan` finding: a real, existing need (read an issue from a tracker) that the template
+already names a field for, just not yet pointed at by this one skill — a missed-consistency
+finding, not a new requirement invented for this conversion. Agent bundling follows D18's already-
+settled "one clean agent jumps the queue" rule exactly, with `bug-fix-verifier` confirmed to have
+no `{{PLACEHOLDER}}` tokens, no Kendo assumptions, and no dependency of its own (verified by
+reading the full file, the same care D23 established for "don't take a prior parenthetical's
+claim on faith").
+
+**Rejected.** Spelling out `kendo-mcp`'s concrete tool names inline for Phase 1, matching
+`newbranch`/`pr`'s style — rejected because Phase 1 is read-only context-gathering with no
+structured write, the same shape `catchup`'s abstract delegation already covers; inventing a
+second style for an identical shape would be drift, not a real distinction. Adding new logic to
+handle "no tracker, no argument, ask the user for everything" as a full sub-phase — rejected as
+scope creep: the catalog original never handled this case at all (it assumes an issue always
+exists), and the one-clause fallback for `issue_tracker_skill: none` is the minimal completion of
+`issue_tracker_skill`'s existing degrade contract (D5), not a new workflow.
+
+**Consequence.** Every skill in the README's Generic Skills table is now converted into
+`core-skills` except `plan-feature`, a separate cluster (spawns `plan-reviewer` +
+`surface-reviewer`, unrelated to `review-branch`'s three) that nothing else in this plugin depends
+on. `issue_tracker_skill` now has five consumers (`catchup`, `newbranch`, `task-writer`, `pr`,
+`fix-bug`) across two established delegation styles — abstract/read-only and
+concrete-kendo-mcp/write — both traceable back to whether the consumer reads or writes.

@@ -52,19 +52,22 @@ field/section before adding a new one, add a new one only on demand, commit per 
   type list regardless of what that showed; now it actually matches the detected convention,
   falling back to conventional commits only when there's no clear pattern (D13).
 
-### Deferred — agent/reviewer dependency chain
+### Deferred — agent/reviewer dependency chain (now resolved except `plan-feature`)
 
-Skipped for now, not converted: `fix-bug`, `pr`, `plan-feature`, `implement-plan`. All four
+Originally skipped as a unit: `fix-bug`, `pr`, `plan-feature`, `implement-plan`. All four
 unconditionally invoke something outside a plain skill-to-skill call — `fix-bug` runs `/pr`
 and spawns the `bug-fix-verifier` agent; `pr` and `implement-plan` gate on `/review-branch`,
 which itself spawns `runtime-integrity-reviewer` + `precedent-reviewer` (+
 `docs-accuracy-reviewer` when triggered); `plan-feature` spawns `plan-reviewer` +
-`surface-reviewer` directly. Converting any one of them properly means first working out
+`surface-reviewer` directly. Converting any one of them properly meant first working out
 whether plugins bundle agents the same way they bundle skills (confirmed: yes — `agents/` at
 the plugin root, auto-discovered, no manifest entry needed) and then auditing the whole
 `review-branch` + its three agents as a cluster, since `pr` and `implement-plan` both sit on
-top of it. That's a bigger unit of work than one skill at a time, so it's set aside rather than
-picked apart skill-by-skill. Revisit as its own pass.
+top of it. That was a bigger unit of work than one skill at a time, so it was set aside rather
+than picked apart skill-by-skill — revisited as its own pass, in dependency order:
+`review-branch` (unblocks the cluster), `pr`, `implement-plan`, `fix-bug` (each documented in its
+own section below). `plan-feature` is a separate cluster, unrelated to this one, and remains
+deferred — see "Up next".
 
 - **`grill-me`** — needed **zero changes**: already fully project-agnostic as written (grounds
   itself in whatever CLAUDE.md/codebase it finds; writes nothing itself). Its one functional
@@ -306,13 +309,37 @@ Converted. The catalog original had no `{{PLACEHOLDER}}` tokens at all and no Ke
 Step 7's unconditional `/review-branch` invocation is a real hard dependency under the workflow's
 Step 5/6, already satisfied by `review-branch`'s own conversion — no ordering issue.
 
+### `fix-bug` — bundled its one agent; reused `issue_tracker_skill` for a vague spot the
+catalog original left unformalized
+
+Converted — the last member of the deferred agent/reviewer cluster. `bug-fix-verifier` (Phase 8's
+unconditional spawn) bundled byte-identical into `plugins/core-skills/agents/`, same shape D18/D26
+already established for a single clean agent dependency: no `{{PLACEHOLDER}}` tokens, no Kendo
+assumptions, no dependency of its own. Its three reference files (`repro-paths.md`,
+`bug-md-template.md`, `diagnose-and-propose.md`) shipped byte-identical too — none referenced a
+placeholder or a project-specific assumption, the first reference-file set in this rework that
+needed zero edits (`task-writer`'s and `wireframe`'s each needed at least one illustrative-example
+fix).
+
+The catalog original had no `{{PLACEHOLDER}}` tokens either. Phase 1 ("Read the issue from your
+project's issue tracker (Linear, Jira, Kendo, GitHub Issues, etc.)") was already written
+generically in prose, but — unlike every other tracker-reading skill in this plugin — never
+pointed at the established `issue_tracker_skill` field (D8) at all, leaving "how" entirely
+undefined rather than delegated. Formalized it to read `issue_tracker_skill` (defaulting to
+`kendo-mcp`, `none` asking the user for the bug's details directly), matching `catchup`'s
+read-only degrade style rather than `newbranch`/`pr`'s write-and-spell-out-kendo-mcp style, since
+Phase 1 here only reads. No new field — pure reuse of a need every tracker-reading skill in this
+plugin already names the same way. `plan-directory.md` needed **no** changes for `fix-bug`: it
+creates `docs/bugs/<slug>/` itself (like `plan-feature` creates `docs/plans/`), it doesn't
+*resolve* an existing one, so the shared reference's read-time algorithm doesn't apply here. See
+D29 in `DECISIONS.md`.
+
 ### Up next
 
-Every Generic Skill in the README's table is now converted into `core-skills`, except `fix-bug` —
-the last member of the agent/reviewer cluster, now unblocked by `review-branch`'s, `pr`'s, and
-`implement-plan`'s own conversions above — and `plan-feature`, a separate cluster (spawns
-`plan-reviewer` + `surface-reviewer`, unrelated to `review-branch`'s three) still deferred on its
-own terms. `babysit` stays explicitly skipped (superseded by `shepard`).
+Every Generic Skill in the README's table is now converted into `core-skills`. Only
+`plan-feature` remains — a separate cluster (spawns `plan-reviewer` + `surface-reviewer`,
+unrelated to `review-branch`'s three) still deferred on its own terms; nothing else in this
+plugin depends on it. `babysit` stays explicitly skipped (superseded by `shepard`).
 
 ### Tooling: auto-sync the project-context template pair
 

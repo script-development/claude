@@ -33,6 +33,7 @@ back to, not re-explain the degrade-not-fail contract itself.
 | [worktree](skills/worktree/) | Cut a fresh git worktree: branch, deps, env files, project house rules, then hand back the path |
 | [build-it](skills/build-it/) | Implement the last grill-me alignment: cut a worktree, write plan docs if chosen, build, run gates, open the PR |
 | [commit](skills/commit/) | Small, focused commits matching this project's own message convention, + push |
+| [fix-bug](skills/fix-bug/) | End-to-end bug-fix workflow: reproduce, diagnose, propose, implement, gate on the bundled bug-fix-verifier agent, and hand off to `/pr` |
 | [grill-me](skills/grill-me/) | Interview the developer through AskUserQuestion before any code is written; ends with docs-or-not and build-or-stop |
 | [implement-plan](skills/implement-plan/) | Execute a feature plan end-to-end without TASKS.md; gated by `/review-branch` (both reviewers ≥ 7) |
 | [memory-hygiene](skills/memory-hygiene/) | Audit the project memory store for stale, codified, duplicate entries; dry-run proposal, then sync worktree memory stores |
@@ -55,6 +56,7 @@ root, auto-discovered, no `plugin.json` entry needed.
 
 | Agent | Description |
 |-------|-------------|
+| [bug-fix-verifier](agents/bug-fix-verifier.md) | Verify a bug fix actually resolves BUG.md's defect and glance at touched files for regressions; spawned by `/fix-bug` before PR |
 | [docs-accuracy-reviewer](agents/docs-accuracy-reviewer.md) | Grade every claim in the user-facing text a branch ships against the code it ships; spawned by `/review-branch` when the diff touches this project's `doc_paths` |
 | [precedent-reviewer](agents/precedent-reviewer.md) | Check a branch against the repo's standing rules, sibling implementations, and its own plan prose; spawned always by `/review-branch` |
 | [runtime-integrity-reviewer](agents/runtime-integrity-reviewer.md) | Check a branch for invariants that only break across the whole system — transactions, concurrency, lifecycle, silent failure; spawned always by `/review-branch` |
