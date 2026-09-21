@@ -158,3 +158,57 @@ rather than once per plugin, which is a worse drift risk than one shipped copy o
 **Cost accepted.** Two copies of the template now need to move together (root, and each plugin
 that reads `project-context.md`) — the same manual-propagation duty `CLAUDE.md` already assigns
 to every shared skill mirrored across consumers, extended to this one template file.
+
+## D10 — `worktree` and `build-it` are already project-agnostic; only their customization
+storage needed to move
+
+**Chosen.** `worktree` (and, transitively, `build-it`, which only ever acts on what `worktree`
+hands back) needed no change to its detection logic — it never hardcoded a project assumption.
+The one thing that had to move is *where* its per-repo customization lives: from
+`references/<repo-name>.md` inside the skill's own directory to `.claude/project-context.md` in
+the project being worked on.
+
+**Why.** Verified (not assumed) that a `.claude-plugin` marketplace install puts each plugin
+version in its own independent cache directory
+(`~/.claude/plugins/cache/<marketplace>/<plugin-name>/<version>/`), so a file hand-added inside
+an installed plugin's own tree does not survive an update to a new version. `worktree`'s
+existing mechanism assumed a copy-adopted, personally-owned skill directory that a user edits
+directly and controls — true for the catalog copy, false once it ships as a plugin. Also
+considered `${CLAUDE_PLUGIN_DATA}` (`~/.claude/plugins/data/{plugin-id}/`), which does survive
+updates, and rejected it: it's per-user and machine-local with no built-in per-repo scoping,
+the wrong shape for house rules and gates a whole team should see and share — that content
+belongs committed alongside the code it describes, the same argument that already put
+`CLAUDE.md` in the repo rather than a user's home directory.
+
+**Rejected.** Leaving `worktree`'s reference-file mechanism untouched inside the plugin (silently
+loses customizations on every version bump — a correctness bug, not a style choice). Moving the
+content to `${CLAUDE_PLUGIN_DATA}` (wrong scope — private and per-user, not project-owned and
+team-shared).
+
+## D11 — `project-context.md` gains prose `##` sections, not just frontmatter scalars
+
+**Chosen.** `worktree`'s richer content — setup commands with do-nots, a gates table, house
+rules — lives in a `## Worktrees` body section in `project-context.md`, in the same shape
+`worktree`'s own (now-retired) `references/<repo-name>.md` template already used. Frontmatter
+stays reserved for simple one-line overrides (`integration_branch`, `worktree_dir`).
+
+**Why.** A flat YAML scalar can't hold an ordered command list, a table, or a do-not with its
+reasoning without becoming unreadable. This mirrors `SKILL.md`'s own shape — thin frontmatter,
+substantive body — and reuses content structure the catalog had already proven out in
+`worktree`'s reference-file template rather than inventing a new one.
+
+**Rejected.** Forcing gates/setup/house-rules into nested YAML frontmatter — technically
+possible, but fights the template's readability and departs from how this catalog already
+writes this kind of content.
+
+## D12 — Dependency ordering: convert a hard dependency before its dependent, even out of
+README order
+
+**Chosen.** `worktree` was converted before `build-it`, despite sorting after it alphabetically
+in the README's Generic Skills table, because `build-it` unconditionally invokes `/worktree`.
+
+**Why.** Committing `build-it` first would have left a commit where `core-skills` referenced a
+skill not yet in the bundle — a broken intermediate state. Recorded here, and in the
+conversion-workflow memory, as the general rule for the rest of this rework: a hard functional
+dependency (one skill invoking another, not just documenting it) jumps the queue ahead of
+README order.

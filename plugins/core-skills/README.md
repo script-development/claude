@@ -22,6 +22,7 @@ to `.claude/project-context.md` in the project and fill in only the fields that 
 | Skill | Description |
 |-------|-------------|
 | [catchup](skills/catchup/) | Load branch context, show progress, sync with base branch |
+| [worktree](skills/worktree/) | Cut a fresh git worktree: branch, deps, env files, project house rules, then hand back the path |
 
 ## Design record
 

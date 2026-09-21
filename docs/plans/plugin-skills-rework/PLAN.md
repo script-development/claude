@@ -11,39 +11,44 @@ per-project reference file the skill reads at runtime: `.claude/project-context.
 Team lead's one fixed requirement: **one reference file per project**, holding everything every
 plugin skill running in that project needs — not one file per skill.
 
-## Scope of this pass
+## Rollout approach
 
-Convert exactly one skill, `catchup`, as the worked example that establishes the pattern the
-rest will follow. Chosen because its project-specific surface turned out to be small (it
-already pattern-matches issue keys generically rather than baking in a fixed prefix) — good for
-proving the mechanism before spending it on a more entangled skill.
+One skill at a time, one commit per skill, all landing on this branch for a single eventual PR.
+Default order is the README's Generic Skills table, top to bottom — except a skill with a hard
+functional dependency on another not-yet-converted skill jumps the queue ahead of it, so every
+commit leaves `core-skills` in a working state (see `DECISIONS.md` D12). `babysit` is skipped
+entirely — superseded by `shepard`, no reason to convert it.
 
-### In
+Per-skill workflow (see the `feedback-plugin-skill-conversion-workflow` memory for the full
+version): check what the skill actually needs, reuse an existing `project-context.md`
+field/section before adding a new one, add a new one only on demand, commit per skill.
 
-- `templates/project-context-template.md` — canonical template for `.claude/project-context.md`.
-  Starts with only the fields `catchup` needs (`issue_tracker_skill`, `plan_dir`); grows one
-  field at a time as later skills are converted, each field added under a section named for the
-  *concern* it serves, not the skill, so unrelated skills can share a section.
-- `plugins/core-skills/` — new bundle plugin: `.claude-plugin/plugin.json`,
-  `skills/catchup/SKILL.md`. `context-economy` is untouched; `core-skills` is a separate,
-  new home for project-agnostic conversions of catalog skills, starting with just `catchup`
-  and growing as more are converted (see `DECISIONS.md` D7). The skill's content is the same
-  as `skills/catchup/SKILL.md` except: reads `.claude/project-context.md` for `plan_dir`
-  (Step 1.4) and `issue_tracker_skill` (Step 2's Issue tracker row) instead of hardcoding
-  `docs/plans/<issue-key>/` and `/kendo-mcp`; drops the relative link to
-  `../plan-feature/references/plan-directory.md` (a plugin consumer won't have that file on
-  disk unless they've *also* adopted the catalog's `plan-feature` skill) in favour of a short
-  inlined rationale for staying a simpler lookup.
+### Converted so far
 
-### Out (open questions — not resolved by this pass)
+- **`catchup`** — worked example. Reads `issue_tracker_skill` (defaults to `kendo-mcp`, this
+  org's in-house tracker — D8) and `plan_dir` from `.claude/project-context.md`.
+- **`worktree`** — turned out to already be project-agnostic in its detection logic; the actual
+  change was moving *where* its per-repo customization lives, from a reference file inside the
+  skill's own directory (which doesn't survive a plugin version bump) to
+  `.claude/project-context.md`'s new `## Worktrees` section (D10, D11). Reads
+  `integration_branch`, `worktree_dir`, and the Worktrees body section.
+- **Registration** — `core-skills` is in `.claude-plugin/marketplace.json` and both READMEs
+  (root and the plugin's own) as of this pass; no longer deferred (supersedes D6's deferral).
+- **Template shipped with the plugin** — `plugins/core-skills/references/project-context-template.md`
+  is a synced copy of the canonical `templates/project-context-template.md`, so a plugin
+  consumer who never clones this catalog can still bootstrap their own file (D9).
 
-- **Fate of `skills/catchup/`** (the pre-existing catalog copy). Left in place for now — removing
-  it would break any consumer still on copy-adoption rather than the plugin. Revisit once it's
-  clear whether plugin adoption is meant to fully replace catalog copies or coexist.
-  See `DECISIONS.md` D6.
-- **Marketplace registration and README** (`.claude-plugin/marketplace.json`,
-  README's Plugins table). Not touched yet — pending sign-off on the plugin's content itself.
-  See `DECISIONS.md` D6.
+### Up next
+
+`build-it` — was going to be next in README order, but depends on `/worktree` (now converted).
+Per the rollout approach above, `build-it` is next since its dependency is satisfied.
+
+### Out (open questions — not resolved yet)
+
+- **Fate of `skills/catchup/` and `skills/worktree/`** (the pre-existing catalog copies). Left
+  in place for now — removing either would break any consumer still on copy-adoption rather
+  than the plugin. Revisit once it's clear whether plugin adoption is meant to fully replace
+  catalog copies or coexist. See `DECISIONS.md` D6.
 - **When (if ever) `core-skills` splits.** D7 picks one bundle plugin for now, on the
   explicit basis that splitting later is easy; it doesn't set a threshold for when a split
   would be warranted (skill count, unrelated themes emerging, install-size complaints, ...).

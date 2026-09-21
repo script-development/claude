@@ -23,6 +23,14 @@ issue_tracker_skill:   # The skill/command that fetches issue details. Defaults 
 plan_dir:              # e.g. docs/plans/{issue_key}/ — override for this project's plan
                        # directory convention. {issue_key} is substituted literally.
                        # Omit to use the skill's own generic default.
+
+# --- Worktrees (used by: worktree, build-it) ---
+integration_branch:    # Override when auto-detection (origin/development, origin/develop,
+                       # then the remote default branch) would get it wrong for this project.
+worktree_dir:          # e.g. .claude/worktrees/{slug} — override the default worktree
+                       # location. Needed when repo tooling sweeps the whole repo root
+                       # (a docker build context, a globbing test runner, IDE indexing).
+                       # {slug} is substituted literally.
 ---
 
 # Project Context
@@ -45,3 +53,45 @@ means "use the generic fallback" — never a hard failure.
 - `plan_dir` overrides where a branch's planning artifacts (`PLAN.md`, `TASKS.md`,
   `DECISIONS.md`) live, for projects that don't use the default `docs/plans/{issue_key}/`
   layout. Leave unset to use the default.
+
+## Worktrees
+
+`integration_branch` and `worktree_dir` are simple one-line overrides — see the frontmatter
+comments above. Everything below is richer, project-verified knowledge that doesn't fit a
+single scalar, so it lives here as prose instead: only write down what you've actually
+verified in this project, with the reason it's true, not what seems like it should be true.
+A rule without its *why* goes stale silently, and a skill reading this section follows it
+anyway.
+
+### Setup
+
+Exact commands, in order, beyond the generic env-file copy and lockfile-based installs a
+plugin skill already does on its own. Then the do-nots, each with its cost — this half
+matters more than the commands, because the default is to add setup, not leave it out.
+
+```
+# example
+cp path/to/.env.example path/to/.env
+<install command>
+```
+
+- **No `<thing>`.** <What it would buy, and why that's nothing here.>
+
+### Gates
+
+The commands that judge whether a change is safe to ship, per side of the codebase, run from
+the worktree root:
+
+| Touched | Commands |
+|---|---|
+| `<side>` | `<command>`, `<command>` |
+
+Call out any script whose base variant hangs (a watch-mode test runner never returns).
+
+### House rules
+
+Anything a session should know once it's working in a worktree for this project: hooks that
+block an edit until a skill is loaded, formatters that run on save (and must never be run by
+hand), coverage expectations, shared state a worktree mutates that the primary checkout also
+sees (a shared database, cache, or tenant — say what's harmless and what breaks another
+branch), and the order skills should run in to ship.
