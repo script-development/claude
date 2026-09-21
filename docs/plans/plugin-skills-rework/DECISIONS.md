@@ -303,3 +303,41 @@ convention, restated once and linked to, is the closest available substitute.
 **Consequence.** Every future `core-skills` conversion states which fields it reads and what it
 falls back to, and links to the README's Notation paragraph instead of re-deriving the
 degrade-semantics sentence from scratch.
+
+## D16 — A reference doc hosted by an unconverted catalog skill is a hosting problem, not a
+hard dependency; ship a trimmed copy (extends D9)
+
+**Chosen.** `next`'s Step 1 needs the canonical plan-directory slug-derivation algorithm,
+previously linked at `../plan-feature/references/plan-directory.md`. `plan-feature` is itself
+unconverted (in the deferred agent/reviewer cluster). Rather than either (a) treating this as a
+hard dependency that jumps `plan-feature` — and by extension its whole deferred cluster — ahead
+in the queue, or (b) reinventing a looser algorithm inline the way `catchup` deliberately does,
+shipped a trimmed copy at `plugins/core-skills/references/plan-directory.md`: the same
+canonical algorithm, `{{ISSUE_KEY_PREFIX}}` replaced with the generic `[A-Z]+-\d+` description
+(matching `catchup`'s own phrasing), and the catalog's other still-unconverted consumers
+(`implement-plan`, `review-branch`, `pr`, `fix-bug`'s bug-side parallel) trimmed out since they
+don't apply inside this plugin yet.
+
+**Why.** Step 5/6 of the conversion workflow (see the `feedback-plugin-skill-conversion-
+workflow` memory) defines a hard dependency as one skill *calling or spawning* another
+unconditionally — `next` never invokes `/plan-feature`; it reads a doc `/plan-feature` merely
+hosts because it owns the directory-naming convention (`/plan-feature` itself doesn't use the
+algorithm — it creates the directory and already knows the slug). That's the same shape D9
+already solved for `project-context-template.md`: canonical content that lives inside a
+catalog-only tree a plugin consumer never clones. The catchup-variant escape hatch (reinventing
+a simpler algorithm) was rejected here for the reason plan-directory.md's own "Catchup variant"
+note already gives: `next` needs the *precise* algorithm, because it executes tasks out of
+whatever directory it finds — a wrong directory is a wrong task list, not just a thinner
+summary the way a missed catchup detail would be.
+
+**Rejected.** Pulling `plan-feature` (and transitively its own deferred-cluster reasons — see
+D12/the "Deferred" PLAN.md section) into the queue just to unblock `next`'s Step 1 — that cluster
+is deferred as a unit for reasons unrelated to this one reference doc. Reimplementing `catchup`'s
+looser issue-key-only algorithm for `next` — rejected per plan-directory.md's own explicit
+warning not to unify the two.
+
+**Consequence.** Two copies of `plan-directory.md` now need to move together by hand, same
+maintenance duty D9 already established for the project-context template — extended here to a
+second shared file. When `implement-plan`/`review-branch`/`pr`/`fix-bug` eventually convert (the
+deferred cluster's own future pass), re-sync from the catalog original rather than re-deriving
+independently — noted inline in the shipped copy's own "Catalog origin" section.

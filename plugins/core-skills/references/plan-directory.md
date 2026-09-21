@@ -1,0 +1,46 @@
+# Plan directory derivation
+
+Canonical algorithm for resolving a work directory — `docs/plans/<slug>/` — from the current git
+branch, used by `next` in this plugin to locate `TASKS.md` for the work in progress.
+
+## Algorithm
+
+Steps 1-3 derive a slug; steps 4-6 resolve it against `docs/plans/`.
+
+1. Run `git branch --show-current` to get the branch name.
+2. Strip any prefix up to and including the first `/` (e.g. `claude/foo` → `foo`, `feature/foo` → `foo`).
+3. Strip the trailing random suffix — the last `-XXXXX` segment where `X` is alphanumeric (e.g. `-0L8sI`, often appended by automated tooling).
+4. Look for `docs/plans/<result>/`.
+5. If that directory does not exist, extract any leading issue-key-shaped prefix (any
+   `[A-Z]+-\d+` token, e.g. `KD-0461`) from the branch and search `docs/plans/` for a single
+   directory whose name starts with it. If exactly one match is found, use it.
+6. If still nothing matches, ask the user where the work lives — don't guess.
+
+## Examples
+
+| Branch | After step 2 | After step 3 | Resolves to |
+|---|---|---|---|
+| `KD-0461-listeners-apply-payload-directly` | (no prefix) | `KD-0461-listeners-apply-payload-directly` | `docs/plans/KD-0461-listeners-apply-payload-directly/` |
+| `claude/claude-code-sdk-integration-0L8sI` | `claude-code-sdk-integration-0L8sI` | `claude-code-sdk-integration` | `docs/plans/claude-code-sdk-integration/` |
+| `feature/KD-0530-english-user-stories-9k2Bx` | `KD-0530-english-user-stories-9k2Bx` | `KD-0530-english-user-stories` | `docs/plans/KD-0530-english-user-stories/` |
+| `KD-0463-foo` (directory only contains `KD-0463-foo-bar-baz`) | `KD-0463-foo` | `KD-0463-foo` | `docs/plans/KD-0463-foo-bar-baz/` (via step 5 prefix match) |
+
+## Catchup variant (intentional)
+
+`catchup`, elsewhere in this plugin, uses a simpler algorithm — issue key only (any `[A-Z]+-\d+`
+token from the branch, no slug), and reads `plan_dir` for a project override. That's deliberate:
+catchup just needs to find _any_ artefacts for the branch quickly and tolerate an imprecise
+match. This algorithm exists because `next` needs the precise one — it executes tasks out of
+whatever it finds, so a wrong directory is a wrong task list, not just a thinner summary. Don't
+unify the two, and don't route this algorithm through `plan_dir` without checking that its
+`{issue_key}`-substitution shape actually fits a non-issue-key slug like
+`claude-code-sdk-integration` first.
+
+## Catalog origin
+
+This is a trimmed copy of `plan-feature/references/plan-directory.md` in the `claude-2` catalog
+(the `{{ISSUE_KEY_PREFIX}}` placeholder token replaced with a generic regex description, and the
+catalog's other, still-unconverted consumers — `implement-plan`, `review-branch`, `pr`, and the
+bug-side parallel in `fix-bug` — trimmed out since they don't apply here yet). If any of those
+get converted into this plugin later, re-sync from the catalog original rather than
+re-deriving independently.

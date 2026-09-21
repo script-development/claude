@@ -36,6 +36,7 @@ back to, not re-explain the degrade-not-fail contract itself.
 | [grill-me](skills/grill-me/) | Interview the developer through AskUserQuestion before any code is written; ends with docs-or-not and build-or-stop |
 | [memory-hygiene](skills/memory-hygiene/) | Audit the project memory store for stale, codified, duplicate entries; dry-run proposal, then sync worktree memory stores |
 | [newbranch](skills/newbranch/) | Create a new branch from this project's integration branch; if an issue tracker is configured, resolve/create the issue and start work on it |
+| [next](skills/next/) | Continue through TASKS.md — find next task, execute with TDD flow, mark done |
 
 ## Design record
 

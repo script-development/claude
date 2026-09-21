@@ -98,10 +98,19 @@ never the field's literal snake_case name — fixing one stray instance in `newb
 going forward: state which fields, link to the README, don't re-derive the degrade-semantics
 sentence.
 
+- **`next`** — no new field needed; every step but Step 1 was already generic. Step 1 pointed
+  at `plan-feature/references/plan-directory.md`'s canonical slug-derivation algorithm — a
+  reference-doc hosting problem, not a functional dependency on `/plan-feature` itself (which
+  doesn't even use the algorithm — it documents it because it owns the directory-naming
+  convention, and doesn't need it since it creates the directory and already knows the slug).
+  Same D9 pattern as the project-context template: shipped a trimmed copy at
+  `plugins/core-skills/references/plan-directory.md` (D16), rather than treating `plan-feature`
+  (itself in the deferred cluster) as a blocking dependency.
+
 ### Up next
 
-`next` — next in README's Generic Skills order with no unconverted hard dependency
-(`task-writer`, `wireframe` after that — `worktree` and `build-it` are already done).
+`task-writer` — next in README's Generic Skills order with no unconverted hard dependency
+(`wireframe` after that — `worktree`, `build-it`, and `next` are already done).
 
 ### Out (open questions — not resolved yet)
 
