@@ -285,15 +285,34 @@ instead of assuming Kendo unconditionally. Re-synced `pr`'s own fallback bullet 
 `plugins/core-skills/references/plan-directory.md`'s "Skill-specific fallbacks" section and
 widened its "Which root" note to cover both `review-branch` and `pr` as dual-pipeline consumers.
 
+### `implement-plan` — needed zero new fields, zero placeholder tokens
+
+Converted. The catalog original had no `{{PLACEHOLDER}}` tokens at all and no Kendo assumptions
+— the only two things that needed generalizing were structural, not project-specific facts:
+
+- **Step 1's `plan-directory.md` link** — repointed to the shipped copy
+  (`../../references/plan-directory.md`), same as every other consumer. `implement-plan` is
+  single-root (`docs/plans/` only, per its own "ask the user, don't guess" fallback when nothing
+  resolves) — re-synced that fallback bullet into the shared reference alongside `review-branch`'s
+  and `pr`'s (D16/D26's standing re-sync instruction).
+- **Step 4's testing-skill lookup** — the catalog original hardcoded `Look in .claude/skills/ for
+  any skill whose name matches a testing convention`, a copy-adoption-era path assumption that
+  doesn't hold for a project that installs its testing skill as a plugin instead. Reworded to
+  match `next`'s already-established, path-free phrasing verbatim ("if the project provides a
+  domain-specific testing skill, invoke it...") — the two skills are explicitly siblings sharing
+  this exact machinery, so this was a genuine missed-sync rather than a judgment call: `next`
+  had already solved this when it converted, `implement-plan` just hadn't caught up yet.
+
+Step 7's unconditional `/review-branch` invocation is a real hard dependency under the workflow's
+Step 5/6, already satisfied by `review-branch`'s own conversion — no ordering issue.
+
 ### Up next
 
-Every Generic Skill in the README's table is now converted into `core-skills`, except
-`implement-plan` and `fix-bug` — the remaining members of the agent/reviewer cluster, now
-unblocked by `review-branch`'s and `pr`'s own conversions above — and `plan-feature`, a separate
-cluster (spawns `plan-reviewer` + `surface-reviewer`, unrelated to `review-branch`'s three) still
-deferred on its own terms. `fix-bug` depended on `pr` per the earlier "Deferred" note above,
-which is now satisfied; `implement-plan` has no ordering constraint relative to it. `babysit`
-stays explicitly skipped (superseded by `shepard`).
+Every Generic Skill in the README's table is now converted into `core-skills`, except `fix-bug` —
+the last member of the agent/reviewer cluster, now unblocked by `review-branch`'s, `pr`'s, and
+`implement-plan`'s own conversions above — and `plan-feature`, a separate cluster (spawns
+`plan-reviewer` + `surface-reviewer`, unrelated to `review-branch`'s three) still deferred on its
+own terms. `babysit` stays explicitly skipped (superseded by `shepard`).
 
 ### Tooling: auto-sync the project-context template pair
 

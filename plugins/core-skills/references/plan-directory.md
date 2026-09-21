@@ -5,8 +5,10 @@ for `review-branch` and `pr` — from the current git branch. `next` in this plu
 locate `TASKS.md`; `task-writer` uses it to find where `PLAN.md` already lives so it writes
 `TASKS.md` alongside it, falling back to creating a new directory (see `task-writer`'s own Output
 section) only when the algorithm finds nothing; `wireframe` uses it the same read-only way as
-`next`, to find `PLAN.md` before writing `WIREFRAMES.md` alongside it; `review-branch` and `pr`
-both use it read-only too, against both roots (see *Which root* below).
+`next`, to find `PLAN.md` before writing `WIREFRAMES.md` alongside it; `implement-plan` uses it
+the same read-only way to find `PLAN.md`, asking the user rather than guessing when it finds
+nothing (see *Skill-specific fallbacks* below); `review-branch` and `pr` both use it read-only
+too, against both roots (see *Which root* below).
 
 ## Algorithm
 
@@ -43,6 +45,7 @@ artifact.
 ## Skill-specific fallbacks
 
 - **`next`** — falls back to `TASKS.md` in the repository root, then asks the user.
+- **`implement-plan`** — asks the user where the plan lives; does not guess a fallback.
 - **`review-branch`** — still spawns the always-on reviewers; neither requires `PLAN.md`. Per
   *Which root* above it resolves `docs/plans/` then `docs/bugs/` and reads whichever it found
   for context. It reports in chat on every branch shape and writes nothing, so a missing
@@ -68,8 +71,7 @@ unify the two, and don't route this algorithm through `plan_dir` without checkin
 
 This is a trimmed copy of `plan-feature/references/plan-directory.md` in the `claude-2` catalog
 (the `{{ISSUE_KEY_PREFIX}}` placeholder token replaced with a generic regex description, and the
-catalog's other, still-unconverted consumers — `implement-plan` and the bug-side parallel in
-`fix-bug` — trimmed out since they don't apply here yet; `review-branch`'s and `pr`'s own
-dual-root behaviour and fallbacks were re-synced in as each converted). If any of those get
-converted into this plugin later, re-sync from the catalog original rather than re-deriving
-independently.
+catalog's one remaining still-unconverted consumer — the bug-side parallel in `fix-bug` — trimmed
+out since it doesn't apply here yet; `review-branch`'s, `pr`'s, and `implement-plan`'s own
+behaviour and fallbacks were re-synced in as each converted). If `fix-bug` gets converted into
+this plugin later, re-sync from the catalog original rather than re-deriving independently.

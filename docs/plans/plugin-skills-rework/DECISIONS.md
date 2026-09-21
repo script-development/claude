@@ -803,3 +803,34 @@ confirms reuse-before-add can fully cover a skill's needs even when one token tu
 what it first appears to be. `implement-plan` and `fix-bug` (the two remaining cluster members)
 are now unblocked; `fix-bug`'s own dependency on `pr` (noted in the "Deferred" section of
 `PLAN.md`) is satisfied.
+
+## D28 — `implement-plan` needed zero new fields and had zero placeholder tokens; fixed a stale
+sync with its sibling `next`
+
+**Chosen.** Converted `implement-plan`. Unlike every prior conversion, the catalog original
+carried no `{{PLACEHOLDER}}` tokens at all — grepped and confirmed. The only two changes were
+structural: repointed Step 1's `plan-directory.md` link to the shipped copy
+(`../../references/plan-directory.md`), and reworded Step 4's testing-skill lookup, which
+hardcoded `Look in .claude/skills/ for any skill whose name matches a testing convention` — a
+copy-adoption-era path assumption — to match `next`'s already-established, path-free phrasing
+verbatim ("if the project provides a domain-specific testing skill, invoke it before writing or
+modifying test code..."). Re-synced `implement-plan`'s own plan-directory fallback bullet ("asks
+the user where the plan lives; does not guess a fallback") into the shared reference, per D16's
+standing instruction.
+
+**Why.** `implement-plan`'s own intro text calls it "the sibling of `/next`" that shares "most of
+their machinery — context recovery, testing-skill loading, TDD ordering, verification, acceptance
+review, learnings capture." `next` converted earlier in this rework and already solved the
+testing-skill-lookup genericization the same way `catchup`'s own issue-key detection did — no
+hardcoded path, just "if the project provides one." `implement-plan` hadn't caught up to that
+fix, so this is a missed-sync between two skills the catalog itself describes as siblings, the
+same category of finding as D24/D25/D26's "used by" comment staleness, just between two skill
+bodies instead of a field comment or a summary row.
+
+**Rejected.** Treating the two skills' independent wording as intentional variation worth
+preserving — rejected because the catalog's own prose explicitly claims they share this
+machinery; divergent wording for an identical mechanism is drift, not design.
+
+**Consequence.** `fix-bug` — the last member of the deferred agent/reviewer cluster — is now
+unblocked (`review-branch`, `pr`, and `implement-plan` are all converted). `plan-feature` remains
+separately deferred on its own terms.
