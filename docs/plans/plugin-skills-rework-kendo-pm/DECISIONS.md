@@ -174,3 +174,47 @@ in the same commit, confirmed byte-identical after.
 **Consequence.** `kendo-pm` bundles three skills (`kendo-cli`, `kendo-mcp`, `triage-reports`) at
 version 0.3.0. `prepare-issue` is the only skill left in the queue, paused on the `/newbranch`
 question above.
+
+## D4 — `prepare-issue` unpaused: `core-skills` declared as a formal plugin dependency
+
+**Chosen.** Asked whether Claude Code's plugin system supports declaring one plugin as another's
+dependency — the exact shape D3 was paused on. Verified against the current docs
+(`code.claude.com/docs/en/plugin-dependencies`, cross-checked with `plugins-reference`): yes, a
+`dependencies` array in `.claude-plugin/plugin.json` (bare plugin name, or `{name, version}` for a
+semver-constrained range) makes Claude Code auto-install and auto-enable the named plugin, and
+blocks disabling it while the dependent stays enabled. Added `"dependencies": ["core-skills"]` to
+`kendo-pm`'s manifest — unversioned, since nothing here needs to pin `core-skills` to a tested
+range yet — and bumped `kendo-pm` to 0.4.0.
+
+This resolves the cross-plugin question cleanly: `prepare-issue`'s unconditional Step 6 call to
+`/newbranch` is now a declared, enforced requirement rather than an assumption a `kendo-pm`-only
+install could silently violate. Converted `prepare-issue` immediately after: same substitution
+pattern as the other three skills (`{{ISSUE_KEY_PREFIX}}` → `PROJ`, `{{TENANT}}` →
+`<your-tenant>`, `{{PROJECT_ID}}` → `<project-id>` via `issue_tracker_project_id`), plus a new
+Prerequisites section stating the field read, the `core-skills` dependency, and `/startup`'s
+already-correct conditional degrade. `{{DEFAULT_BRANCH}}` had no established placeholder anywhere
+in this plugin to reuse (unlike the other three tokens) — replaced with the same prose `/newbranch`
+itself uses ("the project's integration branch"), since `prepare-issue` never needs the literal
+branch name, only `/newbranch` does.
+
+**Also resolved — Step 7 Option C's `worktree_dir` question, left as-is.** Flagged in D3 as
+depending on how the `/newbranch` question landed; turned out the two were independent; the
+mismatch stands regardless. `worktree_dir`'s contract substitutes a literal `{slug}`; Option C's
+own convention is `{N}`-based (`<repo-folder>-{N}`). Forcing one onto the other is exactly what
+`plan-directory.md`'s "Catchup variant" note already warns against for a different field. Left
+hand-written.
+
+**Raised, not acted on — `/newbranch` only supports branching from `integration_branch`.** While
+converting Step 6, noted that delegating branch creation to `/newbranch` means `prepare-issue`
+inherits its limitation: no way to base the new branch on anything but the integration branch,
+whereas `worktree` (same plugin) already supports an existing branch or a PR's head branch as base
+per its own Step 1 table. This very branch (cut from `research/plugin-skills-rework`, not `main`)
+is a real instance `/newbranch` can't express. **Rejected doing anything about it now** — widening
+`/newbranch`'s base selection is a `core-skills` change, out of scope for this branch, and
+`prepare-issue` delegating to `/newbranch` as-is is still the right call for the common case.
+Recorded in PLAN.md's Goal section as a gap for a future pass, not this one.
+
+**Consequence.** `kendo-pm` bundles all four in-scope skills (`kendo-cli`, `kendo-mcp`,
+`prepare-issue`, `triage-reports`) at version 0.4.0, declares `core-skills` as a plugin
+dependency, and the conversion queue for this branch is empty (`board-sync`/`lint-issues` remain
+excluded per D2).

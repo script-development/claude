@@ -7,6 +7,17 @@ Kendo-specific by design — into plugin skills installed via this repo's market
 table's six skills, four are in scope: `kendo-cli`, `kendo-mcp`, `prepare-issue`,
 `triage-reports`. `board-sync` and `lint-issues` are excluded per the team lead — see D2.
 
+**Out of scope, flagged during conversion — `/newbranch` only branches from the integration
+branch.** `prepare-issue`'s Step 6 delegates branch creation entirely to `core-skills`'
+`/newbranch` (see D4), which is fine for the common case, but `/newbranch` has no way to base the
+new branch on anything other than `integration_branch` — unlike `worktree` (also in `core-skills`),
+whose own Step 1 table already supports an existing branch or a PR's head branch as the base. This
+branch itself (`research/plugin-skills-rework-kendo-pm`, cut from `research/plugin-skills-rework`
+rather than `main`) is a concrete case that shape can't express today. Not blocking: `prepare-issue`
+delegating to `/newbranch` as-is is the right call for now (D4), and widening `/newbranch`'s base
+selection would be a `core-skills` change, out of scope for this branch — noted here as a gap
+worth a future pass, not acted on.
+
 ## Relationship to `plugin-skills-rework`
 
 This branch (`research/plugin-skills-rework-kendo-pm`) is cut from `research/plugin-skills-rework`
@@ -90,20 +101,28 @@ this plugin ships on its own. Revisit only if a fact turns out to make no sense 
   `templates/project-context-template.md` — fixed, noting it's the field's first cross-plugin
   reader. See D3's addendum.
 
-### Paused
+- **`prepare-issue`** — the queue's last skill, unpaused once the user confirmed Claude Code
+  plugin manifests support a native `dependencies` array (see D4). `kendo-pm`'s
+  `.claude-plugin/plugin.json` now declares `core-skills` as a dependency, so Step 6's
+  unconditional `/newbranch` call is a documented, enforced requirement rather than a silent
+  cross-plugin assumption — installing `kendo-pm` installs `core-skills` automatically. Needed
+  the same substitutions as the other three skills: `{{ISSUE_KEY_PREFIX}}` → `PROJ`, `{{TENANT}}`
+  → `<your-tenant>` (matching `kendo-mcp`'s `setup.md` convention), `{{PROJECT_ID}}` →
+  `<project-id>` reusing `issue_tracker_project_id` (now a three-plugin-skill reader, alongside
+  `newbranch` and `triage-reports`). `{{DEFAULT_BRANCH}}` had no established plugin-side
+  placeholder to reuse — replaced with prose ("the project's integration branch") matching how
+  `newbranch` itself describes the same concept, since `/newbranch` resolves that branch on its
+  own and `prepare-issue` never needs the literal name. Gained a new Prerequisites section stating
+  the field read, the `core-skills` dependency, and `/startup`'s existing conditional-degrade
+  behaviour (unchanged, already correct in the catalog original). `kendo-pm` bumped to 0.4.0.
 
-- **`prepare-issue`** — picked up, then paused before any edits landed: it unconditionally
-  invokes `/newbranch` (`core-skills`) once Step 5's repo-state check finds no existing branch —
-  a hard dependency under the workflow's Step 5b (repo-state-gated, not a developer
-  confirmation), and the first case in this plugin of a genuine *runtime* cross-plugin
-  dependency (unlike `triage-reports`' field reuse above, this really does need `core-skills`
-  installed for that path to work). User wants to think about how to handle it before
-  proceeding — see `docs/plans/plugin-skills-rework-kendo-pm/DECISIONS.md` for the options
-  raised, none chosen yet. Also flagged during the read-through, not yet acted on: Step 7 Option
-  C hardcodes the new-worktree path (`../{worktree_name}`) rather than reading `worktree_dir`,
-  but that field's `{slug}`-substitution contract doesn't obviously fit this skill's `{N}`-based
-  naming — needs the same "does the shape actually fit" check `plan-directory.md` already warns
-  about for `plan_dir`, not an automatic reuse.
+  **Step 7 Option C's worktree-naming question, resolved (not deferred further).** Left
+  hand-written, not reading `worktree_dir`: that field's contract substitutes a literal `{slug}`,
+  while Option C's own convention is `{N}`-based (`<repo-folder>-{N}`, e.g. `myapp-2`) — a
+  different shape, the same mismatch `plan-directory.md`'s "Catchup variant" note already warns
+  against forcing. Resolving the `/newbranch` question didn't change this: the two were only
+  coupled in that both blocked on *some* decision landing first, not because one's answer
+  constrains the other.
 
 ### Out (open questions — not resolved yet)
 
