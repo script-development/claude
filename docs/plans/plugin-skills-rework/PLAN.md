@@ -32,6 +32,12 @@ field/section before adding a new one, add a new one only on demand, commit per 
   skill's own directory (which doesn't survive a plugin version bump) to
   `.claude/project-context.md`'s new `## Worktrees` section (D10, D11). Reads
   `integration_branch`, `worktree_dir`, and the Worktrees body section.
+- **`build-it`** — converted out of README order (it hard-depends on `/worktree`, converted
+  just before it — D12). Needed **zero new `project-context.md` fields**: it owns no
+  project-specific decisions itself, deferring entirely to `worktree`'s hand-back for the
+  integration branch and house rules, to `plan_dir` (already added for `catchup`) for the docs
+  convention, and to the project's own `CLAUDE.md`/`/pr` skill for the review label. Confirms
+  D10's premise held on a second skill.
 - **Registration** — `core-skills` is in `.claude-plugin/marketplace.json` and both READMEs
   (root and the plugin's own) as of this pass; no longer deferred (supersedes D6's deferral).
 - **Template shipped with the plugin** — `plugins/core-skills/references/project-context-template.md`
@@ -40,8 +46,7 @@ field/section before adding a new one, add a new one only on demand, commit per 
 
 ### Up next
 
-`build-it` — was going to be next in README order, but depends on `/worktree` (now converted).
-Per the rollout approach above, `build-it` is next since its dependency is satisfied.
+`commit` — next in README's Generic Skills order with no unconverted hard dependency.
 
 ### Out (open questions — not resolved yet)
 
