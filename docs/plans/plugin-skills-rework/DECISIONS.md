@@ -138,3 +138,23 @@ to say so.
 
 **Consequence.** `templates/project-context-template.md` and `plugins/core-skills/skills/catchup/SKILL.md`
 both state the default and the two ways to override it (name a different skill, or `none`).
+
+## D9 — Ship a copy of the template inside the plugin itself
+
+**Chosen.** `plugins/core-skills/references/project-context-template.md` is a bundled copy of
+the root `templates/project-context-template.md`, kept in sync by hand. `catchup` (and every
+skill after it) points to the shipped copy for bootstrapping, not the catalog root.
+
+**Why.** A project that installs `core-skills` via the marketplace never clones the `claude-2`
+catalog repo — it only ever receives what the plugin ships. `templates/project-context-template.md`
+living only at the catalog root left every plugin consumer with no way to discover the schema
+or start their own `.claude/project-context.md`. This was already true for the shipped `catchup`
+before this pass caught it.
+
+**Rejected.** Leaving the template catalog-only and describing its fields entirely inline in
+each skill's prose instead — rejected because that duplicates the same content once per skill
+rather than once per plugin, which is a worse drift risk than one shipped copy of one file.
+
+**Cost accepted.** Two copies of the template now need to move together (root, and each plugin
+that reads `project-context.md`) — the same manual-propagation duty `CLAUDE.md` already assigns
+to every shared skill mirrored across consumers, extended to this one template file.
