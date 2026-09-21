@@ -23,6 +23,7 @@ this plugin's own only if a skill needs a fact `core-skills`' template can't alr
 
 | Skill | Description |
 |-------|-------------|
+| [kendo-cli](skills/kendo-cli/) | Kendo CLI for issues, sprints, epics, time tracking — from the terminal, no MCP server required |
 | [kendo-mcp](skills/kendo-mcp/) | Kendo MCP server integration for issue management: issues, sprints, epics, time tracking, reports, attachments |
 
 ## Design record

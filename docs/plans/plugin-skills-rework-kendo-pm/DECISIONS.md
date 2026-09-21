@@ -56,6 +56,13 @@ hosting problem at the time — see the parent plan's D9/D16). That workaround h
 way one owned by the same plugin does. Not revisited — out of scope for this plan, which doesn't
 touch `core-skills`.
 
+**Confirmed the converse while converting `kendo-cli`.** Its own prose reference to "the kendo-mcp
+skill's `references/issue-templates.md`" became a real relative markdown link
+(`../kendo-mcp/references/issue-templates.md`) rather than the `core-skills` generic-description
+workaround — legitimate specifically because `kendo-cli` and `kendo-mcp` are siblings *inside the
+same plugin*, so the link does survive an independent `kendo-pm` install. The plugin-boundary
+reasoning above cuts both ways: a real link is right within a plugin, wrong across plugins.
+
 **Rejected — a `kendo-pm`-owned copy of `.claude/project-context.md`'s template.** `core-skills`
 already owns the canonical template; a project installing both plugins should still only maintain
 one file. See this plan's own PLAN.md, *Rollout approach*, for where a future `kendo-pm` field

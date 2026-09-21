@@ -60,6 +60,16 @@ this plugin ships on its own. Revisit only if a fact turns out to make no sense 
   is the wrong placeholder for a skill documenting integration with *any* Kendo tenant. See D1.
   Both reference files (`setup.md`, `issue-templates.md`) shipped byte-identical.
 
+- **`kendo-cli`** — needed **zero `.claude/project-context.md` integration** and had no
+  `{{PLACEHOLDER}}` tokens to begin with: it already uses `PROJ-0255`-style generic issue-key
+  examples throughout, consistent with `kendo-mcp`'s own convention (no fix needed here, unlike
+  `kendo-mcp` itself). The one real change: its prose reference to "the kendo-mcp skill's
+  `references/issue-templates.md`" became an actual working relative link
+  (`../kendo-mcp/references/issue-templates.md`) instead of `core-skills`' generic-description
+  workaround — legitimate here because `kendo-cli` and `kendo-mcp` are siblings in the *same*
+  plugin, so the link survives an independent install the way it wouldn't have across plugin
+  boundaries (see D1's rejected alternative). `kendo-pm` bumped to 0.2.0.
+
 ### Out (open questions — not resolved yet)
 
 - **Whether any remaining Kendo PM skill needs a `kendo-pm`-scoped `.claude/project-context.md`
