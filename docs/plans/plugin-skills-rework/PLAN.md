@@ -160,14 +160,32 @@ sentence.
   hosted by another catalog skill; single-file skill, shipped with the one field substitution
   (D21).
 
+- **`retro`** — needed one **new field**, `retro_dir`, in its own new "Retrospectives" section
+  (not folded into "Research" — user's call, D22): the skill hardcoded a `retrospectives/`
+  output directory (`ls retrospectives/RETRO-*.md`, `Save to
+  retrospectives/RETRO-<NNN>-<short-name>.md`) with no override, the same "hardcoded directory,
+  no override" shape as `research`, encountered a second time back to back. Also genericized the
+  skill's own Step 4 worked example, which hardcoded an outdated
+  `Co-Authored-By: Claude <noreply@anthropic.com>` commit trailer — swapped for the same
+  `<attribution trailer, exactly as the harness injects it for this session>` placeholder
+  `commit` already established, rather than baking in a stale, session-specific line the skill
+  has no business fixing to one value. No `{{PLACEHOLDER}}` tokens, no hard dependency.
+
 ### Up next
 
-Three Generic Skills remain unconverted and untouched by this rework so far: `retro`,
+Two Generic Skills remain unconverted and untouched by this rework so far:
 `review-mcp-descriptions`, `sync-worktrees`. A quick dependency grep (`Agent(`,
-`subagent_type`, `spawn`) turned up nothing in any of the three — no known hard dependency, so
-any of them is a valid next pick, pending the same full check (Step 1 of the conversion
-workflow) this rework has applied to every skill so far. `babysit` stays explicitly skipped
-(superseded by `shepard`, now converted).
+`subagent_type`, `spawn`) turned up nothing in either — no known hard dependency, so either is a
+valid next pick, pending the same full check (Step 1 of the conversion workflow) this rework has
+applied to every skill so far. `babysit` stays explicitly skipped (superseded by `shepard`, now
+converted).
+
+**Directory fields may deserve a regrouping pass.** `plan_dir`, `research_dir`, and `retro_dir`
+are now three sibling single-scalar directory overrides in three separate top-level sections,
+each following the identical shape (a path, defaulting to a skill-chosen convention, degrading
+to the default when absent). Not resolved yet whether that repetition is worth collapsing into
+one shared "Directories" section once the current pass through the README list is done — noted
+for a later look, not blocking the next conversion.
 
 `review-mcp-descriptions` in particular needs the full check taken seriously, not assumed clean
 from the grep alone — it improves MCP tool/resource descriptions, and this org's MCP tool

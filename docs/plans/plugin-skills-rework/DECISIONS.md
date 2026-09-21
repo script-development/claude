@@ -528,3 +528,32 @@ need one — rejected because the same reasoning was already tried and rejected 
 itself (`docs/plans/` isn't universal either), and this rework's whole premise is that a
 hardcoded project convention is a hardcoded project convention regardless of how common the
 default looks.
+
+## D22 — `retro` gets its own "Retrospectives" section, not folded into "Research"
+
+**Chosen.** Added `retro_dir` as a new top-level section, `## Retrospectives`, rather than as a
+second field inside `## Research` (D21) or a rename of that section to something broader like
+"Knowledge base". User's explicit call, made before the conversion started: keep the two
+directory fields in separate sections for now, with a note to revisit grouping once more
+directory-shaped fields exist.
+
+**Why.** `research` and `retro` are both flat, accumulating output directories with no
+`{issue_key}` keying — superficially the same shape — but they differ in what accumulates and
+why a reader would open the directory: research is topic-keyed and meant to be searched
+("what do we know about X"), retros are sequence-numbered and meant to be read in order or
+skimmed as a timeline of mistakes. Collapsing them into one section now would require picking a
+name that covers both without implying either is a subset of the other, and it's exactly the
+kind of premature grouping the template's own header warns against ("don't add a field
+speculatively"). Two sections costs nothing today: neither is more work to read or degrade than
+one shared section would be.
+
+**Deferred, not rejected.** A "Directories" (or similar) regrouping pass that collapses
+`plan_dir`, `research_dir`, `retro_dir` — and any future sibling — under one section once the
+repetition is easier to see across more than two examples. Flagged in `PLAN.md`'s "Up next" as
+an open item, not scheduled.
+
+**Consequence.** `retro`'s conversion also genericized its own Step 4 worked example, which
+hardcoded a stale `Co-Authored-By: Claude <noreply@anthropic.com>` commit trailer — replaced with
+the same `<attribution trailer, exactly as the harness injects it for this session>` placeholder
+`commit` already uses, rather than shipping a plugin skill that bakes in one session's
+attribution convention as if it were universal.

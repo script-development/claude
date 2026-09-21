@@ -34,6 +34,10 @@ plan_dir:              # e.g. docs/plans/{issue_key}/ — override for this proj
 research_dir:          # e.g. docs/research/ — override for this project's filed-research
                        # directory. Omit to use the skill's own default, research/.
 
+# --- Retrospectives (used by: retro) ---
+retro_dir:             # e.g. docs/retrospectives/ — override for this project's retro
+                       # directory. Omit to use the skill's own default, retrospectives/.
+
 # --- Worktrees (used by: worktree, build-it) ---
 integration_branch:    # Override when auto-detection (origin/development, origin/develop,
                        # then the remote default branch) would get it wrong for this project.
@@ -78,6 +82,11 @@ means "use the generic fallback" — never a hard failure.
 
 - `research_dir` overrides where filed research reports live, for projects that don't use the
   default `research/` directory. Leave unset to use the default.
+
+## Retrospectives
+
+- `retro_dir` overrides where numbered retrospectives live, for projects that don't use the
+  default `retrospectives/` directory. Leave unset to use the default.
 
 ## Worktrees
 
