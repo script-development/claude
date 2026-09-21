@@ -20,13 +20,11 @@ Load everything about the current branch, check alignment with the base branch, 
 concise working summary so you (and the user) can hit the ground running.
 
 This skill is project-agnostic: it never assumes a specific issue-tracker, plan layout, or issue
-key format. Two things it can't infer are read from `.claude/project-context.md` at the root of
-the project it's running in, if that file exists — see Step 1.4 and Step 2's Issue tracker row.
-Missing file, or a missing field within it, means "skip that part" — never a hard failure. The
-one exception is `issue_tracker_skill`, which has an org-level default — see Step 2. If the file
-would help and doesn't exist yet, this plugin ships a starter template at
-`references/project-context-template.md` (in this plugin's own directory) — offer to copy it in,
-don't require it.
+key format. It reads `plan_dir` (Step 1.4) and `issue_tracker_skill` (Step 2) from
+`.claude/project-context.md` — see this plugin's README for how that file and its notation
+work. `issue_tracker_skill` is the one field here with an org-level default rather than a plain
+skip — see Step 2. No file yet: offer the shipped starter template at
+`references/project-context-template.md` (in this plugin's own directory), don't require it.
 
 ## Step 1: Identify the branch, base, and any issue key
 

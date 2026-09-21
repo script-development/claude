@@ -87,6 +87,17 @@ picked apart skill-by-skill. Revisit as its own pass.
   abstraction boundary `catchup` already established, plus a `none`/unresolved path that skips
   issue linking and just asks for a branch slug (D14).
 
+### Cross-cutting readability pass
+
+Collapsed the repeated "missing file/field degrades, never blocks" explanation that `catchup`,
+`worktree`, and `newbranch` had each independently written into their own intro paragraph, into
+one shared "Notation" paragraph in `plugins/core-skills/README.md` (D15). Each skill's intro now
+states only which fields it reads and links to the README for the mechanism. Also standardized
+code-block placeholders to hyphenated English words (`<integration-branch>`, `<project-id>`) —
+never the field's literal snake_case name — fixing one stray instance in `newbranch`. Applies
+going forward: state which fields, link to the README, don't re-derive the degrade-semantics
+sentence.
+
 ### Up next
 
 `next` — next in README's Generic Skills order with no unconverted hard dependency

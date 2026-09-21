@@ -19,8 +19,9 @@ does not decide what you build there. Feature, bug, refactor, CI fix, spike, rev
 else's branch: all the same job up to the hand-back.
 
 Project-specific overrides and house rules come from `.claude/project-context.md` at the root of
-the project this skill is running in — see Step 0. Missing file, or a missing field/section
-within it, means "run on the generic defaults below" — never a hard failure.
+the project this skill is running in — `integration_branch`, `worktree_dir`, and the
+`## Worktrees` body section; see Step 0 and this plugin's README for how that file and its
+notation work.
 
 ## 0 · Identify the repo
 

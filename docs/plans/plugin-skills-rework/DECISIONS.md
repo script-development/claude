@@ -271,3 +271,35 @@ useless out of the box for the common case.
 `newbranch` — a future conversion of a Kendo-shaped skill (`board-sync`, `prepare-issue`, etc.,
 currently out of `core-skills`' scope, listed under README's Kendo PM Skills) can reuse it
 without inventing its own field, per the reuse-before-add workflow.
+
+## D15 — One shared "Notation" paragraph in the plugin README, not a repeated explanation per
+skill
+
+**Chosen.** `plugins/core-skills/README.md` gains one paragraph stating, once, what it means
+for a skill to name a `.claude/project-context.md` field in backticks (read this field; the
+skill states its own fallback) and what a hyphenated code-block placeholder (e.g.
+`<integration-branch>`) stands for. `catchup`, `worktree`, and `newbranch` — the three skills
+whose intro paragraph had independently re-explained the same "missing file/field degrades,
+never blocks" mechanism in slightly different words — now each state only *which* fields they
+read and link back to the README for how the mechanism works. `newbranch`'s one stray
+underscore-named code placeholder (`<issue_tracker_project_id>`, inconsistent with every other
+skill's hyphenated-English-word placeholders like `<branch>`, `<base>`) was fixed to
+`<project-id>` to match.
+
+**Why.** User noticed, while reviewing the `newbranch` conversion, that the same degrade-not-
+fail explanation was being hand-written into every converted skill's intro — a real
+duplication, not just verbosity, since drift between the copies was only a matter of time
+(D5/D8's wording already differs slightly between `catchup` and `newbranch` as written). The
+mechanism itself (D5, D8) doesn't change — this only moves *where its explanation lives* from
+N places to one, and gives future conversions (`next`, `task-writer`, `wireframe`, ...) a fixed
+notation to follow instead of each inventing its own phrasing.
+
+**Rejected.** A real templating/include mechanism that would let a skill "transclude" the
+README paragraph at read time — no such mechanism exists for plugin skills (`SKILL.md` is a
+static file read as-is, not preprocessed — see the chat transcript that prompted this decision
+for the fuller "why not `{{PLACEHOLDER}}` for plugins" answer, D4/D10). A shared prose
+convention, restated once and linked to, is the closest available substitute.
+
+**Consequence.** Every future `core-skills` conversion states which fields it reads and what it
+falls back to, and links to the README's Notation paragraph instead of re-deriving the
+degrade-semantics sentence from scratch.

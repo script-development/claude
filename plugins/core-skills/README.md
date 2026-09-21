@@ -17,6 +17,14 @@ A starter template ships with this plugin at
 [`references/project-context-template.md`](references/project-context-template.md). Copy it
 to `.claude/project-context.md` in the project and fill in only the fields that project needs.
 
+**Notation.** A skill below names the fields it reads inline, in backticks (e.g.
+`integration_branch`) — that always means "read this field from `.claude/project-context.md`";
+the skill states its own fallback for when the field, or the file itself, is absent. A code
+block placeholder in hyphenated form (e.g. `<integration-branch>`) stands for that resolved
+value, not the field's literal name. This paragraph is the one place that mechanism is
+explained — an individual skill only needs to say *which* fields it reads and *what* it falls
+back to, not re-explain the degrade-not-fail contract itself.
+
 ## Skills
 
 | Skill | Description |

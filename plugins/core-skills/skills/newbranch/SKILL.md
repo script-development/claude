@@ -14,10 +14,9 @@ issue tracker configured, prepare the linked issue for work (assign to the devel
 active sprint, move to In Progress).
 
 This skill is project-agnostic: it never assumes a specific tracker, tracker project id, or
-issue-key format. What it reads from `.claude/project-context.md`, if present — `integration_branch`
-(Step 1) and `issue_tracker_skill` / `issue_tracker_project_id` (Step 2). Missing file, or a
-missing field within it, degrades to the generic behavior described inline — never a hard
-failure.
+issue-key format. It reads `integration_branch` (Step 1) and `issue_tracker_skill` /
+`issue_tracker_project_id` (Step 2) from `.claude/project-context.md` — see this plugin's
+README for how that file and its notation work.
 
 ## Step 1: Fetch latest
 
@@ -60,7 +59,7 @@ the legacy `git config user.email` heuristic):
 ```
 parallel:
   mcp__kendo__prepare-project-context-tool
-    project_id: <issue_tracker_project_id>
+    project_id: <project-id>
   mcp__kendo__prepare-issue-context-tool
     issue_key: "<issue-key>"
 ```
