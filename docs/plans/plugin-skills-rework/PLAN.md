@@ -44,9 +44,17 @@ field/section before adding a new one, add a new one only on demand, commit per 
   is a synced copy of the canonical `templates/project-context-template.md`, so a plugin
   consumer who never clones this catalog can still bootstrap their own file (D9).
 
+- **`commit`** — needed zero new fields, but did need a **reuse** of `integration_branch`
+  (added for `worktree`): the branch-safety check's hardcoded protected-branch list
+  (`main`/`master`/`develop`/`development`) missed a project whose integration branch has a
+  different name. Also fixed an internal inconsistency in the original skill — it gathered
+  `git log` "for recent commit message style" but then imposed a fixed conventional-commit
+  type list regardless of what that showed; now it actually matches the detected convention,
+  falling back to conventional commits only when there's no clear pattern (D13).
+
 ### Up next
 
-`commit` — next in README's Generic Skills order with no unconverted hard dependency.
+`fix-bug` — next in README's Generic Skills order with no unconverted hard dependency.
 
 ### Out (open questions — not resolved yet)
 

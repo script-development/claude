@@ -212,3 +212,26 @@ skill not yet in the bundle — a broken intermediate state. Recorded here, and 
 conversion-workflow memory, as the general rule for the rest of this rework: a hard functional
 dependency (one skill invoking another, not just documenting it) jumps the queue ahead of
 README order.
+
+## D13 — `commit` reuses `integration_branch`; no new field
+
+**Chosen.** `commit`'s branch-safety check (Step 1) and upstream-push check (Step 5) now treat
+a project's `integration_branch` (from `.claude/project-context.md`, added for `worktree`) as
+protected, in addition to the existing hardcoded list (`main`, `master`, `develop`,
+`development`).
+
+**Why.** The hardcoded list is a fixed set of common names; a project whose integration branch
+is named something else (`trunk`, `staging`, ...) would get no warning before a direct commit
+to it. `integration_branch` already exists for exactly this concept (the branch new work
+integrates back into) — reusing it is a strict superset of the old check: a project that never
+sets the field gets byte-identical behaviour, one that does gets the gap closed. No new field
+needed, matching the established reuse-before-add workflow.
+
+**Also fixed, same skill, same commit.** The original skill's Step 2 gathered `git log
+--oneline -5` "for recent commit message style" but Step 4b then imposed a fixed
+conventional-commit type list regardless of what that showed — an internal inconsistency, not
+a project-specific fact requiring a field. Fixed by making Step 4b actually follow the
+convention Step 2 detects, falling back to conventional commits only when there's no clear
+existing pattern. Verified against this repo's own history (free-form subjects, no type
+prefix) that conventional commits is not a safe universal default the way `kendo-mcp` is for
+issue tracking (D8) — it's a per-project convention the skill should detect, not assume.
