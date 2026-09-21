@@ -25,18 +25,26 @@ issue_tracker_project_id: # This project's id within that tracker (e.g. Kendo's 
                        # project id. Leave unset if the tracker has no such concept, or if
                        # issue_tracker_skill is `none`. Used by: newbranch.
 
-# --- Plans (used by: catchup) ---
-plan_dir:              # e.g. docs/plans/{issue_key}/ — override for this project's plan
-                       # directory convention. {issue_key} is substituted literally.
-                       # Omit to use the skill's own generic default.
-
-# --- Research (used by: research) ---
-research_dir:          # e.g. docs/research/ — override for this project's filed-research
-                       # directory. Omit to use the skill's own default, research/.
-
-# --- Retrospectives (used by: retro) ---
-retro_dir:             # e.g. docs/retrospectives/ — override for this project's retro
-                       # directory. Omit to use the skill's own default, retrospectives/.
+# --- Directories ---
+# Single-path overrides for where a skill's own output or artifacts live. Every field here
+# shares one contract: a plain path, optionally with a literal {placeholder} substituted (noted
+# per field below), read once by the skill(s) named, degrading to that skill's own generic
+# default when the field or file is absent — never a hard failure. Add a new field here only
+# when a skill hardcodes a directory convention with no override; don't add one speculatively.
+plan_dir:              # e.g. docs/plans/{issue_key}/ — this project's plan directory
+                       # convention. {issue_key} is substituted literally. Omit to use the
+                       # skill's own generic default. Used by: catchup, build-it.
+research_dir:          # e.g. docs/research/ — this project's filed-research directory.
+                       # Omit to use the default, research/. Used by: research.
+retro_dir:             # e.g. docs/retrospectives/ — this project's retro directory.
+                       # Omit to use the default, retrospectives/. Used by: retro.
+worktree_dir:          # e.g. .claude/worktrees/{slug} — override the default worktree
+                       # location. {slug} is substituted literally. Needed when repo tooling
+                       # sweeps the whole repo root (a docker build context, a globbing test
+                       # runner, IDE indexing), or when the default path is already covered by
+                       # this project's own .gitignore (say so under Worktrees > House rules
+                       # below — worktree can then skip its own ignore-list write).
+                       # Used by: worktree, build-it.
 
 # --- Worktrees (used by: worktree, build-it, commit, sync-worktrees) ---
 integration_branch:    # Override when auto-detection (origin/development, origin/develop,
@@ -46,13 +54,6 @@ integration_branch:    # Override when auto-detection (origin/development, origi
                        # If this project's tracker auto-links branches, also document the
                        # issue-key format under House rules below — a truncated or malformed
                        # key silently breaks the auto-link.
-worktree_dir:          # e.g. .claude/worktrees/{slug} — override the default worktree
-                       # location. Needed when repo tooling sweeps the whole repo root
-                       # (a docker build context, a globbing test runner, IDE indexing), or
-                       # when the default path is already covered by this project's own
-                       # .gitignore (say so under House rules — worktree can then skip its
-                       # own ignore-list write).
-                       # {slug} is substituted literally.
 ---
 
 # Project Context
@@ -74,30 +75,30 @@ means "use the generic fallback" — never a hard failure.
   tenant. Leave unset if the tracker has no such concept, or if there's no tracker
   integration at all.
 
-## Plans
+## Directories
 
-- `plan_dir` overrides where a branch's planning artifacts (`PLAN.md`, `TASKS.md`,
-  `DECISIONS.md`) live, for projects that don't use the default `docs/plans/{issue_key}/`
-  layout. Leave unset to use the default.
+Every field here is a single-scalar path override with the same degrade-to-default contract —
+see the frontmatter comments above for what each one overrides and which skill(s) read it. This
+section exists so that repetition doesn't accumulate one thin subsection per skill; add a line
+here, not a new `##` heading, the next time a skill hardcodes a directory convention.
 
-## Research
-
-- `research_dir` overrides where filed research reports live, for projects that don't use the
-  default `research/` directory. Leave unset to use the default.
-
-## Retrospectives
-
-- `retro_dir` overrides where numbered retrospectives live, for projects that don't use the
-  default `retrospectives/` directory. Leave unset to use the default.
+- `plan_dir` — a branch's planning artifacts (`PLAN.md`, `TASKS.md`, `DECISIONS.md`).
+- `research_dir` — filed research reports.
+- `retro_dir` — numbered retrospectives.
+- `worktree_dir` — where a cut worktree lives; see Worktrees below for the richer,
+  worktree-specific knowledge this field's own section still carries.
 
 ## Worktrees
 
-`integration_branch` and `worktree_dir` are simple one-line overrides — see the frontmatter
-comments above. Everything below is richer, project-verified knowledge that doesn't fit a
-single scalar, so it lives here as prose instead: only write down what you've actually
-verified in this project, with the reason it's true, not what seems like it should be true.
-A rule without its *why* goes stale silently, and a skill reading this section follows it
-anyway.
+`integration_branch` is a simple one-line override — see the frontmatter comments above.
+`worktree_dir` lives in Directories above, since it's the same single-scalar-path shape as
+`plan_dir`/`research_dir`/`retro_dir`; it's still referenced here in House rules, because the
+knowledge of *why* its default might need overriding (a `.gitignore` that already covers it, a
+build context that sweeps it) is worktree-specific. Everything below `integration_branch` is
+richer, project-verified knowledge that doesn't fit a single scalar, so it lives here as prose
+instead: only write down what you've actually verified in this project, with the reason it's
+true, not what seems like it should be true. A rule without its *why* goes stale silently, and a
+skill reading this section follows it anyway.
 
 ### Setup
 

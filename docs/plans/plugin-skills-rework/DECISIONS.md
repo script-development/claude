@@ -629,3 +629,48 @@ solving the identical problem is drift waiting to happen the next time one of th
 `sync-worktrees`) — if a third skill needs either, that's the point at which extracting either
 into a single shared reference (the same treatment `plan-directory.md` got in D16) becomes worth
 weighing, not before.
+
+## D25 — Regroup `plan_dir`/`research_dir`/`retro_dir`/`worktree_dir` into one `## Directories`
+section
+
+**Chosen.** Collapsed `## Plans` (D-worked-example, pre-D21), `## Research` (D21), and
+`## Retrospectives` (D22) into one `## Directories` section, and pulled `worktree_dir` out of
+`## Worktrees` into it too. Each field keeps its own one-line frontmatter comment (what it
+overrides, its default, which skill(s) read it); the body section now carries one shared
+contract paragraph instead of a near-identical paragraph per field. `## Worktrees` keeps
+`integration_branch` and all of its richer prose (Setup/Gates/House rules) — `worktree_dir` is
+still named there, cross-referenced back to Directories, because the knowledge of *why* a
+project would override it (a `.gitignore` that already covers the path, a build context that
+sweeps the repo root) is genuinely worktree-specific, not a property of the field itself. Also
+corrected `plan_dir`'s "used by" comment, which had the same staleness D24 found and fixed for
+`integration_branch` — it named only `catchup`, missing `build-it` (`build-it/SKILL.md:70`
+reads it directly).
+
+**Why.** User's call, made explicitly ahead of picking up the deferred `review-branch` cluster,
+on the expectation that `plan-feature` and `fix-bug` will each add their own directory-shaped
+field once converted — better to fix the shape of the bucket now, with three real examples
+already in hand, than to let a fourth and fifth thin section accumulate first. `worktree_dir`
+joining the new section (not just `plan_dir`/`research_dir`/`retro_dir`) reads the request
+literally: it is the same single-scalar-path-with-optional-`{placeholder}` shape as the other
+three, and leaving it out of a section named "Directories" while it sits one field away from
+`integration_branch` (a branch name, a genuinely different shape) would be the more surprising
+layout, not the safer one.
+
+**Rejected.** Leaving `worktree_dir` in `## Worktrees` and grouping only the three "thin"
+fields — considered, since `worktree_dir` is the one field in the new section with real prose
+still attached to it elsewhere. Rejected because the field itself has no more shape in common
+with `integration_branch` than with `plan_dir`; the prose that's genuinely worktree-specific
+(the `.gitignore`/build-context reasoning) is a *use* of the field, not a property of it, and
+that reasoning stays put via the cross-reference regardless of which section defines the field.
+Renaming instead of moving (e.g. keeping four small sections but standardizing their body
+wording) — rejected because the repetition D21/D22 already flagged is structural (one heading
+plus one paragraph plus one bullet, four times), not just inconsistent wording; D15's own
+precedent (collapsing the repeated "degrade-not-fail" explanation into one README paragraph) is
+the same move applied to project-context.md's body instead of the plugin README.
+
+**Consequence.** `plan-feature` and `fix-bug` (both still in the deferred `review-branch`
+cluster) should add any new directory-shaped field they need directly to `## Directories`, not
+open a new top-level section for it, per that section's own stated purpose. D21 and D22's own
+"Chosen"/"Why" text is left as an accurate record of what was decided *then* (a real, reasoned
+choice, not an error to correct like D19's) — this decision supersedes their section placement,
+not their reasoning for adding the fields in the first place.

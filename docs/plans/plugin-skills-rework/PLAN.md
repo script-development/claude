@@ -200,17 +200,21 @@ sentence.
   (D24). The script itself (`scripts/sync.sh`) needed zero changes — already fully generic, no
   Kendo assumptions, verified byte-identical to the catalog original.
 
+### Directories regrouping pass
+
+Collapsed `## Plans`, `## Research`, and `## Retrospectives` — three near-identical
+single-field sections (D21, D22) — into one `## Directories` section holding `plan_dir`,
+`research_dir`, `retro_dir`, and `worktree_dir` (pulled out of `## Worktrees`, which keeps
+`integration_branch` and its own richer prose). User's call, made ahead of converting the
+deferred `review-branch` cluster on the expectation that `plan-feature` and `fix-bug` will each
+add another directory-shaped field of their own (D25). Also fixed `plan_dir`'s stale "used by"
+comment — it named only `catchup`, missing `build-it` (confirmed reading
+`plugins/core-skills/skills/build-it/SKILL.md:70`).
+
 ### Up next
 
 Every Generic Skill in the README's table is now converted into `core-skills`, except the
 deferred agent-cluster chain below. `babysit` stays explicitly skipped (superseded by `shepard`).
-
-**Directory fields may deserve a regrouping pass.** `plan_dir`, `research_dir`, and `retro_dir`
-are three sibling single-scalar directory overrides in three separate top-level sections, each
-following the identical shape (a path, defaulting to a skill-chosen convention, degrading to the
-default when absent). Not resolved yet whether that repetition is worth collapsing into one
-shared "Directories" section — noted for a later look, not blocking anything now that the
-current pass through the README list is effectively done.
 
 `review-branch` — not previously named in "Deferred" above, but it belongs there: it's the
 actual owner of the three-agent unconditional spawn (`runtime-integrity-reviewer` +
