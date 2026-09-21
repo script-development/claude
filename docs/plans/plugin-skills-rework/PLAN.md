@@ -78,9 +78,19 @@ picked apart skill-by-skill. Revisit as its own pass.
   does. No `Agent()` spawns, no invocation of another skill — `claude-md-improver` is only
   mentioned conditionally ("if one is installed"), never called.
 
+- **`newbranch`** — needed a **new field**, `issue_tracker_project_id` (D14): the tracker
+  project id (`{{PROJECT_ID}}` in the placeholder catalog) that scopes tracker calls, distinct
+  from `issue_tracker_skill` (which names *which* tracker). Also generalized: the original
+  hardcoded Kendo's MCP tool names unconditionally; the converted version fully delegates
+  tracker mechanics to whatever skill `issue_tracker_skill` resolves to (default `kendo-mcp`,
+  documented inline since it's the only tracker this catalog actually implements), same
+  abstraction boundary `catchup` already established, plus a `none`/unresolved path that skips
+  issue linking and just asks for a branch slug (D14).
+
 ### Up next
 
-`newbranch` — next in README's Generic Skills order with no unconverted hard dependency.
+`next` — next in README's Generic Skills order with no unconverted hard dependency
+(`task-writer`, `wireframe` after that — `worktree` and `build-it` are already done).
 
 ### Out (open questions — not resolved yet)
 

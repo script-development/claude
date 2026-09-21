@@ -235,3 +235,39 @@ convention Step 2 detects, falling back to conventional commits only when there'
 existing pattern. Verified against this repo's own history (free-form subjects, no type
 prefix) that conventional commits is not a safe universal default the way `kendo-mcp` is for
 issue tracking (D8) — it's a per-project convention the skill should detect, not assume.
+
+## D14 — `newbranch` gets a new field, `issue_tracker_project_id`, and fully delegates tracker
+mechanics instead of keeping Kendo's tool names hardcoded
+
+**Chosen.** Added `issue_tracker_project_id` under the existing "Issue tracking" section
+(alongside `issue_tracker_skill`) — the tracker-scoped project id the original skill hardcoded
+as `{{PROJECT_ID}}`. Also rewrote the workflow to describe *what* Step 2 (find/create issue) and
+Step 4 (start work) need to accomplish, delegating *how* to whichever skill
+`issue_tracker_skill` resolves to, the same abstraction `catchup` already uses — rather than
+assuming every project's tracker exposes Kendo's exact tool names
+(`prepare-project-context-tool`, `start-work-on-issue-tool`, ...). The default path
+(`kendo-mcp`) still documents those concrete calls inline, since it's the only tracker this
+catalog actually implements and `kendo-mcp`'s own `SKILL.md` already owns that documentation —
+this isn't new information, just not duplicated as the *only* path.
+
+**Why.** `issue_tracker_project_id` is a genuine new fact distinct from `issue_tracker_skill`
+(which tracker) — Kendo (and the catalog's other Kendo-shaped skills: `board-sync`,
+`prepare-issue`, `kendo-cli`, `triage-reports`, `plan-feature`, `task-writer`, `lint-issues`,
+`pr`, `review-mcp-descriptions`) all separately hardcode `{{PROJECT_ID}}` today, confirming
+it's a real per-project constant, not something to rederive at runtime each session.
+Full delegation matches D8's own premise: `issue_tracker_skill` already models "the tracker is
+pluggable, kendo-mcp is just this org's default" — a converted skill that then hardcodes one
+tracker's tool names contradicts that pluggability the moment a project sets a different value,
+or `none`.
+
+**Rejected.** Keeping the original skill's unconditional `mcp__kendo__*` tool calls and adding
+only the new field — rejected because `issue_tracker_skill: none` or a different tracker name
+would then have no defined behavior; the field would exist but do nothing. Making the generic
+path fully abstract with no concrete example at all — rejected because `kendo-mcp` is the only
+tracker this catalog implements, so leaving the default path undocumented would make the skill
+useless out of the box for the common case.
+
+**Scope note.** `issue_tracker_project_id` is added to the shared template, not scoped only to
+`newbranch` — a future conversion of a Kendo-shaped skill (`board-sync`, `prepare-issue`, etc.,
+currently out of `core-skills`' scope, listed under README's Kendo PM Skills) can reuse it
+without inventing its own field, per the reuse-before-add workflow.

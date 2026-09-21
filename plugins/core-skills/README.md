@@ -27,6 +27,7 @@ to `.claude/project-context.md` in the project and fill in only the fields that 
 | [commit](skills/commit/) | Small, focused commits matching this project's own message convention, + push |
 | [grill-me](skills/grill-me/) | Interview the developer through AskUserQuestion before any code is written; ends with docs-or-not and build-or-stop |
 | [memory-hygiene](skills/memory-hygiene/) | Audit the project memory store for stale, codified, duplicate entries; dry-run proposal, then sync worktree memory stores |
+| [newbranch](skills/newbranch/) | Create a new branch from this project's integration branch; if an issue tracker is configured, resolve/create the issue and start work on it |
 
 ## Design record
 

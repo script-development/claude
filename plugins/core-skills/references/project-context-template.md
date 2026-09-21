@@ -14,11 +14,15 @@
 # has a starter template. Canonical source is templates/project-context-template.md
 # in the claude-2 catalog repo — keep the two in sync when either changes.
 
-# --- Issue tracking (used by: catchup) ---
+# --- Issue tracking (used by: catchup, newbranch) ---
 issue_tracker_skill:   # The skill/command that fetches issue details. Defaults to kendo-mcp
                        # (this org's in-house tracker) when unset. Set to a different skill
                        # name if this project uses a different tracker, or to `none` if it
                        # genuinely has no issue-tracker integration.
+issue_tracker_project_id: # This project's id within that tracker (e.g. Kendo's numeric
+                       # project_id) — only needed when the resolved tracker scopes calls by
+                       # project id. Leave unset if the tracker has no such concept, or if
+                       # issue_tracker_skill is `none`. Used by: newbranch.
 
 # --- Plans (used by: catchup) ---
 plan_dir:              # e.g. docs/plans/{issue_key}/ — override for this project's plan
@@ -54,6 +58,10 @@ means "use the generic fallback" — never a hard failure.
   default within it even though there's no universal one across orgs — as long as that
   skill is actually installed in the project; otherwise (or if a different tracker is in
   use) set this field explicitly, or to `none` to opt out of tracker integration entirely.
+- `issue_tracker_project_id` is this project's id within that tracker (e.g. Kendo's numeric
+  `project_id`), for a skill whose calls need to be scoped to one project on a shared
+  tenant. Leave unset if the tracker has no such concept, or if there's no tracker
+  integration at all.
 
 ## Plans
 
