@@ -52,9 +52,24 @@ field/section before adding a new one, add a new one only on demand, commit per 
   type list regardless of what that showed; now it actually matches the detected convention,
   falling back to conventional commits only when there's no clear pattern (D13).
 
+### Deferred — agent/reviewer dependency chain
+
+Skipped for now, not converted: `fix-bug`, `pr`, `plan-feature`, `implement-plan`. All four
+unconditionally invoke something outside a plain skill-to-skill call — `fix-bug` runs `/pr`
+and spawns the `bug-fix-verifier` agent; `pr` and `implement-plan` gate on `/review-branch`,
+which itself spawns `runtime-integrity-reviewer` + `precedent-reviewer` (+
+`docs-accuracy-reviewer` when triggered); `plan-feature` spawns `plan-reviewer` +
+`surface-reviewer` directly. Converting any one of them properly means first working out
+whether plugins bundle agents the same way they bundle skills (confirmed: yes — `agents/` at
+the plugin root, auto-discovered, no manifest entry needed) and then auditing the whole
+`review-branch` + its three agents as a cluster, since `pr` and `implement-plan` both sit on
+top of it. That's a bigger unit of work than one skill at a time, so it's set aside rather than
+picked apart skill-by-skill. Revisit as its own pass.
+
 ### Up next
 
-`fix-bug` — next in README's Generic Skills order with no unconverted hard dependency.
+`grill-me` — next in README's Generic Skills order with no hard dependency (checked: no
+`Agent()` calls, no invocation of another skill).
 
 ### Out (open questions — not resolved yet)
 
