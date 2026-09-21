@@ -557,3 +557,36 @@ hardcoded a stale `Co-Authored-By: Claude <noreply@anthropic.com>` commit traile
 the same `<attribution trailer, exactly as the harness injects it for this session>` placeholder
 `commit` already uses, rather than shipping a plugin skill that bakes in one session's
 attribution convention as if it were universal.
+
+## D23 — `review-mcp-descriptions` needed zero changes; corrects D14's `{{PROJECT_ID}}` claim
+
+**Chosen.** Shipped `review-mcp-descriptions` byte-identical into `plugins/core-skills/`, no new
+`project-context.md` field, no rewrite. The skill's "Procedure" step 1 already says to *find* the
+MCP server definition file(s) by searching the host codebase — it was never written against
+Kendo's specific server layout, only ever assumed to be, based on D14's own parenthetical. Read
+the full file for this conversion (not just grepped for the usual dependency shapes) precisely
+because the user raised, unprompted, that this org's MCP tool definitions live inside the Kendo
+repo rather than this catalog — a reasonable expectation that turned out not to match this
+skill's actual content.
+
+**Why.** D14 (the `newbranch` conversion) listed `review-mcp-descriptions` among "the catalog's
+other Kendo-shaped skills" that hardcode `{{PROJECT_ID}}`, in a parenthetical aside supporting a
+different, correct point about `newbranch` itself — that parenthetical was never independently
+verified against each named skill's actual file. It doesn't hold here: grepping the full file for
+`kendo`, `{{[A-Z_]+}}`, and `project_id` turns up only two `project_id` occurrences, both inside
+"BEFORE (bad)" example snippets illustrating parameter-doc boilerplate to remove — illustrative
+text, not a functional assumption about which tracker or project the skill runs against. `git
+log` on the file shows no history of Kendo-specific content being stripped out either; the
+parenthetical appears to have simply been wrong when written, not stale.
+
+**Rejected.** Taking D14's claim on faith and pre-emptively adding a `project_id`-shaped field or
+rewriting example snippets that were never actually project-specific — rejected because it would
+add unused template surface for a problem this skill doesn't have, the exact anti-pattern Step 3
+of the conversion workflow (grow the template on demand, never speculatively) exists to prevent.
+
+**Consequence.** D14's parenthetical is now known-inaccurate for this one skill; the other six
+names in that list (`board-sync`, `prepare-issue`, `kendo-cli`, `triage-reports`, `plan-feature`,
+`lint-issues`, `pr` — `task-writer` was separately verified during its own conversion) remain
+unverified claims until each is actually converted or otherwise checked, not confirmed facts.
+Don't cite D14's list as evidence a given skill needs a specific fix without opening that skill's
+own file first.

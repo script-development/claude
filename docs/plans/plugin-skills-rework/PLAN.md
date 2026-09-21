@@ -171,14 +171,24 @@ sentence.
   `commit` already established, rather than baking in a stale, session-specific line the skill
   has no business fixing to one value. No `{{PLACEHOLDER}}` tokens, no hard dependency.
 
+- **`review-mcp-descriptions`** — needed **zero changes**, the third confirmed instance of the
+  `grill-me`/`memory-hygiene` shape: it finds its target files generically ("search for server
+  registration, tool classes, and resource classes in the codebase"), same as `memory-hygiene`
+  operates on platform-level conventions rather than a business-domain project. Checked
+  specifically because this org's MCP tool definitions live inside the Kendo repo, not this
+  catalog — but the skill was already written to review *whatever* MCP server the host codebase
+  defines, not Kendo's specifically. The `project_id` strings inside it are illustrative text in
+  "before/after" example snippets (what a *bad* tool description looks like), not real
+  hardcoding. **Corrects D14**, which listed this skill among "the catalog's other Kendo-shaped
+  skills" that hardcode `{{PROJECT_ID}}` — that claim doesn't hold against the file's actual
+  content; D14's parenthetical was checked here for the first time rather than re-derived from
+  memory, and it doesn't survive the check (D23).
+
 ### Up next
 
-Two Generic Skills remain unconverted and untouched by this rework so far:
-`review-mcp-descriptions`, `sync-worktrees`. A quick dependency grep (`Agent(`,
-`subagent_type`, `spawn`) turned up nothing in either — no known hard dependency, so either is a
-valid next pick, pending the same full check (Step 1 of the conversion workflow) this rework has
-applied to every skill so far. `babysit` stays explicitly skipped (superseded by `shepard`, now
-converted).
+One Generic Skill remains unconverted and untouched by this rework so far: `sync-worktrees`,
+pending the same full check (Step 1 of the conversion workflow) this rework has applied to every
+skill so far. `babysit` stays explicitly skipped (superseded by `shepard`, now converted).
 
 **Directory fields may deserve a regrouping pass.** `plan_dir`, `research_dir`, and `retro_dir`
 are now three sibling single-scalar directory overrides in three separate top-level sections,

@@ -39,6 +39,7 @@ back to, not re-explain the degrade-not-fail contract itself.
 | [next](skills/next/) | Continue through TASKS.md — find next task, execute with TDD flow, mark done |
 | [research](skills/research/) | Run a research query, produce a structured markdown report, and file it so knowledge accumulates |
 | [retro](skills/retro/) | Write a numbered retrospective capturing what went wrong, why, and what changed |
+| [review-mcp-descriptions](skills/review-mcp-descriptions/) | Improve MCP tool/resource descriptions for Tool Search discoverability |
 | [shepard](skills/shepard/) | Drive one PR to green and answered: fix red CI, dispose every review finding, push once per cycle, arm a live watch |
 | [task-writer](skills/task-writer/) | Break down an approved PLAN.md into phased TASKS.md with a self-administered coverage checklist |
 | [wireframe](skills/wireframe/) | Generate WIREFRAMES.md (ASCII layouts, design tokens, interaction specs) from PLAN.md; self-gated by the bundled wireframe-reviewer agent |
