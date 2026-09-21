@@ -2082,6 +2082,68 @@ green except the one pre-existing, unrelated `tests/gate.sh` AAA-label failure o
 `hooks/handoff-fork-write.test.sh` (confirmed via `git stash` before this session's edits; tracked
 for the release after v1.0.0).
 
+### D28 — The detached turn's own transcript, found by a pinned `--session-id` rather than reconstructed, gives the read leg a liveness signal `progress:` alone cannot: "still working" apart from "dead", past the nominal timeout
+
+Decided 2026-09-21, following up on the v1.0.0 cut being deferred to first investigate whether
+`hooks/handoff-fork-write.sh`'s detached spawn could move from `claude -p` to `claude --bg` for
+`claude attach` support. Measured directly (`docs/measured.md` Finding #35): `--bg` and `-p` are
+mutually exclusive by explicit CLI design (`--print` never starts the attachable session `--bg`
+does), so that migration does not happen. But the investigation surfaced the actual mechanism this
+decision uses instead: `--session-id <uuid>`, confirmed to pin a `-p` run's transcript filename to
+an exact, chosen value, and every session — `-p` included — already gets a real transcript JSONL by
+default (Finding #35's own follow-up), written incrementally as the turn progresses, not only at
+completion (Finding #36).
+
+**What this fixes.** `hooks/handoff-fork-write.sh`'s own header already named the open problem:
+`--output-format json` is silent until the turn ends, so a genuinely slow run and a dead one look
+identical from outside, and the read leg's `progress: writing` placeholder (D23) can only judge
+elapsed wall time against `CTX_FORK_TIMEOUT_SECONDS` — its own mtime never moves again once
+written, so it cannot tell "still working" from "died" once that budget is exceeded. A `-p` run's
+own `session_id` would answer this, but it is withheld until the run finishes — exactly when it
+stops being useful for this purpose.
+
+**The fix: generate the id ourselves, before spawning, and record it on the skeleton.**
+`hooks/handoff-fork-write.sh` now generates a session id synchronously (`uuidgen`, falling back to
+an `openssl rand -hex`-derived id in the same 8-4-4-4-12 shape when `uuidgen` is absent — confirmed
+NOT installed on this machine, Windows/Git-Bash, so this is a real fallback path, not a defensive
+one; also confirmed the CLI accepts the openssl-derived shape just as readily, since it only
+validates the general hex-with-hyphens pattern, not RFC4122 version/variant nibbles), passes it as
+`--session-id` to the detached turn, and records it on the D23 skeleton as a new `write_session:`
+header field (`lib/handoff-store.sh`'s `handoff_store_write_skeleton`, now taking an optional 4th
+argument). Empty when neither tool exists — the write still proceeds with an auto-generated,
+unknown id; only the liveness feature this enables is unavailable for that run, never the write
+itself.
+
+**Finding the transcript by exact filename, not by reconstructing Claude Code's own naming
+scheme.** `~/.claude/projects/<cwd-slug>/<session-id>.jsonl` is where it lives, but that slug's
+encoding is unpublished, and measured directly to disagree with what this bundle's own hooks
+already compute for the identical checkout: `git rev-parse --show-toplevel` returns
+`C:/Users/...` (forward slashes) on this machine, while the real project directory is
+`C--Users-...` (colon AND backslash both mapped to `-`) — Finding #36. `lib/handoff-store.sh`'s
+new `handoff_store_find_transcript` sidesteps this by searching two levels under the projects root
+for the exact known filename instead, which cannot collide regardless of which directory Claude
+Code decided to file it under.
+
+**How the read leg uses it — extends, never overrides, `progress:`.** `progress:` stays the only
+CORRECTNESS signal (D23); this is a LIVENESS signal layered on top, consulted only once the nominal
+`CTX_FORK_TIMEOUT_SECONDS` budget is already exceeded. If the transcript has been touched within a
+new, deliberately short `CTX_FORK_LIVENESS_WINDOW_SECONDS` (90s default), the write is still
+classified `writing_active` (worded as running past its nominal budget rather than freshly started)
+instead of `writing_abandoned` — and either way, the transcript path is now surfaced to the reader,
+so a human or the resumed agent itself can inspect exactly what the writer is doing rather than
+guessing. The printed poll-loop snippet the agent is told to run gets the same extension inline,
+so a run that is genuinely just slow is not prematurely declared dead by an agent executing that
+loop itself. A `write_session:` naming no resolvable transcript (no id was generated, or the file
+does not exist yet) degrades to exactly the pre-D28 behaviour.
+
+**What changed:** `lib/handoff-store.sh` (`handoff_store_write_skeleton`'s new optional 4th
+argument; new `handoff_store_find_transcript`), `hooks/handoff-fork-write.sh` (id generation and
+`--session-id` threading, plus a new header comment section), `hooks/handoff-inject.sh` (the
+liveness reclassification and the extended poll-loop snippet), `lib/context-economy/
+context-thresholds.sh` (`CTX_FORK_LIVENESS_WINDOW_SECONDS`, 90s default). Tests added to all three
+suites (`lib/handoff-store.test.sh`, `hooks/handoff-fork-write.test.sh`,
+`hooks/handoff-inject.test.sh`), all green alongside the full pre-existing suites.
+
 ---
 
 1. ~~`verify-citations` generalisation~~ — **done**, 2026-08-21. `tools/verify-citations.sh` +

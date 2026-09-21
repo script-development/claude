@@ -232,6 +232,39 @@ for label_pattern in '### Decisions' '### Dead ends' '### Traps' '## Next' '## P
     esac
 done
 
+# --- D28 — the optional write_session field, and finding its transcript ----
+
+# Act — the 4th arg is optional; omitted, exactly as every call before D28 already did.
+handoff_store_write_skeleton "$skel" /c/checkouts/target feature/x
+# Assert
+case "$(cat "$skel")" in
+    *'write_session:'*) fail 'write_session: is absent when no id was given' 'field present anyway' ;;
+    *) pass 'write_session: is absent when no id was given' ;;
+esac
+
+# Act — the 4th arg present.
+handoff_store_write_skeleton "$skel" /c/checkouts/target feature/x abcd-1234
+# Assert
+assert_eq 'the skeleton carries write_session: when given one' 'abcd-1234' \
+    "$(handoff_store_field "$skel" write_session)"
+
+# handoff_store_find_transcript — searches by exact filename, never by reconstructing Claude
+# Code's own (unpublished, and on this machine confirmed DIFFERENT) project-slug scheme.
+sid="11111111-2222-3333-4444-555555555555"
+projects="$fixture/home-projects/.claude/projects"
+mkdir -p "$projects/some-unrelated-slug"
+printf '{"type":"user"}\n' > "$projects/some-unrelated-slug/$sid.jsonl"
+
+assert_eq 'find_transcript locates a transcript by exact session id, regardless of its slug directory' \
+    "$projects/some-unrelated-slug/$sid.jsonl" \
+    "$(HOME="$fixture/home-projects" handoff_store_find_transcript "$sid")"
+assert_eq 'find_transcript returns empty for an unknown session id' '' \
+    "$(HOME="$fixture/home-projects" handoff_store_find_transcript "no-such-session")"
+assert_eq 'find_transcript returns empty for an empty session id' '' \
+    "$(HOME="$fixture/home-projects" handoff_store_find_transcript '')"
+assert_eq 'find_transcript returns empty when HOME has no projects directory at all' '' \
+    "$(HOME="$fixture/no-such-home" handoff_store_find_transcript "$sid")"
+
 # handoff_store_set_progress — replacing an existing field
 f=$(put /c/checkouts/emmie EMMIE-0900 EMMIE-0900 /c/worktrees/emmie-900)
 printf 'progress: complete\n' >> "$f"

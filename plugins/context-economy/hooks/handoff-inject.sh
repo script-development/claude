@@ -176,15 +176,25 @@ fi
 #
 # `writing_since` carries the raw epoch rather than a phrase — `human_gap()` is not defined yet at
 # this point in the script, and compose() (which is) already has everything it needs to render it.
+#
+# `writing_session`/`writing_transcript` are D28's liveness signal, resolved here (once) rather
+# than at each use below: `write_session:` is only ever present on a `writing` placeholder (the
+# real, finished document never carries it — see `lib/handoff-store.sh`'s own comment on why), so
+# this is the one place in the script that already knows it is looking at one.
 handoff_progress=""
 writing_active=false
 writing_abandoned=false
 writing_since=""
+writing_session=""
+writing_transcript=""
+writing_slow=false
 if [ "$handoff_present" = true ] && [ -r "$hook_dir/../lib/handoff-store.sh" ]; then
     handoff_progress=$(handoff_store_field "$handoff" progress)
     if [ "$handoff_progress" = writing ]; then
         handoff_present=false   # never gate or inject a placeholder's own (deliberately empty) body
         writing_since=$(handoff_store_mtime "$handoff" 2>/dev/null)
+        writing_session=$(handoff_store_field "$handoff" write_session)
+        [ -n "$writing_session" ] && writing_transcript=$(handoff_store_find_transcript "$writing_session")
         case "${writing_since:-}" in
             ''|*[!0-9]*)
                 # An unreadable mtime cannot support an age judgement either way — same "an
@@ -196,7 +206,26 @@ if [ "$handoff_present" = true ] && [ -r "$hook_dir/../lib/handoff-store.sh" ]; 
                 if [ $(( $(date +%s) - writing_since )) -le "${CTX_FORK_TIMEOUT_SECONDS:-600}" ]; then
                     writing_active=true
                 else
-                    writing_abandoned=true
+                    # Past the nominal budget on the SKELETON's own mtime — which never moves again
+                    # after it is written, so on its own this cannot distinguish "still working,
+                    # just slower than the budget assumed" from "died". The transcript's own mtime
+                    # can, when a session id was pinned to find it (D28): still advancing inside
+                    # CTX_FORK_LIVENESS_WINDOW_SECONDS is real, independent evidence of life: the
+                    # write leg's own `--allowedTools` restricts it to Bash and Write, so nothing
+                    # else on the machine touches this exact file.
+                    transcript_mtime=""
+                    [ -n "$writing_transcript" ] && transcript_mtime=$(handoff_store_mtime "$writing_transcript" 2>/dev/null)
+                    case "${transcript_mtime:-}" in
+                        ''|*[!0-9]*) writing_abandoned=true ;;
+                        *)
+                            if [ $(( $(date +%s) - transcript_mtime )) -le "${CTX_FORK_LIVENESS_WINDOW_SECONDS:-90}" ]; then
+                                writing_active=true
+                                writing_slow=true
+                            else
+                                writing_abandoned=true
+                            fi
+                            ;;
+                    esac
                 fi
                 ;;
         esac
@@ -479,17 +508,35 @@ compose() {
             # reach 0/negative (guaranteed >0 here since writing_active already required elapsed
             # <= CTX_FORK_TIMEOUT_SECONDS above, but a 1-2s window is not a usable poll bound for a
             # model to act on) -- the cost of the floor is waiting a few seconds past the real
-            # deadline in the rare case it is hit, never less.
-            remaining="${CTX_FORK_TIMEOUT_SECONDS:-600}"
-            if [ -n "$writing_since" ]; then
-                remaining=$(( ${CTX_FORK_TIMEOUT_SECONDS:-600} - ( $(date +%s) - writing_since ) ))
-                [ "$remaining" -lt 10 ] && remaining=10
+            # deadline in the rare case it is hit, never less. `writing_slow` is already PAST that
+            # nominal budget (only kept `writing_active` by the transcript's own liveness, D28), so
+            # its own poll bound is the shorter liveness window instead -- re-granting the full
+            # nominal budget on top of a budget already spent would make a slow-but-alive run wait
+            # far longer than a fresh one ever would for the same signal.
+            if [ "$writing_slow" = true ]; then
+                remaining="${CTX_FORK_LIVENESS_WINDOW_SECONDS:-90}"
+            else
+                remaining="${CTX_FORK_TIMEOUT_SECONDS:-600}"
+                if [ -n "$writing_since" ]; then
+                    remaining=$(( ${CTX_FORK_TIMEOUT_SECONDS:-600} - ( $(date +%s) - writing_since ) ))
+                    [ "$remaining" -lt 10 ] && remaining=10
+                fi
             fi
             printf -- '## A fresh handoff is being authored — wait for it before doing anything else\n\n'
             printf 'A handoff for `%s` in `%s` is being written right now — started %s, not yet\n' \
                 "$ref" "$here" "$since_phrase"
             printf 'finished. Continuing with other work before it lands risks re-deriving exactly\n'
             printf 'what it exists to preserve, so wait for it rather than starting anything else.\n\n'
+            if [ "$writing_slow" = true ]; then
+                printf 'This has already run past its nominal budget (`CTX_FORK_TIMEOUT_SECONDS`), but its\n'
+                printf 'transcript is still being written to as of this check — genuine evidence it is\n'
+                printf 'still working, not dead, just slower than usual (a large or messy session can\n'
+                printf 'take longer to read). Treated as still active on that basis.\n\n'
+            fi
+            if [ -n "$writing_transcript" ]; then
+                printf -- '**Its transcript, if you want to check on it directly** (what it is doing right\n'
+                printf 'now — tail the last few lines for its most recent tool call): `%s`\n\n' "$writing_transcript"
+            fi
             printf 'Run this now, as your first tool call, with the Bash tool'"'"'s own `timeout`\n'
             printf 'parameter set to at least %s000ms (it must cover the wait below, not just the\n' "$remaining"
             printf 'command'"'"'s own overhead):\n\n'
@@ -498,7 +545,24 @@ compose() {
 until grep -qm1 "^progress: complete" "$handoff" 2>/dev/null; do
   m=\$(stat -c %Y "$handoff" 2>/dev/null || stat -f %m "$handoff" 2>/dev/null)
   [ -z "\$m" ] && break
-  [ \$(( \$(date +%s) - m )) -ge $remaining ] && break
+  if [ \$(( \$(date +%s) - m )) -ge $remaining ]; then
+SNIPPET
+            if [ -n "$writing_transcript" ]; then
+                cat <<SNIPPET
+    # Nominal budget elapsed on the skeleton's own (frozen) mtime -- but that alone cannot tell
+    # "slow" from "dead" (D28). Check the writer's own transcript before giving up: still
+    # advancing recently is real evidence it is alive, just slower than usual.
+    tm=\$(stat -c %Y "$writing_transcript" 2>/dev/null || stat -f %m "$writing_transcript" 2>/dev/null)
+    [ -z "\$tm" ] && break
+    [ \$(( \$(date +%s) - tm )) -ge ${CTX_FORK_LIVENESS_WINDOW_SECONDS:-90} ] && break
+SNIPPET
+            else
+                cat <<SNIPPET
+    break
+SNIPPET
+            fi
+            cat <<SNIPPET
+  fi
   sleep 10
 done
 grep -m1 "^progress:" "$handoff"
@@ -514,10 +578,16 @@ SNIPPET
             printf -- '## A handoff write appears to have failed\n\n'
             printf 'A handoff for `%s` in `%s` started being written %s and never completed — past\n' \
                 "$ref" "$here" "$since_phrase"
-            printf 'the %ss it should have taken (`CTX_FORK_TIMEOUT_SECONDS`). Treat it as abandoned:\n' \
+            printf 'the %ss it should have taken (`CTX_FORK_TIMEOUT_SECONDS`)' \
                 "${CTX_FORK_TIMEOUT_SECONDS:-600}"
-            printf 'there is no fresh handoff to read for this branch. Run `/handoff` yourself if you\n'
-            printf 'need one.\n\n'
+            if [ -n "$writing_transcript" ]; then
+                printf ', and its transcript has\nbeen quiet for at least %ss too (`CTX_FORK_LIVENESS_WINDOW_SECONDS`) — not just slow,\ngenuinely idle. Its last activity is at `%s` if you want to see what it was doing when\nit stopped.\n' \
+                    "${CTX_FORK_LIVENESS_WINDOW_SECONDS:-90}" "$writing_transcript"
+            else
+                printf '.\n'
+            fi
+            printf 'Treat it as abandoned: there is no fresh handoff to read for this branch. Run\n'
+            printf '`/handoff` yourself if you need one.\n\n'
         fi
         printf -- '---\n\n'
     fi

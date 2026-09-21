@@ -113,6 +113,30 @@ handoff_store_mtime() {
     stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null
 }
 
+# handoff_store_find_transcript <session-id> [-> path, or empty]
+#
+# Locates a `--session-id`-pinned run's own transcript (D28) WITHOUT reconstructing Claude Code's
+# own `~/.claude/projects/<cwd-slug>/` naming scheme -- deliberately. That encoding is an
+# unpublished internal detail, and measured directly to disagree with what this bundle's own hooks
+# compute for the same checkout: `git rev-parse --show-toplevel` returns `C:/Users/...` (forward
+# slashes) on this machine, while the real project directory for that identical checkout is
+# `C--Users-...` (colon and BACKSLASH both mapped to `-`) -- see `docs/measured.md` Finding #36.
+# Reconstructing that mapping here would be a second, unversioned copy of a detail this bundle does
+# not own, liable to silently drift the moment the real implementation changes it.
+#
+# A pinned session id sidesteps the whole problem: the filename itself is the exact, unambiguous
+# key, so a two-level search under the projects root cannot collide with an unrelated session
+# regardless of which directory Claude Code decided to file it under. Empty on failure -- no
+# `$HOME`, no projects directory yet, or the file has not been created (the run just started) --
+# and a caller degrades to "no liveness signal available", never to a fabricated path.
+handoff_store_find_transcript() {
+    local session_id=$1 root
+    [ -n "$session_id" ] || return 0
+    root="${HOME:-}/.claude/projects"
+    [ -d "$root" ] || return 0
+    find "$root" -maxdepth 2 -name "$session_id.jsonl" 2>/dev/null | head -1
+}
+
 # handoff_store_name <target-main-worktree> <branch-slug>
 # The canonical filename for one target. Empty on failure, never a partial name -- a name
 # missing its hash would collide with a different repository of the same basename.
@@ -141,7 +165,7 @@ handoff_store_field() {
         | grep -m1 -E "^$2:" | sed -E "s/^$2:[[:space:]]*//" | sed -E 's/[[:space:]]+$//'
 }
 
-# handoff_store_write_skeleton <path> <checkout> <branch>
+# handoff_store_write_skeleton <path> <checkout> <branch> [write-session-id]
 #
 # The WRITE leg's half of D23's compaction-race fix (docs/design.md): overwrites <path> with a
 # bare, mostly-empty document whose only load-bearing content is `progress: writing`. Called
@@ -158,8 +182,15 @@ handoff_store_field() {
 # on purpose -- the read leg checks `progress:` before ever reaching the gate -- but a skeleton
 # that would fail its own document's contract if someone opened `verify-handoff.sh` against it by
 # hand is a worse failure mode than the few extra lines cost to avoid it.
+#
+# `write-session-id` (D28, docs/design.md) is optional and omitted from the header entirely when
+# empty -- the caller could not generate one (no `uuidgen`, no `openssl`), and an empty
+# `write_session:` line would read as a real, empty answer rather than "not available". When
+# present, it is the `--session-id` the detached authoring turn was launched with, letting a reader
+# (or the read leg itself, past the nominal timeout) find that turn's own transcript by exact
+# filename instead of guessing -- see `handoff_store_find_transcript` below.
 handoff_store_write_skeleton() {
-    local path=$1 checkout=$2 branch=$3 tmp
+    local path=$1 checkout=$2 branch=$3 write_session=${4:-} tmp
     tmp="$path.tmp.$$"
     {
         printf '# Handoff — (placeholder: a fresh write is in progress)\n'
@@ -167,6 +198,7 @@ handoff_store_write_skeleton() {
         printf 'checkout: %s\n' "$checkout"
         printf 'status: placeholder -- not yet authored\n'
         printf 'progress: writing\n'
+        [ -n "$write_session" ] && printf 'write_session: %s\n' "$write_session"
         cat <<BODY
 
 ## Do not re-derive

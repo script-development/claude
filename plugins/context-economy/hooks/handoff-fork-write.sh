@@ -83,6 +83,25 @@
 # reason (killing a spawned tree from Node) and worked around it with `taskkill /PID ... /T /F`
 # instead of relying on a plain kill signal; that fix was not ported here. Until it is,
 # CTX_FORK_TIMEOUT_SECONDS is best read as "when this SHOULD stop," not "when it WILL."
+#
+# ── D28: `--session-id`, ANSWERING "DIAGNOSING A SLOW RUN NEEDS stream-json" DIFFERENTLY ──────
+#
+# The paragraph above already named the problem this closes: `--output-format json` is silent
+# until the turn ends, so a genuinely slow (not hung) run is indistinguishable from a dead one from
+# the outside. Switching this hook's OWN output format to `stream-json` would fix that for THIS
+# process's stdout, but this process is `nohup`'d and disowned before that stream would ever be
+# read live -- there is nobody watching `$out_file` while it grows. What a reader (human or the
+# read leg's own poll loop, `hooks/handoff-inject.sh`) CAN watch live is the detached turn's own
+# transcript, which Claude Code writes incrementally regardless of `--output-format` (confirmed
+# directly, `docs/measured.md` Finding #36) -- but only if its filename is known ahead of time,
+# since `--output-format json`'s own `session_id` field is itself withheld until the run ends.
+#
+# `--session-id <uuid>`, generated here and passed below, makes that filename a KNOWN value instead
+# of something only the finished run's own stdout reveals. This does not replace `progress:`
+# polling (`docs/design.md` D23) -- that field is still the only CORRECTNESS signal, the one that
+# says the document actually landed and passed the gate. This is a LIVENESS signal only: whether
+# the transcript is still advancing tells a reader "still working, just slow" apart from "dead",
+# which elapsed wall time alone cannot.
 
 set -uo pipefail
 
@@ -173,9 +192,29 @@ ref=$(git -C "$cwd" rev-parse --abbrev-ref HEAD 2>/dev/null)
 [ -n "$main" ] && [ -n "$here" ] && [ -n "$ref" ] || exit 0
 slug=$(printf '%s' "$ref" | tr '/' '-')
 
+# ── D28: pin the detached turn's own session id, so its transcript can be found by exact name ──
+#
+# `--session-id <uuid>` (confirmed accepted by the CLI, `docs/measured.md` Finding #36) makes the
+# spawned turn's transcript filename a KNOWN value instead of something only the finished run's own
+# stdout reveals. `uuidgen` first (present on Linux/macOS); `openssl rand -hex` reformatted into the
+# same 8-4-4-4-12 hyphenated shape otherwise -- confirmed accepted too, and NOT a lesser substitute
+# for this purpose: the CLI only validates the general hex shape, not RFC4122 version/variant
+# nibbles, so a plain random-hex id serves exactly as well as a "real" v4 UUID here. `uuidgen`
+# itself is NOT installed on this machine (Windows/Git-Bash) -- confirmed directly -- which is
+# exactly why this is a fallback chain and not a hard dependency. Empty when NEITHER exists: the
+# write still proceeds with an auto-generated (unknown) session id, degrading only the liveness
+# feature this id enables, never the write itself.
+write_session_id=""
+if command -v uuidgen >/dev/null 2>&1; then
+    write_session_id=$(uuidgen 2>/dev/null)
+elif command -v openssl >/dev/null 2>&1; then
+    write_session_id=$(openssl rand -hex 16 2>/dev/null \
+        | sed -E 's/(.{8})(.{4})(.{4})(.{4})(.{12})/\1-\2-\3-\4-\5/')
+fi
+
 skeleton_path=$(handoff_store_path "$main" "$slug" 2>/dev/null) || exit 0
 mkdir -p "$(handoff_store_dir)" 2>/dev/null || exit 0
-handoff_store_write_skeleton "$skeleton_path" "$here" "$ref"
+handoff_store_write_skeleton "$skeleton_path" "$here" "$ref" "$write_session_id"
 
 # Same three-way probe as SKILL.md's own Step 1, now for the gate and skill -- needed only for
 # the detached turn's own prompt below, not for the skeleton just written. Kept in sync with
@@ -210,6 +249,8 @@ allowed_tools=${CTX_FORK_ALLOWED_TOOLS:-"Bash Write"}
 timeout_s=${CTX_FORK_TIMEOUT_SECONDS:-600}
 model_args=""
 [ -n "${CTX_FORK_AUTHOR_MODEL:-}" ] && model_args="--model ${CTX_FORK_AUTHOR_MODEL}"
+session_id_args=""
+[ -n "$write_session_id" ] && session_id_args="--session-id ${write_session_id}"
 
 cat > "$prompt_file" <<PROMPT
 You are authoring a context handoff for a session you were not part of. A documented skill
@@ -254,11 +295,11 @@ async_script="$scratch/run.sh"
 cat > "$async_script" <<RUNNER
 #!/usr/bin/env bash
 ${HANDOFF_STORE_DIR:+export HANDOFF_STORE_DIR="${HANDOFF_STORE_DIR}"}
-timeout ${timeout_s} "${claude_bin}" -p --output-format json ${model_args} --allowedTools "${allowed_tools}" --strict-mcp-config < "${prompt_file}" > "${out_file}" 2> "${err_file}"
+timeout ${timeout_s} "${claude_bin}" -p --output-format json ${model_args} ${session_id_args} --allowedTools "${allowed_tools}" --strict-mcp-config < "${prompt_file}" > "${out_file}" 2> "${err_file}"
 rc=\$?
 log_dir="\$HOME/.claude/state/handoff-fork"
 mkdir -p "\$log_dir" 2>/dev/null
-printf '%s session=%s rc=%s scratch=%s\n' "\$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${session_id}" "\$rc" "${scratch}" >> "\$log_dir/log.txt" 2>/dev/null
+printf '%s session=%s write_session=%s rc=%s scratch=%s\n' "\$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${session_id}" "${write_session_id:-none}" "\$rc" "${scratch}" >> "\$log_dir/log.txt" 2>/dev/null
 RUNNER
 
 nohup bash "$async_script" >/dev/null 2>&1 &

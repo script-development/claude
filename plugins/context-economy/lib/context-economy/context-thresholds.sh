@@ -138,3 +138,15 @@ CTX_HANDOFF_ACCEPTABLE_GAP_TOKENS=10350
 # treats crossing this threshold as "likely abandoned", a probabilistic judgement call for a
 # reader to act on, never a hard fact.
 CTX_FORK_TIMEOUT_SECONDS=${CTX_FORK_TIMEOUT_SECONDS:-600}
+
+# ── The read leg's liveness window, past CTX_FORK_TIMEOUT_SECONDS (D28) ────────────────────
+#
+# `progress:`'s own mtime never moves again once the skeleton is written, so once
+# CTX_FORK_TIMEOUT_SECONDS has elapsed against it, the read leg cannot tell "still working, just
+# slower than the nominal budget" from "died" by looking at the handoff file alone -- exactly the
+# open question `hooks/handoff-fork-write.sh`'s own header names (finding #26/#28's "what this does
+# not settle"). When a `--session-id` was pinned to the detached turn, its own transcript CAN tell
+# the two apart: still being written to recently means genuinely alive. This is how recently counts
+# as "recently" for that check -- short on purpose, since it only ever EXTENDS a wait that already
+# has independent evidence of life, never substitutes for it.
+CTX_FORK_LIVENESS_WINDOW_SECONDS=${CTX_FORK_LIVENESS_WINDOW_SECONDS:-90}

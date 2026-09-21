@@ -701,14 +701,15 @@ rm -f "$store/$(store_name "$other_main" other-work)" "$state"/*.json
 # ever reaches the gate or the body -- and must flip a genuine `complete` document to `consumed`
 # once it has actually shown it to a reader, so a later, no-op reset says so honestly.
 
-# write_progress_handoff <slug> <progress> [age-seconds] [target-main] [checkout] [branch]
+# write_progress_handoff <slug> <progress> [age-seconds] [target-main] [checkout] [branch] [write-session-id]
 write_progress_handoff() {
-    local slug=$1 progress=$2 age=${3:-0} target=${4:-$main_git} checkout=${5:-$repo_top} branch=${6:-main}
+    local slug=$1 progress=$2 age=${3:-0} target=${4:-$main_git} checkout=${5:-$repo_top} branch=${6:-main} wsid=${7:-}
     local path="$store/$(store_name "$target" "$slug")"
     {
         printf '# Handoff — progress fixture\n'
         printf 'branch: %s\ncheckout: %s\nstatus: fixture\nprogress: %s\n' \
             "$branch" "$checkout" "$progress"
+        [ -n "$wsid" ] && printf 'write_session: %s\n' "$wsid"
         cat <<'EOF'
 
 ## Do not re-derive
@@ -763,6 +764,59 @@ assert_context_lacks 'a fresh `writing` placeholder never reaches the gate' \
 progress_path=$(write_progress_handoff main writing 10)
 assert_context_has 'a `writing` placeholder past the timeout reads as an abandoned write' \
     'appears to have failed' "$(payload compact)" VERIFY_HANDOFF_GATE="$gate" CTX_FORK_TIMEOUT_SECONDS=1
+
+# --- D28 — the transcript liveness override, past the nominal timeout ------
+#
+# write_transcript_fixture <session-id> [age-seconds]
+# Lands under an arbitrary slug directory on purpose: handoff_store_find_transcript searches by
+# exact filename precisely so the slug it happens to land under never matters.
+write_transcript_fixture() {
+    local sid=$1 age=${2:-0}
+    local dir="$fixture/home/.claude/projects/some-slug" path
+    mkdir -p "$dir"
+    path="$dir/$sid.jsonl"
+    printf '{"type":"assistant","message":{"content":[{"type":"text","text":"still going"}]}}\n' > "$path"
+    if [ "$age" -ne 0 ]; then
+        touch -d "@$(( $(date +%s) - age ))" "$path" 2>/dev/null \
+            || touch -t "$(date -d "@$(( $(date +%s) - age ))" +%Y%m%d%H%M.%S)" "$path"
+    fi
+    printf '%s' "$path"
+}
+
+# Past the nominal timeout, but the transcript is still fresh: genuine evidence of life outranks
+# the frozen skeleton mtime alone. Must NOT read as abandoned, and must surface the transcript path
+# so a reader (or their own poll loop) can check on it directly.
+write_transcript_fixture write-sess-fresh 5 >/dev/null
+progress_path=$(write_progress_handoff main writing 10 "$main_git" "$repo_top" main write-sess-fresh)
+assert_context_lacks 'a `writing` placeholder past the timeout is NOT abandoned while its transcript is still fresh' \
+    'appears to have failed' "$(payload compact)" VERIFY_HANDOFF_GATE="$gate" \
+    CTX_FORK_TIMEOUT_SECONDS=1 CTX_FORK_LIVENESS_WINDOW_SECONDS=90
+assert_context_has 'that still-active case says it is running past its nominal budget' \
+    'past its nominal budget' "$(payload compact)" VERIFY_HANDOFF_GATE="$gate" \
+    CTX_FORK_TIMEOUT_SECONDS=1 CTX_FORK_LIVENESS_WINDOW_SECONDS=90
+assert_context_has 'that still-active case surfaces the transcript path to check directly' \
+    'write-sess-fresh.jsonl' "$(payload compact)" VERIFY_HANDOFF_GATE="$gate" \
+    CTX_FORK_TIMEOUT_SECONDS=1 CTX_FORK_LIVENESS_WINDOW_SECONDS=90
+
+# Past the nominal timeout AND the transcript has ALSO gone quiet past the (short) liveness window:
+# genuinely abandoned, same verdict as the no-session-id case above, now with the last-activity
+# path offered instead of nothing.
+write_transcript_fixture write-sess-stale 120 >/dev/null
+progress_path=$(write_progress_handoff main writing 10 "$main_git" "$repo_top" main write-sess-stale)
+assert_context_has 'a `writing` placeholder past the timeout WITH a stale transcript too still reads as abandoned' \
+    'appears to have failed' "$(payload compact)" VERIFY_HANDOFF_GATE="$gate" \
+    CTX_FORK_TIMEOUT_SECONDS=1 CTX_FORK_LIVENESS_WINDOW_SECONDS=90
+assert_context_has 'the abandoned case with a known transcript points at its last activity' \
+    'write-sess-stale.jsonl' "$(payload compact)" VERIFY_HANDOFF_GATE="$gate" \
+    CTX_FORK_TIMEOUT_SECONDS=1 CTX_FORK_LIVENESS_WINDOW_SECONDS=90
+
+# A write_session id that names no real transcript (e.g. the write leg had no uuidgen/openssl and
+# left the field out, or the run has not created its transcript file yet) must degrade to exactly
+# the pre-D28 behaviour -- never a false "abandoned" from an unreadable mtime.
+progress_path=$(write_progress_handoff main writing 10 "$main_git" "$repo_top" main no-such-session)
+assert_context_has 'a write_session naming no real transcript degrades to the plain timeout verdict' \
+    'appears to have failed' "$(payload compact)" VERIFY_HANDOFF_GATE="$gate" \
+    CTX_FORK_TIMEOUT_SECONDS=1 CTX_FORK_LIVENESS_WINDOW_SECONDS=90
 
 # `complete`, first time: injects normally, and the ON-DISK file is flipped to `consumed` once
 # shown to a reader -- never before.
