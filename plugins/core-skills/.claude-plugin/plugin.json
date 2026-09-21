@@ -1,8 +1,8 @@
 {
   "name": "core-skills",
   "displayName": "Core Skills",
-  "version": "0.14.0",
-  "description": "Project-agnostic catalog skills bundled into one installable plugin. Each skill reads .claude/project-context.md for any project-specific facts it needs. Currently: catchup, worktree, build-it, commit, grill-me, memory-hygiene, newbranch, next, research, retro, review-mcp-descriptions, shepard, task-writer, wireframe (with the wireframe-reviewer agent).",
+  "version": "0.15.0",
+  "description": "Project-agnostic catalog skills bundled into one installable plugin. Each skill reads .claude/project-context.md for any project-specific facts it needs. Currently: catchup, worktree, build-it, commit, grill-me, memory-hygiene, newbranch, next, research, retro, review-mcp-descriptions, shepard, sync-worktrees, task-writer, wireframe (with the wireframe-reviewer agent).",
   "keywords": [
     "git",
     "workflow",
@@ -17,6 +17,7 @@
     "retro",
     "mcp",
     "shepard",
+    "sync-worktrees",
     "tasks",
     "wireframe"
   ],

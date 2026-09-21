@@ -38,9 +38,11 @@ research_dir:          # e.g. docs/research/ — override for this project's fil
 retro_dir:             # e.g. docs/retrospectives/ — override for this project's retro
                        # directory. Omit to use the skill's own default, retrospectives/.
 
-# --- Worktrees (used by: worktree, build-it) ---
+# --- Worktrees (used by: worktree, build-it, commit, sync-worktrees) ---
 integration_branch:    # Override when auto-detection (origin/development, origin/develop,
                        # then the remote default branch) would get it wrong for this project.
+                       # sync-worktrees auto-detects differently (origin/HEAD, then main, then
+                       # master) but reads this field first, same as the others.
                        # If this project's tracker auto-links branches, also document the
                        # issue-key format under House rules below — a truncated or malformed
                        # key silently breaks the auto-link.

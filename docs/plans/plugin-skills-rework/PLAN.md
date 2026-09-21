@@ -184,24 +184,33 @@ sentence.
   content; D14's parenthetical was checked here for the first time rather than re-derived from
   memory, and it doesn't survive the check (D23).
 
+- **`sync-worktrees`** — needed two fixes, neither a new field. (1) **Reused** `integration_branch`
+  (established for `worktree`/`build-it`, D11, already reused once by `commit`'s D13): the
+  bundled script's `--base` flag and its own auto-detection (`origin/HEAD`, then `main`, then
+  `master`) cover the same concept `integration_branch` already names, just with a different
+  fallback chain than `worktree`'s. Now reads the field first and passes it as `--base`, falling
+  back to the script's own auto-detection when unset — same three-tier priority shape as
+  `worktree`'s own lookup, with the script's `--base` flag as a fourth, most-specific tier for a
+  one-off override. The template's `integration_branch` "used by" comment was stale (listed only
+  `worktree, build-it`, missing `commit`); corrected to list all four consumers while here. (2)
+  **Fixed the same `<skill dir>` gap D20 found in `shepard`**: the catalog original hardcoded
+  `bash .claude/skills/sync-worktrees/scripts/sync.sh` with no plugin-cache or user-level
+  fallback at all (not even the two-tier fallback `shepard` had) — the bundled `sync.sh` would
+  never have been found under a plugin install. Fixed by reusing D20's exact resolution snippet
+  (D24). The script itself (`scripts/sync.sh`) needed zero changes — already fully generic, no
+  Kendo assumptions, verified byte-identical to the catalog original.
+
 ### Up next
 
-One Generic Skill remains unconverted and untouched by this rework so far: `sync-worktrees`,
-pending the same full check (Step 1 of the conversion workflow) this rework has applied to every
-skill so far. `babysit` stays explicitly skipped (superseded by `shepard`, now converted).
+Every Generic Skill in the README's table is now converted into `core-skills`, except the
+deferred agent-cluster chain below. `babysit` stays explicitly skipped (superseded by `shepard`).
 
 **Directory fields may deserve a regrouping pass.** `plan_dir`, `research_dir`, and `retro_dir`
-are now three sibling single-scalar directory overrides in three separate top-level sections,
-each following the identical shape (a path, defaulting to a skill-chosen convention, degrading
-to the default when absent). Not resolved yet whether that repetition is worth collapsing into
-one shared "Directories" section once the current pass through the README list is done — noted
-for a later look, not blocking the next conversion.
-
-`review-mcp-descriptions` in particular needs the full check taken seriously, not assumed clean
-from the grep alone — it improves MCP tool/resource descriptions, and this org's MCP tool
-definitions live inside the Kendo repo itself rather than in this catalog, which may turn out to
-be a project-specific fact the skill currently assumes rather than reads from
-`.claude/project-context.md`.
+are three sibling single-scalar directory overrides in three separate top-level sections, each
+following the identical shape (a path, defaulting to a skill-chosen convention, degrading to the
+default when absent). Not resolved yet whether that repetition is worth collapsing into one
+shared "Directories" section — noted for a later look, not blocking anything now that the
+current pass through the README list is effectively done.
 
 `review-branch` — not previously named in "Deferred" above, but it belongs there: it's the
 actual owner of the three-agent unconditional spawn (`runtime-integrity-reviewer` +

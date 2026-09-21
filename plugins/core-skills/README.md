@@ -41,6 +41,7 @@ back to, not re-explain the degrade-not-fail contract itself.
 | [retro](skills/retro/) | Write a numbered retrospective capturing what went wrong, why, and what changed |
 | [review-mcp-descriptions](skills/review-mcp-descriptions/) | Improve MCP tool/resource descriptions for Tool Search discoverability |
 | [shepard](skills/shepard/) | Drive one PR to green and answered: fix red CI, dispose every review finding, push once per cycle, arm a live watch |
+| [sync-worktrees](skills/sync-worktrees/) | Sync every secondary git worktree with the primary: env files, dependencies, optional fast-forward |
 | [task-writer](skills/task-writer/) | Break down an approved PLAN.md into phased TASKS.md with a self-administered coverage checklist |
 | [wireframe](skills/wireframe/) | Generate WIREFRAMES.md (ASCII layouts, design tokens, interaction specs) from PLAN.md; self-gated by the bundled wireframe-reviewer agent |
 

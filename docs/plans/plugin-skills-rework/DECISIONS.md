@@ -590,3 +590,42 @@ names in that list (`board-sync`, `prepare-issue`, `kendo-cli`, `triage-reports`
 unverified claims until each is actually converted or otherwise checked, not confirmed facts.
 Don't cite D14's list as evidence a given skill needs a specific fix without opening that skill's
 own file first.
+
+## D24 — `sync-worktrees` reuses `integration_branch` and D20's plugin-cache `<skill dir>` fix
+
+**Chosen.** Two changes, no new field. **First:** `sync-worktrees`' bundled `scripts/sync.sh`
+already took an explicit `--base <branch>` override and otherwise auto-detected the integration
+branch (`origin/HEAD`, then `main`, then `master`) — the same concept `integration_branch`
+already covers, just via a different auto-detect chain than `worktree`'s own
+(`origin/development`, `origin/develop`, then the remote default). The plugin skill now resolves
+`integration_branch` from `.claude/project-context.md` before invoking the script and passes it
+as `--base` when set, with the script's own auto-detection as the fallback and an explicit
+per-run `--base` still taking priority over the stored field. Corrected the template's
+`integration_branch` "used by" comment in the same pass — it named only `worktree, build-it`,
+missing `commit` (which reused it in D13) entirely. **Second:** the catalog original hardcoded
+`bash .claude/skills/sync-worktrees/scripts/sync.sh` with no fallback at all for any other
+install shape — not even the two-tier (checked-in / user-level) fallback `shepard` had before
+D20, let alone a plugin-cache candidate. Reused D20's exact `<skill dir>` resolution snippet
+verbatim, adjusted only for this skill's name.
+
+**Why.** Reuse-before-add (workflow Step 2) applies exactly as it did for `commit`'s D13: this is
+the third skill to need "the integration branch, with project override" and the second to need a
+plugin-cache-aware self-location fix, in both cases recognizing a solved problem rather than
+solving it a third and second time respectively. The `<skill dir>` gap here was worse than
+`shepard`'s original — `shepard` at least had a checked-in/user-level fallback pair before D20;
+`sync-worktrees` had a single hardcoded path with no fallback of any kind — so leaving it
+unfixed would have been a harder failure (nothing to fall back to at all) under a plugin install.
+
+**Rejected.** Leaving `sync-worktrees`' own `--base` flag as the only override mechanism and not
+reading `integration_branch` at all — rejected because it would mean setting the project's
+integration branch twice, once for `worktree`/`build-it`/`commit` via the shared field and again
+per-invocation of `sync-worktrees`, defeating the point of a shared project-context file.
+Inventing a second `<skill dir>` resolution mechanism instead of reusing D20's — rejected for the
+same reason D20 itself rejected inventing a pattern `handoff` had already proven: two mechanisms
+solving the identical problem is drift waiting to happen the next time one of them is edited.
+
+**Consequence.** `integration_branch` now has four consumers (`worktree`, `build-it`, `commit`,
+`sync-worktrees`) and the `<skill dir>` plugin-cache resolution snippet now has two (`shepard`,
+`sync-worktrees`) — if a third skill needs either, that's the point at which extracting either
+into a single shared reference (the same treatment `plan-directory.md` got in D16) becomes worth
+weighing, not before.
