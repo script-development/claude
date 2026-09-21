@@ -95,6 +95,11 @@ settled would ship a plugin under conventions likely to change on the next conve
 `skills/catchup/`) in the same pass — premature given only one skill has gone through the
 mechanism so far.
 
+**Later dependency (D19).** If this question ever resolves toward full catalog retirement,
+`templates/project-context-template.md` — and the `.githooks/pre-commit` hook that syncs it into
+`plugins/core-skills/references/` — retire in the same pass. That hook's existence isn't a
+reason to delay resolving D6; it's just one more file to delete when D6 lands.
+
 ## D7 — One new bundle plugin, `core-skills`, not one plugin per skill
 
 **Chosen.** `catchup` moved from its own `plugins/catchup/` into `plugins/core-skills/skills/catchup/`.
@@ -421,18 +426,23 @@ harmonized into a single comment that reads correctly regardless of which copy y
 at. `plugins/core-skills/references/plan-directory.md` (D16) deliberately gets **no** equivalent
 hook.
 
-**Why.** The user's distinction, made explicit when asked: this repo's catalog skills
-(`skills/`, including `plan-feature`, the canonical source for `plan-directory.md`) are expected
-to retire once plugin adoption replaces copy-adoption — D6's open question is *when*, not *if*.
-When that happens, `plan-feature/references/plan-directory.md` disappears and the duplication
-resolves itself; building sync tooling for a pair that's headed for retirement is wasted effort.
-`templates/project-context-template.md`, by contrast, is catalog-root scaffolding (same
-standing as `templates/skill-template/SKILL.md`) with no such expiry — it outlives any
-individual skill's conversion status, so the two copies are a permanent fact of this
-architecture, worth automating. The two pairs also differ in *kind*, not just lifespan: the
-template pair is a genuine mirror (byte-identical after D19's cleanup), while `plan-directory.md`
-is a curated, deliberately-trimmed derivative (D16) — a blind copy would silently regress that
-trimming, so even a permanent version of that pair couldn't use the same mechanism.
+**Why.** The distinguishing question is what has to happen for each pair to collapse back to one
+file, not just "will it eventually." `plan-directory.md`'s catalog source (`plan-feature`)
+retires piecemeal, as each of its remaining consumers (`implement-plan`, `review-branch`, `pr`,
+`fix-bug`) converts and `plan-feature` itself is eventually retired — that's already this
+rework's own trajectory, no separate decision required. `templates/project-context-template.md`
+only collapses on a different, larger, still-open call: D6, whether plugin adoption is meant to
+fully replace catalog copies (`skills/`, `agents/`, `templates/` — the whole copy-adoption model)
+or coexist with it indefinitely. Until D6 resolves toward full retirement, this pair has no
+natural collapse point, so automating the sync is worth it now — **but if D6 ever resolves that
+way, `.githooks/pre-commit` and `templates/project-context-template.md` both become exactly as
+retirable as `plan-directory.md`'s catalog side**, for the identical reason. This decision isn't
+that the template pair is permanent; it's that its retirement is gated on a bigger, separate,
+not-yet-made decision, while `plan-directory.md`'s is already in motion. The two pairs also
+differ in *kind*, not just in what retires them: the template pair is a genuine mirror
+(byte-identical after this cleanup), while `plan-directory.md` is a curated, deliberately-trimmed
+derivative (D16) — a blind copy would silently regress that trimming, so even if both pairs
+retired on the same schedule, only the template pair could use this mechanism.
 
 **Rejected.** A symlink from the shipped copy to the canonical file — rejected on two independent
 grounds: this repo already has a standing no-symlinks policy for the analogous skill/agent
@@ -448,4 +458,7 @@ generating it is strictly better than merely detecting that someone forgot to.
 header comment says so explicitly ("Edit only this copy; never hand-edit a shipped mirror").
 One-time setup per clone: `git config core.hooksPath .githooks` (documented in `CLAUDE.md`'s
 Repository Structure section). `plan-directory.md` keeps the manual-resync note from D16 as its
-permanent (not just current) maintenance mode.
+maintenance mode until `plan-feature` itself retires. **Whoever eventually resolves D6 toward
+full catalog retirement should delete `.githooks/pre-commit` and `templates/` in the same pass**
+— at that point the plugin's copy becomes the sole, canonical file and there's nothing left to
+sync.

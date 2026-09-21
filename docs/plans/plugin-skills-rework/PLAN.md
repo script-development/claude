@@ -153,16 +153,22 @@ cluster's first move whenever that pass starts, not a sixth independent Generic 
 `plugins/core-skills/references/project-context-template.md` on every commit that touches the
 canonical file (D19). This replaces the manual-sync duty D9 accepted for that one pair — but
 deliberately *not* for `plan-directory.md` (D16): that pair is a curated derivative, not a
-mirror, and its catalog-side source is expected to disappear once catalog-skill retirement
-happens (D6's open question), so it stays manual. One-time setup per clone:
+mirror, and its catalog-side source (`plan-feature`) retires piecemeal as this rework's own
+remaining conversions land, so it stays manual. One-time setup per clone:
 `git config core.hooksPath .githooks` (documented in `CLAUDE.md`).
+
+**Not permanent tooling.** If the "Fate of `skills/catchup/`..." question below (D6) ever
+resolves toward full catalog retirement, `templates/project-context-template.md` and this hook
+both retire in the same pass — the plugin's copy becomes the sole file, with nothing left to
+sync.
 
 ### Out (open questions — not resolved yet)
 
-- **Fate of `skills/catchup/` and `skills/worktree/`** (the pre-existing catalog copies). Left
-  in place for now — removing either would break any consumer still on copy-adoption rather
-  than the plugin. Revisit once it's clear whether plugin adoption is meant to fully replace
-  catalog copies or coexist. See `DECISIONS.md` D6.
+- **Fate of `skills/catchup/` and `skills/worktree/`** (the pre-existing catalog copies) — and,
+  by extension, `templates/` and `.githooks/pre-commit` (D19). Left in place for now — removing
+  any of them would break a consumer still on copy-adoption rather than the plugin. Revisit once
+  it's clear whether plugin adoption is meant to fully replace catalog copies or coexist. See
+  `DECISIONS.md` D6.
 - **When (if ever) `core-skills` splits.** D7 picks one bundle plugin for now, on the
   explicit basis that splitting later is easy; it doesn't set a threshold for when a split
   would be warranted (skill count, unrelated themes emerging, install-size complaints, ...).
