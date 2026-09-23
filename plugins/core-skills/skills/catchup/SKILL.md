@@ -23,8 +23,8 @@ This skill is project-agnostic: it never assumes a specific issue-tracker, plan 
 key format. It reads `plan_dir` (Step 1.4) and `issue_tracker_skill` (Step 2) from
 `.claude/project-context.md` — see this plugin's README for how that file and its notation
 work. `issue_tracker_skill` is the one field here with an org-level default rather than a plain
-skip — see Step 2. No file yet: offer the shipped starter template at
-`references/project-context-template.md` (in this plugin's own directory), don't require it.
+skip — see Step 2. No file yet: offer `/core-skills:install` (which builds it from the shipped starter template
+at `references/project-context-template.md`), don't require it.
 
 ## Step 1: Identify the branch, base, and any issue key
 

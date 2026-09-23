@@ -1,13 +1,17 @@
 ---
 # Project Context reference — copy to `.claude/project-context.md` in the consuming
-# project and fill in the fields that project needs. Every field is optional: a
-# plugin skill that needs a fact it can't find here falls back to its own generic
-# default rather than failing. Leave out sections whose skills aren't installed.
+# project and fill in the fields that project needs — or run `/core-skills:install`, which
+# does both and re-runs additively after another plugin is installed. Every field is
+# optional: a plugin skill that needs a fact it can't find here falls back to its own
+# generic default rather than failing. Leave out sections whose skills aren't installed.
 #
 # This file grows as more catalog skills are converted into project-agnostic plugin
 # skills — each conversion adds only the fields *that skill* needs, under a section
 # named for the concern (not the skill), so unrelated skills can share a section.
 # Don't add a field speculatively; add it when a skill is converted that reads it.
+# Everything below this header block is copied verbatim into consumers' files (by hand or by
+# core-skills' `install`), so it must make sense there: don't cite catalog plan decisions
+# (D8, D19, ...) or catalog-only paths below — say the reason itself instead.
 #
 # Canonical source: templates/project-context-template.md in the claude-2 catalog. A plugin
 # whose skills read this file (e.g. core-skills) ships an identical mirror under its own
@@ -60,7 +64,7 @@ doc_paths:             # This project's list of user-facing text prefixes — di
                        # include a `:(exclude)` pathspec for a sub-tree another reviewer owns.
                        # No generic default: unset means docs-accuracy-reviewer never fires —
                        # there's no universal answer for where a project's user-facing text
-                       # lives, unlike issue_tracker_skill's kendo-mcp default (D8).
+                       # lives, unlike issue_tracker_skill's kendo-mcp default.
 ---
 
 # Project Context
@@ -150,7 +154,7 @@ globs, for the reason given in the frontmatter comment above. `docs-accuracy-rev
 by `review-branch`) reads it to decide whether it joins a branch's review at all, and which files
 it audits when it does. Entries may carry a `:(exclude)` pathspec for a sub-tree another reviewer
 owns — passed through unchanged. Leaving the field unset means the reviewer never fires: unlike
-`issue_tracker_skill`'s `kendo-mcp` default (D8), there's no generic answer for where a project's
+`issue_tracker_skill`'s `kendo-mcp` default, there's no generic answer for where a project's
 user-facing text lives.
 
 Example:
