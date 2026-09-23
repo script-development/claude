@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Keeps plugins/core-skills/references/project-context-template.md byte-identical to
+# templates/project-context-template.md (the canonical source — see that file's own header
+# comment). When the canonical file is part of this commit, this hook copies it over the
+# shipped mirror and stages the result, so the two never drift.
+#
+# One-time setup per clone: git config core.hooksPath .githooks
+
+set -e
+
+SRC="templates/project-context-template.md"
+DEST="plugins/core-skills/references/project-context-template.md"
+
+if git diff --cached --name-only | grep -qx "$SRC"; then
+  cp "$SRC" "$DEST"
+  git add "$DEST"
+fi
