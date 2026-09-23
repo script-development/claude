@@ -48,9 +48,16 @@ Generic across any project on a given stack, but assume that stack is in use.
 
 | Skill | Stack | Description |
 |-------|-------|-------------|
-| [nightwatch-mcp](skills/nightwatch-mcp/) | Nightwatch MCP | Error and performance monitoring, exception triage |
 | [release-cli](skills/release-cli/) | Go + GoReleaser | Tag and release a Go CLI via GoReleaser on tag push |
 | [startup](skills/startup/) | Laravel + Vue + MinIO | Full project setup: Docker services, .env files, then parallel backend/frontend/MCP setup, with worktree support |
+
+### Tool-Specific Skills
+
+Tied to a specific third-party tool or service rather than a language/framework stack. Generic across any project using that tool.
+
+| Skill | Tool | Description |
+|-------|------|-------------|
+| [nightwatch-mcp](skills/nightwatch-mcp/) | Nightwatch | Error and performance monitoring, exception triage. Requires the Nightwatch MCP server |
 
 ### Kendo PM Skills
 
@@ -73,6 +80,7 @@ Installed via this repo's marketplace, not copied.
 |--------|--------|-------------|
 | [context-economy](plugins/context-economy/) | [handoff](plugins/context-economy/skills/handoff/) | Handoffs that survive a context reset: writes and verifies them, plus hooks that automate the write/inject cycle |
 | [core-skills](plugins/core-skills/) | [catchup](plugins/core-skills/skills/catchup/), [worktree](plugins/core-skills/skills/worktree/), [commit](plugins/core-skills/skills/commit/), [fix-bug](plugins/core-skills/skills/fix-bug/), [implement-plan](plugins/core-skills/skills/implement-plan/), [newbranch](plugins/core-skills/skills/newbranch/), [next](plugins/core-skills/skills/next/), [plan-feature](plugins/core-skills/skills/plan-feature/), [pr](plugins/core-skills/skills/pr/), [review-branch](plugins/core-skills/skills/review-branch/), [review-mcp-descriptions](plugins/core-skills/skills/review-mcp-descriptions/), [shepard](plugins/core-skills/skills/shepard/), [sync-worktrees](plugins/core-skills/skills/sync-worktrees/), [task-writer](plugins/core-skills/skills/task-writer/) | Project-agnostic catalog skills bundled into one plugin; reads `.claude/project-context.md` for project-specific facts |
+| [kendo-pm](plugins/kendo-pm/) | [kendo-cli](plugins/kendo-pm/skills/kendo-cli/), [kendo-mcp](plugins/kendo-pm/skills/kendo-mcp/), [prepare-issue](plugins/kendo-pm/skills/prepare-issue/), [triage-reports](plugins/kendo-pm/skills/triage-reports/) | Kendo project-management skills bundled into one plugin, for any project using Kendo for issue tracking; depends on `core-skills` |
 
 ## Agents Catalog
 

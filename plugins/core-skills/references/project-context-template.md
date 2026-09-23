@@ -23,7 +23,9 @@ issue_tracker_skill:   # The skill/command that fetches issue details. Defaults 
 issue_tracker_project_id: # This project's id within that tracker (e.g. Kendo's numeric
                        # project_id) — only needed when the resolved tracker scopes calls by
                        # project id. Leave unset if the tracker has no such concept, or if
-                       # issue_tracker_skill is `none`. Used by: newbranch.
+                       # issue_tracker_skill is `none`. Used by: newbranch, triage-reports,
+                       # prepare-issue (the latter two from the kendo-pm plugin — this field is
+                       # shared across plugins, not owned solely by core-skills).
 
 # --- Directories ---
 # Single-path overrides for where a skill's own output or artifacts live. Every field here

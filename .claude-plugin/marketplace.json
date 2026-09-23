@@ -13,6 +13,11 @@
       "name": "core-skills",
       "source": "./plugins/core-skills",
       "description": "Project-agnostic catalog skills bundled into one installable plugin. Each skill reads .claude/project-context.md for any project-specific facts it needs. Currently: catchup, worktree, commit, fix-bug, implement-plan, newbranch, next, plan-feature, pr, review-branch, review-mcp-descriptions, shepard, sync-worktrees, task-writer (with the bug-fix-verifier, runtime-integrity-reviewer, precedent-reviewer, docs-accuracy-reviewer, plan-reviewer, and surface-reviewer agents)."
+    },
+    {
+      "name": "kendo-pm",
+      "source": "./plugins/kendo-pm",
+      "description": "Kendo project-management skills bundled into one installable plugin, for any project using Kendo (https://kendo.dev) for issue tracking. Requires the Kendo MCP server or the kendo CLI. Currently: kendo-cli, kendo-mcp, prepare-issue, triage-reports."
     }
   ]
 }
