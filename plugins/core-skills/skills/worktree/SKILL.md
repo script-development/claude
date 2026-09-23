@@ -176,9 +176,9 @@ pass `--force`.
 When a project earns verified, repeatable knowledge — an integration branch that is not
 detectable, setup beyond the lockfile table, hazards, house rules — add it to that project's
 `.claude/project-context.md`, under `## Worktrees` (plus the `integration_branch`/`worktree_dir`
-frontmatter fields if either default is wrong). This plugin ships a starter template at
-`references/project-context-template.md` — copy from there if the project doesn't have the file
-yet.
+frontmatter fields if either default is wrong). If the project doesn't have the file
+yet, `/core-skills:install` creates it from this plugin's starter template
+(`references/project-context-template.md`).
 
 Only write down what was verified in that project, with the reason it is true. A rule without its
 *why* goes stale silently — and because this section overrides the setup detection outright, the

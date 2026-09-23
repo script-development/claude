@@ -29,12 +29,20 @@ and a project only needs to maintain one file regardless of which plugins it ins
 below that reads a field states which one, in backticks; that always means "read this field from
 `.claude/project-context.md`, falling back to the stated default when the field or the file
 itself is absent" — see `core-skills`' own README for the fuller degrade-not-fail explanation.
-Reading a field this way is not a dependency on `core-skills` being installed: the file is a
-plain project-owned document, and a `kendo-pm`-only consumer can set the field without ever
-installing `core-skills`. `kendo-mcp` and `kendo-cli` read nothing from it — both discover their
-project id at runtime instead. `triage-reports` and `prepare-issue` read
-`issue_tracker_project_id`. Add a project-context mechanism of this plugin's own only if a future
-skill needs a fact `core-skills`' template can't already cover.
+`core-skills`' [`/core-skills:install`](../core-skills/skills/install/) creates or tops up that
+file, scoped to the skills actually installed. A project that installed `core-skills` first and
+adds `kendo-pm` later can re-run it: it adds only what's missing and never overwrites a value
+already set. Today that re-run adds no new field — this plugin's one field,
+`issue_tracker_project_id`, is also read by `core-skills`' `newbranch` — but it can fill that field in
+if it was left empty, once the Kendo MCP server this plugin requires is connected and makes the
+project id discoverable. There's no
+`kendo-pm` install skill of its own: the `core-skills` dependency above guarantees that one is
+always present.
+
+`kendo-mcp` and `kendo-cli` read nothing from the file — both discover their project id at
+runtime instead. `triage-reports` and `prepare-issue` read `issue_tracker_project_id`. Add a
+project-context mechanism of this plugin's own only if a future skill needs a fact `core-skills`'
+template can't already cover.
 
 ## Skills
 

@@ -14,8 +14,17 @@ one file per skill. A missing file, or a missing field within it, means "use the
 default" — a skill never fails just because the project hasn't set this up.
 
 A starter template ships with this plugin at
-[`references/project-context-template.md`](references/project-context-template.md). Copy it
-to `.claude/project-context.md` in the project and fill in only the fields that project needs.
+[`references/project-context-template.md`](references/project-context-template.md). Run
+[`/core-skills:install`](skills/install/) to create the file from it: it keeps only the fields
+the skills installed in this project read, detects values from the repo, and asks
+(AskUserQuestion) only for what it can't detect. It's additive, so re-run it after installing
+another plugin from this marketplace (e.g. `kendo-pm`) to add that plugin's fields without
+touching the ones already set. Copying the template by hand still works.
+
+**One install skill, not one per plugin.** Every plugin from this marketplace reads the same file,
+and its one template lives here; `kendo-pm` declares `core-skills` as a dependency, so this skill
+is always present wherever `kendo-pm` is. The template's per-field `used by:` lists already say
+which skills read each field, which is all `install` needs to scope the file to what's installed.
 
 **Notation.** A skill below names the fields it reads inline, in backticks (e.g.
 `integration_branch`) — that always means "read this field from `.claude/project-context.md`";
@@ -29,6 +38,7 @@ back to, not re-explain the degrade-not-fail contract itself.
 
 | Skill | Description |
 |-------|-------------|
+| [install](skills/install/) | Create or top up `.claude/project-context.md` for the plugins installed here: detect values, confirm via AskUserQuestion, never overwrite; re-run after adding a plugin |
 | [catchup](skills/catchup/) | Load branch context, show progress, sync with base branch |
 | [worktree](skills/worktree/) | Cut a fresh git worktree: branch, deps, env files, project house rules, then hand back the path |
 | [commit](skills/commit/) | Small, focused commits matching this project's own message convention, + push |
