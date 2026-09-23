@@ -2,49 +2,45 @@
 name: review-branch
 description: >
   Full-branch review of the current branch vs the integration branch. Spawns
-  `runtime-integrity-reviewer` and `precedent-reviewer` in parallel — joined by
-  `docs-accuracy-reviewer` when the diff touches this project's configured doc paths — and
+  `runtime-integrity-reviewer`, `correctness-reviewer` and `precedent-reviewer` in parallel and
   reports in chat for `/pr` to consume in this session. Use whenever the user wants to review a
   branch, says "review my changes", "review branch", "check my code", "what did I change", "write
   the handoff", "branch review", "review handoff", or is about to open a PR. **Chat only.** `/pr`
-  re-runs this skill when this session has no review for current HEAD.
+  offers to run this skill when this session has no review for current HEAD.
 ---
 
 # Review Branch
 
-Spawn the repository's canonical reviewer agents (bundled with this plugin) against the full
-branch diff and report in chat. `/pr` consumes this session's report when its `Reviewed against
-commit:` sha matches HEAD.
+Spawn the repository's three finders (bundled with this plugin) against the full branch diff and
+report in chat. `/pr` may consume this session's report when its `Reviewed against commit:` sha
+matches HEAD.
 
-This skill reads `integration_branch` (Step 1), `plan_root` / `bug_root` (Step 2) and
-`doc_paths` (Step 3) from
+This skill reads `integration_branch` (Step 1) and `plan_root` / `bug_root` (Step 2) from
 `.claude/project-context.md` — see this plugin's README for how that file and its notation work.
 
-## The questions
+## The lanes
 
-Every reviewer at this gate answers exactly one question:
+Every finder answers exactly one question and carries its own sections of the hunting corpus
+in [`references/corpus/`](references/corpus/_preamble.md). All three run **always**, on every
+branch — plan or no plan, feature or bug. None of them scores, ranks, or applies a waiver.
+They return tagged findings and a `checked` list. This skill synthesizes those reports in
+chat. The parent session sees them and decides what to do.
 
-- **`runtime-integrity-reviewer`** — *Does this branch break an invariant that spans it?*
-  External calls inside DB transactions, missing concurrency guards, commit-then-act ordering,
-  resource-lifecycle leaks, unbounded or repeated work, failures that never surface.
-- **`precedent-reviewer`** — *Does this match what's already written down?*
-  Conformance to the repo's standing rules (every `CLAUDE.md`, plus an ADR set where one
-  exists), sister-implementation drift, cross-stack contracts, and plan prose vs code.
-- **`docs-accuracy-reviewer`** — *Does the user-facing text this branch ships hold in its code?*
-  Guides, API docs, legal pages, generated LLM corpora and skill docs, graded per claim.
+- **`runtime-integrity-reviewer`** — *Does this branch fail without anyone being told, or
+  permit what the base refused?* Security & cost surface, Runtime data-flow, Contract &
+  boundary integrity, plus the silent-failure and security lane focus.
+- **`correctness-reviewer`** — *Does the changed code do the wrong thing on a path the tests
+  never take?* Runtime-state simulation, Sins of omission, Test disciplines (diff-gated on
+  test files), plus the correctness lane focus.
+- **`precedent-reviewer`** — *Does this match what's already written down?* Recorded rulings,
+  Sibling precedent, CI-config awareness.
 
-The first two run **always**, on every branch — plan or no plan, feature or bug. Each agent
-carries its own scope, severity weighting and score calibration in its agent definition; this
-skill only orchestrates and synthesizes.
+The finder contract every lane follows — context, the finding shape, the three tags, method,
+voice — is [`references/finder-base.md`](references/finder-base.md).
 
-`docs-accuracy-reviewer` is the one **path-triggered** reviewer: it runs when the diff touches
-`doc_paths`, and not otherwise, because a branch that ships no user-facing text makes no claim for
-it to grade. A project that hasn't set `doc_paths` gets no docs-accuracy pass at all — there's no
-generic prefix to fall back to (see the README's Notation paragraph for what a missing field
-means in general). Trigger *greps* — patterns that guess at a diff's semantics — are not used
-here: they can silently skip a reviewer when code error-handles through an unnamed helper. A
-directory prefix has no such failure mode: a file either sits under one or it does not. A `**`
-glob does — see the warning in Step 3.
+User-facing text a branch ships — guides, API docs, legal pages, generated LLM corpora, skill
+docs — has no reviewer of its own. `correctness-reviewer`'s promised-behaviour rule (Sins of
+omission) checks it on every branch, whichever paths the diff touches.
 
 ## When this skill runs
 
@@ -66,8 +62,26 @@ Run these in parallel:
 - `git diff --stat origin/<integration-branch>...HEAD`
 
 If `origin/<integration-branch>` is unavailable, fall back to `<integration-branch>...HEAD` and
-note that in the chat report. You do not need to pull the full diff into this context — each agent
-takes its own diff. Pulling it here only burns the orchestrator's window.
+note that in the chat report. You do not need to pull the full diff into this context — each
+finder takes its own diff. Pulling it here only burns the orchestrator's window.
+
+Resolve `<skill dir>` — this skill's own directory, which the finders need to read
+`references/finder-base.md` and the corpus — in this order: checked-in copy, then this plugin's
+install, then a user-level install. Keep the first match:
+
+```bash
+skill_dir=
+[ -d .claude/skills/review-branch ] && skill_dir=$(cd .claude/skills/review-branch && pwd)
+if [ -z "$skill_dir" ]; then
+  for d in "$HOME"/.claude/plugins/cache/*/core-skills/*/skills/review-branch; do
+    [ -d "$d" ] && skill_dir=$d
+  done
+fi
+[ -z "$skill_dir" ] && [ -d "$HOME/.claude/skills/review-branch" ] && skill_dir="$HOME/.claude/skills/review-branch"
+echo "skill_dir=$skill_dir"
+```
+
+No match: stop and say so — a finder without its contract and corpus has nothing to hunt with.
 
 ## Step 2: Resolve the plan or bug directory (read only)
 
@@ -76,92 +90,65 @@ Use the canonical algorithm in
 `next`, `task-writer` and `catchup`), under `plan_root` then `bug_root` (defaults `docs/plans`,
 `docs/bugs`).
 
-- **`<plan-root>/<slug>/` exists** → full review. Read `PLAN.md` / `DECISIONS.md` /
-  `WIREFRAMES.md` / `TASKS.md` if present. Report in chat. Write nothing.
-- **`<bug-root>/<slug>/` exists** (bug branch) → full review. Read `BUG.md` if present. Report in
-  chat. Write nothing. This review is **optional on bug branches** — `bug-fix-verifier` is their
-  gate, and `/pr` never asks for this run there. It runs when a developer explicitly wants it.
-- **Neither exists** → still spawn the agents; report in chat only.
+- **`<plan-root>/<slug>/` exists** → read `PLAN.md` / `DECISIONS.md` / `WIREFRAMES.md` /
+  `TASKS.md` if present. Report in chat. Write nothing.
+- **`<bug-root>/<slug>/` exists** (bug branch) → read `BUG.md` if present. This review is
+  **optional on bug branches** — `bug-fix-verifier` is their gate, and `/pr` never asks for
+  this run there. It runs when a developer explicitly wants it.
+- **Neither exists** → still spawn the finders; report in chat only.
 
-The directory is read for context. Nothing in it is written by this skill, on any branch shape.
+Write nothing in any case.
 
-## Step 3: Spawn the reviewers in parallel
+## Step 3: Spawn the finders in parallel
 
-Send every `Agent()` call in a **single message** so they run concurrently. Do not fall back to
-sequential spawning — if parallel spawning is unavailable in this environment, stop and say so.
-
-Before composing the message, read `doc_paths` from `.claude/project-context.md`. Unset means
-this project hasn't configured where its user-facing text lives — skip straight to the two
-always-on agents below; there is no trigger to resolve and no third block to add.
-
-When `doc_paths` is set, resolve the docs trigger once:
-
-```bash
-git diff --name-only <base>...HEAD -- <doc_paths>
-```
-
-Non-empty output means the third block below joins the message.
-
-**Use the `doc_paths` pathspecs literally.** They are directory prefixes, not `**` globs:
-git reads `<prefix>/**/*.md` as requiring an intervening directory, so it silently misses
-`<prefix>/README.md` and every other file sitting directly under `<prefix>`. A trigger that
-answers "no text changed" when text changed is the exact failure this gate exists to prevent.
-`doc_paths` may also carry `:(exclude)` pathspecs for a sub-tree another reviewer owns —
-pass those through unchanged.
+Send all three `Agent()` calls in a **single message** so they run concurrently. Do not fall
+back to sequential spawning — if parallel spawning is unavailable in this environment, stop
+and say so. There is no trigger to resolve: every lane runs on every diff, and a section that
+does not apply is reported in the finder's `## Checked`, never skipped.
 
 ```
 Agent({
   subagent_type: "runtime-integrity-reviewer",
-  prompt: `Full-branch runtime-integrity audit.
+  prompt: `Full-branch review, runtime-integrity lane.
 
+Skill dir: <skill dir resolved in Step 1>
 Plan directory: <plan-root>/<slug>/   (or <bug-root>/<slug>/, or "none")
 Diff base: <the base resolved in Step 1 — origin/<integration-branch>, or <integration-branch> on fallback>
 
-Run your six checks against the full branch diff: external calls inside DB
-transactions, missing concurrency guards, commit-then-act ordering, resource
-lifecycle leaks, unbounded or repeated work, and failures that never surface.
-Report BLOCKER/MAJOR/MINOR with file:line and a concrete fix per finding.
-Do NOT flag ADR violations, duplication, or plan-prose mismatches — those
-belong to precedent-reviewer.`
+FIRST: read <skill dir>/references/finder-base.md, then your three corpus sections under
+<skill dir>/references/corpus/. Return ## Findings and ## Checked only, in the finder shape.
+No score, no severity, no waiver applied.`
+})
+
+Agent({
+  subagent_type: "correctness-reviewer",
+  prompt: `Full-branch review, correctness lane.
+
+Skill dir: <skill dir resolved in Step 1>
+Plan directory: <plan-root>/<slug>/   (or <bug-root>/<slug>/, or "none")
+Diff base: <the base resolved in Step 1 — origin/<integration-branch>, or <integration-branch> on fallback>
+
+FIRST: read <skill dir>/references/finder-base.md, then your three corpus sections under
+<skill dir>/references/corpus/. Return ## Findings and ## Checked only, in the finder shape.
+No score, no severity, no waiver applied.`
 })
 
 Agent({
   subagent_type: "precedent-reviewer",
-  prompt: `Full-branch precedent audit.
+  prompt: `Full-branch review, precedent lane.
 
+Skill dir: <skill dir resolved in Step 1>
 Plan directory: <plan-root>/<slug>/   (or <bug-root>/<slug>/, or "none")
 Diff base: <the base resolved in Step 1 — origin/<integration-branch>, or <integration-branch> on fallback>
 
-Run your checks against the full branch diff: conformance to the repo's
-standing rules (every CLAUDE.md, plus an ADR set where one exists),
-sister-implementation drift, cross-stack contracts, and plan prose vs code.
-Name the precedent (ADR number, CLAUDE.md section, sibling file:line, or the
-PLAN.md line) on every finding.
-Do NOT flag runtime behaviour — transactions, races, N+1 and silent failure
-belong to runtime-integrity-reviewer.`
+FIRST: read <skill dir>/references/finder-base.md, then your three corpus sections under
+<skill dir>/references/corpus/. Return ## Findings and ## Checked only, in the finder shape.
+No score, no severity, no waiver applied.`
 })
 ```
 
-Add this third block **only** when the trigger command above returned a path:
-
-```
-Agent({
-  subagent_type: "docs-accuracy-reviewer",
-  prompt: `Full-branch docs-accuracy audit.
-
-Plan directory: <plan-root>/<slug>/   (or <bug-root>/<slug>/, or "none")
-Diff base: <the base resolved in Step 1 — origin/<integration-branch>, or <integration-branch> on fallback>
-Doc paths: <the doc_paths pathspecs resolved above>
-Text files in this diff: <the paths the trigger command returned>
-
-Grade every claim in that text against the code this branch ships, and run the
-inverse pass: sentences the diff did not touch that its code change made false.
-Report per-claim verdicts with the quoted sentence, the file and symbol you read,
-and a suggested rewrite. Flag compliance claims separately.
-Do NOT review CLAUDE.md files, <plan-root>/ or <bug-root>/ — those are
-precedent-reviewer's. Do NOT review any path doc_paths excludes.`
-})
-```
+The go-line carries variables and the read order, never a rule. A rule stated here is a second
+home for it, and the second home drifts.
 
 ## Step 4: Synthesize in chat
 
@@ -178,42 +165,30 @@ the sha against HEAD:
 - Branch: `<branch-name>`
 - Base diff: `origin/<integration-branch>...HEAD`
 - Reviewed against commit: `<short-sha>`
-- Plan directory: `<plan-root>/<slug>` (or `<bug-root>/<slug>`)
+- Plan directory: `<plan-root>/<slug>` (or `<bug-root>/<slug>`, or none)
 - Generated: YYYY-MM-DD
 - Working tree state: clean / dirty
 
 ## Executive Summary
 - 2-4 sentences on overall branch state.
-- Threshold: reviewers pass at `>= 7 / 10`
-- Blocks threshold: <reviewers below 7, or "none">
-- Meets threshold: <reviewers at 7 or above>
+- Findings: N across the three lanes
 
 ## Runtime Integrity Review
-- Score: X / 10
-- Verdict: PASS / NEEDS WORK
-- Threshold status: meets threshold / below threshold
 - Findings:
-  1. `BLOCKER` / `MAJOR` / `MINOR` — file:line — what breaks, under what conditions, concrete fix
+  1. `file:line` — claim — consequence — tags — concrete next step
+- Checked: <its ## Checked, verbatim>
+- Boundary: scope of this review pass
+
+## Correctness Review
+- Findings:
+  1. `file:line` — claim — consequence — tags — concrete next step
+- Checked: <its ## Checked, verbatim>
 - Boundary: scope of this review pass
 
 ## Precedent Review
-- Score: X / 10
-- Verdict: PASS / NEEDS WORK
-- Threshold status: meets threshold / below threshold
 - Findings:
-  1. `BLOCKER` / `MAJOR` / `MINOR` — file:line — precedent cited (ADR-XXXX / CLAUDE.md section /
-     sibling file:line / PLAN.md line) — concrete fix
-- Boundary: scope of this review pass
-
-## Docs Accuracy Review
-(Omit this whole section when the diff touches no `doc_paths` file.)
-- Score: X / 10
-- Verdict: PASS / NEEDS WORK
-- Threshold status: meets threshold / below threshold
-- Findings:
-  1. `SOURCED` / `PARTIAL` / `OVER-GENERALISED` / `FABRICATED` / `SOURCE-MISSING` — `path` ›
-     heading — the quoted sentence, the code that fails to back it, the suggested rewrite
-- Compliance claims: <flagged claims, or "none"> (orthogonal — does not affect the score)
+  1. `file:line` — claim — consequence — tags — concrete next step
+- Checked: <its ## Checked, verbatim>
 - Boundary: scope of this review pass
 
 ## Required Fixes Before PR
@@ -221,54 +196,38 @@ the sha against HEAD:
 
 ## Decisions Needed
 1. …   (only real unresolved choices — not a question dump. `None.` is the common case.)
-
-## Final Verdict
-- Ready for PR / Fix review findings first
 ```
 
 ### Synthesis rules
 
-- **Synthesize — don't paste two reports.** If both agents land on the same site, state it once
-  under the reviewer whose question it answers.
-- Every finding needs severity + `file:line` + a concrete next step.
-- If a reviewer had no findings, write `Findings: none`. Do not invent MINORs to fill space.
-- **`Required Fixes Before PR` means "this branch should not open a PR until these land."** A
-  MINOR the author may reasonably skip is not a required fix. Roughly a quarter of branches have
-  a genuinely non-empty list; if yours is non-empty on most runs, the bar has slipped.
+- **Synthesize — don't paste three reports.** If two lanes land on the same site, state it once
+  under the lane whose question it answers.
+- Every finding needs `file:line` + claim + a concrete next step. Keep the finder's tags on
+  the line so the parent session can read them. Do not route on them.
+- If a lane had no findings, write `Findings: none`. Do not invent work to fill the list.
+- **`Required Fixes Before PR` is the parent's synthesis of what it would fix**, not a tag
+  router. A finding the author may reasonably skip is not a required fix. Roughly a quarter
+  of branches have a genuinely non-empty list; if yours is non-empty on most runs, the bar
+  has slipped.
+- **`Decisions Needed` is the only place to ask the developer** — a real design call, not
+  every finding. Unambiguous defects are the parent session's to act on after this report.
+- Do not verify, dedupe, waive, or emit READY / NEEDS WORK. This skill reports; the parent
+  session decides.
 - Do not modify application code in this skill. The chat report is the only deliverable.
 
 ## Step 5: Report back
 
 The Step 4 block **is** the report. Also state in chat:
 
-- Score per reviewer + overall verdict.
+- Finding count per lane.
 - The `Reviewed against commit:` sha (must equal `git rev-parse --short HEAD`).
-- If any reviewer is below threshold, list Required Fixes and recommend fixing before `/pr`.
-- Whether `docs-accuracy-reviewer` ran, and if it did not, whether that's because the diff touched
-  no user-facing text or because this project has no `doc_paths` configured. `/pr` asks for this
-  either way, so say it explicitly rather than leaving its absence to be read as a skip.
+- If `Required Fixes` is non-empty, list them and recommend fixing before `/pr`.
 
-Hand the docs-accuracy report back in full rather than summarised — `/pr` embeds **that**
-section in the PR body when the docs trigger fired. Runtime Integrity and Precedent scores stay
-in chat. They do not go in the PR body.
-
-## No-directory fallback (Step 2 found nothing)
-
-When there's no `<plan-root>/<slug>/` or `<bug-root>/<slug>/`:
-
-1. Spawn the always-on agents anyway — neither requires `PLAN.md`. `precedent-reviewer` anchors
-   on the repo's standing rules; `runtime-integrity-reviewer` anchors on the repo's conventions.
-   The docs trigger is independent of the directory: if it fired, the third agent joins here too.
-2. Report their findings inline in chat, `precedent-reviewer`'s standing-rule findings first so
-   security-shaped gaps surface before line-level nits.
-
-Nothing changes about the deliverable — this skill reports in chat on every branch shape. The
-fallback exists only to say which context the agents get, not whether a file is written.
+Nothing from this report goes in the PR body; the pushed code is the record.
 
 ## Constraints
 
-- Read-only on application code. Report in chat. That includes the text
-  `docs-accuracy-reviewer` grades — it proposes rewrites; the author applies them.
+- Read-only on application code. Report in chat.
 - Do not create commits, branches, or PRs from this skill.
 - Do not skip the parallel-spawn requirement — if spawning fails, stop and report rather than
   running one agent sequentially.

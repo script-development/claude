@@ -70,15 +70,13 @@ With both roots unset (`docs/plans`, `docs/bugs`):
 - **`implement-plan`** — asks the user where the plan lives; does not guess a fallback.
 - **`shepard`** — only needs this when the repo keeps no ADRs; no directory found then → asks
   where the tradeoff record should go.
-- **`review-branch`** — still spawns the always-on reviewers; neither requires `PLAN.md`. Per
+- **`review-branch`** — still spawns the three finders; none of them requires `PLAN.md`. Per
   *Which root* above it resolves the plan root then the bug root and reads whichever it found for
   context. It reports in chat on every branch shape and writes nothing, so a missing directory
-  changes the context the reviewers get, not the deliverable.
-- **`pr`** — skips the reviewer-pair check entirely on the `neither` row; the branch isn't
-  plan-driven and `pr` proceeds without one. That row is scoped to the reviewer-pair prompt only:
-  on a bug branch `pr` reads `bug-fix-verifier`'s verdict from `BUG.md` instead and never asks
-  for `/review-branch`. The docs-accuracy gate is the exception — it's triggered by the diff's
-  paths, not the branch's shape, so it runs on all three rows.
+  changes the context the finders get, not the deliverable.
+- **`pr`** — on a plan-driven branch, asks whether to run `/review-branch` (default no); a missing
+  review does not block. On a bug branch it reads `bug-fix-verifier`'s verdict from `BUG.md`
+  instead and never asks for `/review-branch`. On the `neither` row it skips the finder check.
 
 ## Writers
 

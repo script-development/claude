@@ -301,7 +301,7 @@ recognise as a plain `PASS`:
 Run `/pr`. It will push, post the standard feedback comment on the
 linked issue, and embed `bug-fix-verifier`'s verdict from BUG.md's
 `## Verification` section as the gate — bug fixes are gated by the
-verifier, not by the pre-PR reviewer pair, so `/pr` will not ask for a
+verifier, not by the pre-PR finders, so `/pr` will not ask for a
 `/review-branch` handoff on a bug branch.
 
 PR title names the defect (`fix: modal backdrop sticks after escape during

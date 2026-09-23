@@ -135,13 +135,10 @@ branch diff and reports in chat for `/pr` to consume in this session. Don't spaw
 agents directly here — `/review-branch` owns that orchestration, so the two flows can't drift
 apart.
 
-**What to do with the result:**
-
-- **Both reviewers 7+** — Proceed to Step 8.
-- **Either below 7** — Fix what the reviewer identified, re-run verification (Step 6), then
-  re-run `/review-branch`. Do not write IMPLEMENTATION.md or suggest a commit until both score 7
-  or above. The threshold exists because shipping below it has historically meant follow-up work
-  nobody scheduled.
+**What to do with the result:** the parent session sees the report and decides. Fix
+unambiguous findings, re-running verification (Step 6) after each fix; ask the developer on a
+real design call. Then proceed to Step 8. Do not wait on a READY / NEEDS WORK line —
+`/review-branch` does not emit one.
 
 ## Step 8: Capture learnings to IMPLEMENTATION.md
 
@@ -155,7 +152,7 @@ Use this structure:
 
 ## YYYY-MM-DD — <one-line summary of this session's work>
 
-**Review Scores:** Runtime Integrity N/10, Precedent N/10 (from `/review-branch`)
+**Review:** N findings across the three lanes (from `/review-branch`)
 
 **Key Changes:**
 - Created `path/to/new/file.ts`
@@ -187,7 +184,7 @@ Summarise what shipped and offer to commit:
 
 ```
 Implemented <KEY> — <one-sentence summary>
-Review scores: Runtime Integrity 9/10, Precedent 8/10. IMPLEMENTATION.md updated.
+Review: 2 findings across the three lanes, both fixed. IMPLEMENTATION.md updated.
 
 Suggest committing now. Want me to /commit?
 ```
