@@ -108,3 +108,32 @@ deleted in the working tree that no plugin ships. It was added and then reverted
 It only fires during a migration and before the deletion is committed, and fresh projects never
 hit it. It's migration hygiene, not `install`'s job of writing `project-context.md`. The 12:54 run
 raised it because the test setup had bulk-deleted `.claude/skills/`.
+
+## D4 — `install` writes a data-only project file that links to the template
+
+**Chosen.** `.claude/project-context.md` holds only a three-line header (who wrote it, a link to the
+template, and which applicable fields were left at their defaults), the fields that have a value
+(no comments), and confirmed `## Worktrees` subsections (no guidance text). The template stays the
+one place each field is documented.
+
+**Why.** kendo-2's trial file was 9.4 KB: 44 of its 57 frontmatter lines were comments, and three
+body sections were pure explanation. Its data was three values and a Gates table, about 400 tokens.
+Every reading skill loads the whole file each time it needs one field, so the rest (about 2k
+tokens) was paid on every read. Nobody needed it:
+
+- `install` decides applicability and detection from the **template's** comments.
+- Each reading skill states its own default and rules (the README's Notation paragraph requires
+  that).
+- A human editor can follow the header's link.
+
+**The "left at their defaults" line** replaces the empty `field:` lines the old shape kept. It
+shows a reader which fields exist, and shows a re-run which fields were already reviewed. The link
+is the plugin's `repository` URL. A local cache path would be personal, in a committed file, and
+would change with every plugin version.
+
+**Rejected.** Keeping the comments for the human editor. One click on the link gives them the same
+text, and then the cost isn't paid on every skill read.
+
+**Consequence.** Update mode leaves an existing file in the old commented shape alone, treats its
+empty fields as left at their defaults, and mentions that re-creating the file gives the smaller
+shape. The template's header now says `install` copies values only, not its text.

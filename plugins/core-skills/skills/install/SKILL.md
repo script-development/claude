@@ -61,10 +61,12 @@ baked in and reads nothing, but the plugin version replacing it will. Say in the
 fields were kept on a checked-in copy's account, so the user knows they take effect only once
 that plugin is installed.
 
-Drop every field, and every `##` body section, none of whose readers is available. Keep the
-template's order and its per-field comments for what remains — they are the file's own
-documentation for whoever edits it next. Drop the template's header comment block (the "copy to
-..." and "Canonical source" lines); it describes the template, not this project's file.
+Drop every field, and every `##` body section, none of whose readers is available.
+
+**The project's file holds data, not documentation.** Every skill reads the whole file each time
+it needs one field, and the template's comments and explanatory sections are already restated by
+the skills that read them. So none of that text is copied: the template stays the one place that
+documents each field, and the project's file links to it (Step 5).
 
 ## Step 3: Detect values (in parallel)
 
@@ -133,7 +135,7 @@ every `(Recommended)` option and list the choices in the summary for review.
 
 **Prose sections** (`## Worktrees` → Setup, Gates, House rules): these hold only knowledge
 verified in this project, with its *why*. Don't invent it. Write each applicable subsection's
-heading and guidance text, with its example block replaced by `_Not yet recorded._`. Then offer —
+heading only if it gets confirmed content; an empty subsection is left out, not stubbed. Offer —
 once, as a single question — to draft Gates from the project's own scripts (`package.json`
 scripts, `composer.json` scripts, `Makefile` targets). If the user accepts, check that each
 script exists, then ask a second question whose option carries the **exact text** to be written
@@ -143,18 +145,51 @@ recorded here is followed by every skill as if it were verified.
 
 ## Step 5: Write
 
-**Create mode** — write `.claude/project-context.md`: frontmatter with the applicable fields
-(confirmed values filled in, the rest left as `field:` with its comment, so the user can see what
-exists), then the applicable body sections.
+**Create mode** — write `.claude/project-context.md` in this shape, and nothing else:
+
+```markdown
+---
+# Written by /core-skills:install. Every field is documented in the template:
+# <repository>/references/project-context-template.md
+# Left at their defaults: plan_root, bug_root, integration_branch
+issue_tracker_project_id: 1
+worktree_dir: ../kendo-{slug}
+---
+
+## Worktrees
+
+### Gates
+
+<the confirmed text, verbatim>
+```
+
+- **Header**: `<repository>` is the `repository` URL in this plugin's `.claude-plugin/plugin.json`.
+  It's a link the whole team can open. Never write a local cache path: the file is committed, and
+  that path is personal and changes with every plugin version.
+- **Left at their defaults**: every applicable field that ended unset, in template order. It
+  tells a reader which fields exist, and tells a later re-run which fields were already reviewed.
+  Omit the line when every applicable field has a value.
+- **Fields**: only those with a value, in template order, with no comments. The reason for each
+  value is in the Step 6 summary.
+- **Body**: only `## Worktrees` and those of its `###` subsections (Setup, Gates, House rules)
+  that got confirmed content. No guidance text and no explanatory sections. No confirmed prose →
+  no body at all.
 
 **Update mode** — read the existing file first and change it only additively:
 
-- An applicable field missing from the frontmatter → insert it in template order, under its
-  section comment, confirmed through Step 4 like any other.
-- A field already present — even empty — is the user's: leave its value alone. Run Step 3 for it
-  only if it's empty, and only offer a value, never replace one.
-- An applicable `##` section missing from the body → append it in template order. An existing
-  section is never rewritten, even if the template's wording has since changed.
+- The header lines are install's own. Refresh them: the template link, and the "Left at their
+  defaults" list (a field that now has a value leaves the list; a newly applicable one that ends
+  unset joins it). A file without that header gets one.
+- An applicable field neither in the frontmatter nor in the defaults list → run Steps 3–4 for it.
+  A value is inserted in template order, with no comment; an unset one joins the defaults list.
+- A field already present, or listed as left at its default, is the user's decision: leave its
+  value alone. Run Step 3 for it only if it's unset, and only offer a value, never replace one.
+- A file written in the older, commented shape (every field present, most empty, with per-field
+  comments and explanatory sections) → leave its comments and sections alone. Treat an empty field
+  as listed at its default. Mention in the summary that re-creating the file (delete it, re-run)
+  gives the smaller, data-only shape.
+- A confirmed `### Worktrees` subsection missing from the body → append it in template order. An
+  existing section is never rewritten.
 - A field or section in the file that the template doesn't know (renamed, removed, or
   project-invented) → keep it and mention it in the summary. Don't delete.
 - In particular `plan_dir` (an older `{issue_key}`-substitution field): no skill reads it any

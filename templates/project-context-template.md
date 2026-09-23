@@ -9,9 +9,11 @@
 # skills — each conversion adds only the fields *that skill* needs, under a section
 # named for the concern (not the skill), so unrelated skills can share a section.
 # Don't add a field speculatively; add it when a skill is converted that reads it.
-# Everything below this header block is copied verbatim into consumers' files (by hand or by
-# core-skills' `install`), so it must make sense there: don't cite catalog plan decisions
-# (D8, D19, ...) or catalog-only paths below — say the reason itself instead.
+# The comments and explanatory sections below are the one place each field is documented.
+# core-skills' `install` copies only field values and confirmed Worktrees content into a
+# project's file, and links back here. A hand copy may carry the text, so it must make sense
+# there too: don't cite catalog plan decisions (D8, D19, ...) or catalog-only paths below —
+# say the reason itself instead.
 #
 # Canonical source: templates/project-context-template.md in the claude-2 catalog. A plugin
 # whose skills read this file (e.g. core-skills) ships an identical mirror under its own
