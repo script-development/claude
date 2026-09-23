@@ -1,6 +1,6 @@
 # BUG.md template
 
-Save to `docs/bugs/<KEY>-<short-slug>/BUG.md`. The slug is 2-5 words of kebab-case summarising the defect, not a copy of the title.
+Save to `<bug-root>/<KEY>-<short-slug>/BUG.md` (`bug_root`, default `docs/bugs`). The slug is 2-5 words of kebab-case summarising the defect, not a copy of the title.
 
 ## What to fill when
 

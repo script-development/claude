@@ -20,8 +20,8 @@ produce the plan yourself — you have the deepest context, having read the code
 entire conversation.
 
 This skill is project-agnostic: it never assumes a specific issue tracker, tracker project id, or
-issue-key format. It reads `issue_tracker_skill` / `issue_tracker_project_id` (Phase 0, 1a, 4a)
-and `doc_paths` (Site Documentation Sync, via `references/plan-template.md`) from
+issue-key format. It reads `issue_tracker_skill` / `issue_tracker_project_id` (Phase 0, 1a, 4a),
+`plan_root` (Phase 4b, 4c) and `doc_paths` (Site Documentation Sync, via `references/plan-template.md`) from
 `.claude/project-context.md` — see this plugin's README for how that file and its notation work.
 
 ## Phase 0: Parse arguments
@@ -357,8 +357,8 @@ If an issue already exists, use its key.
 
 ### 4b. Write DECISIONS.md
 
-Write decisions to `docs/plans/<slug>/DECISIONS.md` **as they are made** during planning, not
-after — rejected proposals and their reasoning are valuable context. `<slug>` is the issue key
+Write decisions to `<plan-root>/<slug>/DECISIONS.md` (`plan_root`, default `docs/plans`) **as
+they are made** during planning, not after — rejected proposals and their reasoning are valuable context. `<slug>` is the issue key
 plus a short description (e.g. `KD-0244-time-tracking`) when Phase 4a resolved one, or just the
 short description when `issue_tracker_skill` is `none` — the same slug shape
 `plugins/core-skills/references/plan-directory.md` expects a resolving skill to find later.
@@ -367,7 +367,7 @@ Use the format and rules in [`references/decisions-template.md`](references/deci
 
 ### 4c. Write PLAN.md
 
-Save the plan to `docs/plans/<slug>/PLAN.md` using the structure in
+Save the plan to `<plan-root>/<slug>/PLAN.md` using the structure in
 [`references/plan-template.md`](references/plan-template.md). The template is the contract —
 downstream agents (`plan-reviewer`, `surface-reviewer`, `/wireframe`, `/task-writer`,
 `precedent-reviewer`) parse the section names, so don't rename or omit them.

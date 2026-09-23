@@ -1,6 +1,6 @@
 # DECISIONS.md template
 
-Write decisions to `docs/plans/<slug>/DECISIONS.md` **as they are made** during planning,
+Write decisions to `<plan-root>/<slug>/DECISIONS.md` (`plan_root`, default `docs/plans`) **as they are made** during planning,
 not after the plan is finalized. Rejected proposals and their reasoning are valuable context.
 
 `/implement-plan` and `/next` read this file whole, in a session that usually holds nothing

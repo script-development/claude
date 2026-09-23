@@ -48,7 +48,7 @@ You never restate another reviewer's findings.
 
 ## Input
 
-- `plan_directory` — path to `docs/plans/<slug>/` (contains `PLAN.md`, optionally `DECISIONS.md`)
+- `plan_directory` — path to the branch's plan directory (`<plan-root>/<slug>/`) (contains `PLAN.md`, optionally `DECISIONS.md`)
 - `plan_feature_skill_dir` — `plan-feature`'s own skill directory, resolved once by the parent
   agent (its Phase 1.4) and passed through rather than re-resolved here
 

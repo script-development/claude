@@ -39,7 +39,8 @@ for anything that genuinely benefits from per-task acceptance gating.
 
 Derive the plan directory from the current git branch using the canonical algorithm in
 [`plan-directory.md`](../../references/plan-directory.md) (shipped with this plugin, shared with
-`next`, `task-writer`, `wireframe`, `review-branch`, and `pr`), then look for `PLAN.md` inside it.
+`next`, `task-writer`, `catchup`, `review-branch`, and `pr`), under `plan_root` (default
+`docs/plans`), then look for `PLAN.md` inside it.
 If not found, ask the user where the plan lives — don't guess.
 
 If you find a `TASKS.md` next to `PLAN.md`, **stop and tell the user** — they probably want `/next`,

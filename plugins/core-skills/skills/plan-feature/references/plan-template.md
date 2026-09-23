@@ -1,6 +1,6 @@
 # PLAN.md template
 
-Save the plan to `docs/plans/<slug>/PLAN.md`. Use this exact structure — the downstream
+Save the plan to `<plan-root>/<slug>/PLAN.md` (`plan_root`, default `docs/plans`). Use this exact structure — the downstream
 agents (`plan-reviewer`, `surface-reviewer`, `/wireframe`, `/task-writer`, `/implement-plan`,
 `precedent-reviewer`) parse the section names, so don't rename the ones you keep.
 

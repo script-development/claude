@@ -26,7 +26,7 @@ following TDD flow, and mark it done with learnings.
 
 Derive the plan directory from the current git branch using the canonical algorithm in
 [`references/plan-directory.md`](../../references/plan-directory.md) (shipped with this
-plugin), then look for `TASKS.md` inside it.
+plugin), under `plan_root` (default `docs/plans`), then look for `TASKS.md` inside it.
 
 If the plan directory exists but has no `TASKS.md`, fall back to `TASKS.md` in the repository
 root. If neither exists, ask the user where their task file is.

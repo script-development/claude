@@ -16,8 +16,8 @@ Create a PR targeting the base branch and post structured feedback on the linked
 project has an issue tracker configured) to build a training corpus for improving future user
 stories.
 
-This skill reads `issue_tracker_skill` / `issue_tracker_project_id` (Step 3) and `doc_paths`
-(Step 4) from `.claude/project-context.md` — see this plugin's README for how that file and its
+This skill reads `issue_tracker_skill` / `issue_tracker_project_id` (Step 3), `plan_root` /
+`bug_root` and `doc_paths` (Step 4) from `.claude/project-context.md` — see this plugin's README for how that file and its
 notation work.
 
 ## Workflow
@@ -116,13 +116,14 @@ comment/note.
 
 | Branch | Gate | Verdict lives in | Missing |
 |---|---|---|---|
-| `docs/plans/<slug>/` exists | the pre-PR reviewer pair | this session's `/review-branch` report for HEAD | **prompt** to run `/review-branch` |
-| `docs/bugs/<slug>/` exists | `bug-fix-verifier` | BUG.md `## Verification` | **never prompt** for `/review-branch` — see below |
+| `<plan-root>/<slug>/` exists | the pre-PR reviewer pair | this session's `/review-branch` report for HEAD | **prompt** to run `/review-branch` |
+| `<bug-root>/<slug>/` exists | `bug-fix-verifier` | BUG.md `## Verification` | **never prompt** for `/review-branch` — see below |
 | neither | none | — | skip the reviewer-pair check |
 
 Derive the directory using the canonical algorithm in
 [`plan-directory.md`](../../references/plan-directory.md) (shipped with this plugin, shared with
-`review-branch` and others).
+`review-branch` and others), under `plan_root` then `bug_root` (defaults `docs/plans`,
+`docs/bugs`).
 
 **One gate cuts across all three rows**: `docs-accuracy-reviewer`, triggered by the paths in the
 diff rather than by the branch's shape. Read `doc_paths` from `.claude/project-context.md` first —
@@ -149,8 +150,8 @@ PR body.
 
 | Branch has | Verdict lives in | Missing |
 |---|---|---|
-| `docs/plans/<slug>/` | this session's `/review-branch` `## Docs Accuracy Review`, present and fresh vs HEAD | **prompt** to run `/review-branch` — including when the session review is fresh but carries no such section |
-| `docs/bugs/<slug>/` | a **fresh** in-session `/review-branch` § Docs Accuracy if one is there, else the PR body | **prompt** to run the reviewer directly — never `/review-branch` |
+| `<plan-root>/<slug>/` | this session's `/review-branch` `## Docs Accuracy Review`, present and fresh vs HEAD | **prompt** to run `/review-branch` — including when the session review is fresh but carries no such section |
+| `<bug-root>/<slug>/` | a **fresh** in-session `/review-branch` § Docs Accuracy if one is there, else the PR body | **prompt** to run the reviewer directly — never `/review-branch` |
 | no directory | the PR body block this step writes | **prompt** to run the reviewer directly |
 
 **A bug branch is never prompted for `/review-branch`, and this gate does not change that.**
@@ -317,7 +318,7 @@ gh pr create --base <base-branch> --title "PR title here" --body "$(cat <<'EOF'
 ## Bug Fix Verification
 <!-- Bug branches only. Omit on plan-driven and no-directory branches. -->
 - Verifier: 9/10 (PASS) — defect no longer reproduces
-- See `docs/bugs/<slug>/BUG.md` § Verification.
+- See `<bug-root>/<slug>/BUG.md` § Verification.
 
 ## Docs accuracy
 <!-- Any branch whose diff touches doc_paths. Omit otherwise. -->

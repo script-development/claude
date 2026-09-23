@@ -367,7 +367,8 @@ reply that names the behaviour and hands the fix to a named issue or report is a
 § 3 give the exact wording that lands.
 
 A permanent ACCEPTED tradeoff also gets a durable record — an ADR if the repo keeps them, otherwise
-the branch's own `docs/plans/<slug>/DECISIONS.md`. crit waives a finding whose behaviour such a
+the branch's own `DECISIONS.md` in its plan directory (resolved per
+[`plan-directory.md`](../../references/plan-directory.md) under `plan_root`, default `docs/plans`). crit waives a finding whose behaviour such a
 record accepts by name, but only for a finding that has no thread yet, and only when the record is
 in the tree at the reviewed head. So a record written after the thread exists closes nothing; the
 reply does that. Record only what was actually decided — a record claiming a decision the developer

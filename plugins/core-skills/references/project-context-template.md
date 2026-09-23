@@ -37,15 +37,23 @@ issue_tracker_project_id: # This project's id within that tracker (e.g. Kendo's 
 # per field below), read once by the skill(s) named, degrading to that skill's own generic
 # default when the field or file is absent — never a hard failure. Add a new field here only
 # when a skill hardcodes a directory convention with no override; don't add one speculatively.
-plan_dir:              # e.g. docs/plans/{issue_key}/ — this project's plan directory
-                       # convention. {issue_key} is substituted literally. Omit to use the
-                       # skill's own generic default. Used by: catchup.
+plan_root:             # e.g. docs/plans — where branch plan folders (PLAN.md, TASKS.md,
+                       # DECISIONS.md) live. A plain path, no placeholders: the folder name
+                       # inside it is set by the skills, not by this field, so the one that
+                       # writes a plan and the one that finds it later always agree. Defaults
+                       # to docs/plans. Set it only when that path clashes with something this
+                       # project already keeps there. Used by: catchup, next, implement-plan,
+                       # task-writer, plan-feature, review-branch, pr, shepard.
+bug_root:              # e.g. docs/bugs — where bug-investigation folders (BUG.md) live. Same
+                       # contract as plan_root; defaults to docs/bugs. Used by: fix-bug,
+                       # review-branch, pr.
 worktree_dir:          # e.g. .claude/worktrees/{slug} — override the default worktree
                        # location. {slug} is substituted literally. Needed when repo tooling
-                       # sweeps the whole repo root (a docker build context, a globbing test
-                       # runner, IDE indexing), or when the default path is already covered by
-                       # this project's own .gitignore (say so under Worktrees > House rules
-                       # below — worktree can then skip its own ignore-list write).
+                       # sweeps the whole repo root (a docker build context the project's
+                       # .dockerignore doesn't exclude it from, a globbing test runner, IDE
+                       # indexing). A default already covered by this project's own .gitignore
+                       # is not a reason to override: say so under Worktrees > House rules
+                       # below instead, so worktree can skip its own ignore-list write.
                        # Used by: worktree.
 
 # --- Worktrees (used by: worktree, commit, newbranch, review-branch, sync-worktrees) ---
@@ -93,7 +101,9 @@ see the frontmatter comments above for what each one overrides and which skill(s
 section exists so that repetition doesn't accumulate one thin subsection per skill; add a line
 here, not a new `##` heading, the next time a skill hardcodes a directory convention.
 
-- `plan_dir` — a branch's planning artifacts (`PLAN.md`, `TASKS.md`, `DECISIONS.md`).
+- `plan_root` — the directory holding one folder per branch's planning artifacts (`PLAN.md`,
+  `TASKS.md`, `DECISIONS.md`).
+- `bug_root` — the same for bug investigations (`BUG.md`).
 - `worktree_dir` — where a cut worktree lives; see Worktrees below for the richer,
   worktree-specific knowledge this field's own section still carries.
 
@@ -101,7 +111,7 @@ here, not a new `##` heading, the next time a skill hardcodes a directory conven
 
 `integration_branch` is a simple one-line override — see the frontmatter comments above.
 `worktree_dir` lives in Directories above, since it's the same single-scalar-path shape as
-`plan_dir`; it's still referenced here in House rules, because the
+`plan_root`; it's still referenced here in House rules, because the
 knowledge of *why* its default might need overriding (a `.gitignore` that already covers it, a
 build context that sweeps it) is worktree-specific. Everything below `integration_branch` is
 richer, project-verified knowledge that doesn't fit a single scalar, so it lives here as prose

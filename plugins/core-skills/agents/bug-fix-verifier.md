@@ -36,7 +36,7 @@ step; everything downstream depends on it.
 
 The parent agent provides:
 
-- **bug_directory**: Path to `docs/bugs/<slug>/` containing `BUG.md`
+- **bug_directory**: Path to the branch's bug directory (`<bug-root>/<slug>/`) containing `BUG.md`
 
 ## Workflow
 
@@ -234,7 +234,7 @@ Return a short summary in this format:
 
 1. <concrete actionable item, or "None">
 
-Full verdict written to: docs/bugs/<slug>/BUG.md § Verification
+Full verdict written to: <bug-root>/<slug>/BUG.md § Verification
 ```
 
 ## Scoring Guide
