@@ -91,3 +91,18 @@ root override that every skill honours cost little.
 
 **Rejected.** Deleting replaced copies from `install`. `install` writes one file, and removing a
 project's skills is the user's call, made once the plugin version has earned trust.
+
+## D3 — Two more `install` fixes from the 0.23.0 trial runs
+
+Two runs in `kendo-2` on the pre-merge build (12:54 and 13:01, 2026-09-23) agreed on every
+recommendation except `doc_paths`. That one is left alone: it comes from core-skills'
+`review-branch` still having the older reviewer design (`plugin-install-skill` D3), and it gets
+fixed when the reviewers are synced, a separate task.
+
+- **A "Deleted without a counterpart" summary line.** Only the 12:54 run warned that the working
+  tree deletes skills and agents no plugin ships (`correctness-reviewer`, `drive-pr`, `startup`,
+  `kendo-mcp`, …) while `CLAUDE.md` and `REVIEWERS.md` still name them. The warning was useful but
+  depended on the run, so it's now a standard line. It reports only, never restores.
+- **Branch-named folders without an issue key are found.** The 12:54 run claimed no skill would
+  match `issue-detail-load-path/` to its branch. The exact-name step does. The plan-folder note in
+  `install` now says so.
