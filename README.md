@@ -48,9 +48,16 @@ Generic across any project on a given stack, but assume that stack is in use.
 
 | Skill | Stack | Description |
 |-------|-------|-------------|
-| [nightwatch-mcp](skills/nightwatch-mcp/) | Nightwatch MCP | Error and performance monitoring, exception triage |
 | [release-cli](skills/release-cli/) | Go + GoReleaser | Tag and release a Go CLI via GoReleaser on tag push |
 | [startup](skills/startup/) | Laravel + Vue + MinIO | Full project setup: Docker services, .env files, then parallel backend/frontend/MCP setup, with worktree support |
+
+### Tool-Specific Skills
+
+Tied to a specific third-party tool or service rather than a language/framework stack. Generic across any project using that tool.
+
+| Skill | Tool | Description |
+|-------|------|-------------|
+| [nightwatch-mcp](skills/nightwatch-mcp/) | Nightwatch | Error and performance monitoring, exception triage. Requires the Nightwatch MCP server |
 
 ### Kendo PM Skills
 
