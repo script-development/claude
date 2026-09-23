@@ -177,7 +177,6 @@ plugins. Don't commit — the file belongs to the project; leave it for the user
 **Kept for a checked-in copy:** <field> — read once <plugin> replaces `.claude/skills/<name>/`
 **Left alone:** <existing fields/sections, including unknown ones>
 **Replaced by plugin:** `.claude/skills/<name>/`, `.claude/agents/<name>.md` — now also shipped as `<plugin>:<name>`
-**Deleted without a counterpart:** `.claude/skills/<name>/`, `.claude/agents/<name>.md` — deleted in the working tree, no installed plugin ships it
 
 Re-run /core-skills:install after installing another plugin from this marketplace.
 ```
@@ -187,14 +186,6 @@ whose name matches a skill or agent an installed plugin now ships. Both copies s
 side by side, so a project midway through migrating can end up running either one. List them and
 say they can be deleted once the plugin version is trusted; don't delete them yourself. A
 checked-in copy with no plugin counterpart isn't listed — it's the project's own skill. Omit the
-line when nothing matches.
-
-**Deleted without a counterpart** lists checked-in skills and agents that are deleted in the
-working tree but not yet committed (`git status --porcelain -- .claude/skills .claude/agents`,
-status `D`) and that no installed plugin ships. Those are deletions a migration swept up by
-mistake, or ones waiting on a plugin that isn't installed yet (e.g. `kendo-pm`). Committing them
-loses the skill. Also name any file that still refers to them (`CLAUDE.md`, `.claude/settings.json`
-hooks, a reviewer index): grep those for each deleted name. Report only, never restore. Omit the
 line when nothing matches.
 
 ## What this skill never does
