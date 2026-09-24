@@ -147,7 +147,7 @@ cost of preventing it was an unbounded wait on a reviewer that may not even be r
 #### 2a · CI
 
 ```bash
-<skill dir>/scripts/ci-failures.sh <PR>
+bash <skill dir>/scripts/ci-failures.sh <PR>
 ```
 
 One call replaces the status-check → run-ID → log-fetch dance. It is pure `gh` + `jq`, so it works
@@ -524,7 +524,7 @@ watching.
 Arm it with the **Monitor** tool, `persistent: true`, running this skill's watcher:
 
 ```bash
-<skill dir>/scripts/pr-watch.sh <PR-number>
+bash <skill dir>/scripts/pr-watch.sh <PR-number>
 ```
 
 Run it from the checkout this turn used, so `gh` resolves the right repo. Default tick is 30s;
