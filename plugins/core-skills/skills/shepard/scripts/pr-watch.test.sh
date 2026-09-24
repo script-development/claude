@@ -23,6 +23,15 @@
 # No framework by design, matching ci-failures.test.sh. Run it the same way:
 #
 #   bash <skill dir>/scripts/pr-watch.test.sh
+#
+# The watch must also run on bash 3.2, the /bin/bash of every stock macOS. To check that
+# without a Mac (files need LF endings; a Windows checkout's CRLF copies do not parse):
+#
+#   docker run --rm -v "<skill dir>/scripts:/w" bash:3.2 \
+#     sh -c 'apk add -q jq coreutils grep && cd /w && bash pr-watch.test.sh'
+#
+# GNU grep is there for the `grep -z` argv checks: busybox's grep has no -z, and without it
+# the token check passes vacuously.
 
 set -uo pipefail
 
@@ -576,6 +585,23 @@ if grep -qzF -- '-K' "$state/curl_argv.log" 2>/dev/null; then
   passed=$((passed + 1)); printf '  ok    %s\n' 'bus auth travels via curl -K, not -H'
 else
   failed=$((failed + 1)); printf '  FAIL  %s\n' 'bus auth travels via curl -K, not -H'
+fi
+
+# The watch keeps each field in a fixed slot named in FIELDS (bash 3.2 has no associative
+# arrays), and load drops a field it has no slot for. A field added to a snapshot and not
+# to FIELDS would never be compared, so its changes would never print. Both surfaces'
+# snapshot keys, read off a real --once, must all have a slot.
+reset; bus_listed
+bus_tick 1 clean 0 0 aaaaaaaa
+gh_tick 1 OPEN aaaaaaaa 0 0
+snapshot=$(run --once --source bus | tail -n 1)
+emitted=$(jq -r 'keys[]' <<<"$snapshot" 2>/dev/null | tr -d '\r' | sort)
+slots=$(sed -n '/^FIELDS=(/,/)/p' "$subject" | tr -d '\r' | sed -e 's/^FIELDS=(//' -e 's/)//' | tr -s ' ' '\n' | sed '/^$/d' | sort)
+unslotted=$(comm -23 <(echo "$emitted") <(echo "$slots"))
+if [[ -n "$emitted" && -z "$unslotted" ]]; then
+  passed=$((passed + 1)); printf '  ok    %s\n' 'every snapshot field has a slot in FIELDS'
+else
+  failed=$((failed + 1)); printf '  FAIL  %s — %s\n' 'every snapshot field has a slot in FIELDS' "${unslotted:-no snapshot keys read}"
 fi
 
 echo
