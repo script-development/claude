@@ -5,6 +5,36 @@ incrementally — see `RELEASING.md` for why. Format follows [Keep a Changelog](
 versioning follows [Semantic Versioning](https://semver.org/), scoped to this plugin's own
 convention in `RELEASING.md`.
 
+## [1.0.2] - 2026-09-24
+
+### Fixed
+
+- **On macOS and Linux every handoff read as MALFORMED or unverified.** Every `.sh` in this
+  plugin reached git as `100644`: the Windows checkout that authored them has
+  `core.filemode=false`, and Git Bash reports any file with a shebang as executable, so nothing
+  noticed. A plugin install is a clone, so the scripts arrived without an exec bit.
+  `lib/verify-handoff.sh` insisted on one for its verifier (`[ -x ]`, then ran it directly) and
+  exited 2 on every handoff, and the gate lookups in `hooks/handoff-inject.sh`,
+  `hooks/handoff-fork-write.sh` and the handoff skill's Step 1 insisted on one for the gate and
+  came up empty. All the scripts are `100755` now, and every lookup checks `[ -f ]` and runs
+  through `bash`, so a lost exec bit cannot break it again.
+- **On macOS the automatic PreCompact handoff was never written.** macOS ships no `timeout`, and
+  the detached runner called it anyway, exiting 127 before the turn started: the skeleton stayed
+  a skeleton, with only an `rc=127` log line. The runner now uses `timeout`, then `gtimeout`, then
+  a plain `sleep`/`kill` watchdog.
+- **macOS's `uuidgen` prints uppercase.** The write-session id is now lowercased before it is
+  recorded and passed to `--session-id`, matching the lowercase `openssl` fallback.
+- **`hooks/handoff-fork-write.sh` still picked the lexically last cached version** for its gate
+  and skill lookups (the gap 1.0.1 left open). Both now sort with `sort -V`, as Step 1 does.
+
+### Tests
+
+- Every suite passes under bash 3.2.57 (the `bash:3.2` image) as well as bash 5. Where 3.2
+  behaves differently the suite says so instead of failing: a `set -e` inside a sourced
+  thresholds file still fires in an OR-list there, and the no-`timeout` case skips because an
+  exported-function stub empties `BASH_SOURCE` on 3.2.
+- `tests/gate.sh` passes again: `hooks/handoff-fork-write.test.sh` now carries AAA labels.
+
 ## [1.0.1] - 2026-09-24
 
 ### Fixed
