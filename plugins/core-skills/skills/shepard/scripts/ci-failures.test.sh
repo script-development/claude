@@ -163,6 +163,16 @@ printf '700\tCI\tin_progress\t\n' > "$fixtures/runs-700.tsv"
     printf '702\tfrontend\tin_progress\t\n'
 } > "$fixtures/jobs-700.tsv"
 
+# A failed job whose log is coloured, in both forms gh can hand back: the real
+# ESC byte, and the printable `^[` that gh 2.94 rewrites ESC into. The second
+# form used to survive trimming as literal text in every excerpt.
+printf '800\tCI\tcompleted\tfailure\n' > "$fixtures/runs-800.tsv"
+printf '801\tbackend\tcompleted\tfailure\n' > "$fixtures/jobs-800.tsv"
+{
+    printf 'backend\tRun Pest\t2026-09-24T08:15:22.0Z \033[36;1mset +e\033[0m\n'
+    printf 'backend\tRun Pest\t2026-09-24T08:15:23.0Z ^[[41;1m FAILED ^[[49;22m ClientSeederDemoProfileTest\n'
+} > "$fixtures/joblog-801.txt"
+
 # ---------------------------------------------------------------- harness ---
 out=""
 rc=0
@@ -273,6 +283,14 @@ expect_contains "  FAIL  backend (PHP 8.4)" "the failed job is still classified"
 
 invoke 1 100 "$broken"
 expect_rc 0 "a green run is still GREEN when tr cannot launch"
+
+echo
+echo "Log trimming"
+invoke 0 800
+expect_contains "set +e" "a line coloured with a real ESC keeps its text"
+expect_contains " FAILED  ClientSeederDemoProfileTest" "a line coloured with printable ^[ keeps its text"
+expect_absent $'\033[' "real ESC colour codes are stripped"
+expect_absent "^[[" "printable ^[ colour codes are stripped"
 
 # A usage error is not a failed job: exit 1 would send /shepard into a fix loop.
 echo

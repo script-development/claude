@@ -156,8 +156,13 @@ done < <(jq -r '.[] | [.databaseId, .workflowName, .status, .conclusion] | @tsv'
 
 # Strip gh's job/step prefixes, timestamps, and ANSI codes; group lines per
 # failed step; bound each group to HEAD_LINES + TAIL_LINES unless --full.
+#
+# ANSI codes arrive in two forms. A gh that passes control characters through
+# sends the real ESC byte; gh 2.94 (and whichever release started it) rewrites
+# ESC as the two printable characters `^[`, so `^[[36;1m` survived the ESC-only
+# pattern into every excerpt as text (emmie #1776). Both are stripped.
 trim_logs() {
-  sed -E -e $'s/\x1b\\[[0-9;?]*[A-Za-z]//g' -e $'s/\r$//' \
+  sed -E -e $'s/\x1b\\[[0-9;?]*[A-Za-z]//g' -e 's/\^\[\[[0-9;?]*[A-Za-z]//g' -e $'s/\r$//' \
   | awk -F'\t' -v head_n="$HEAD_LINES" -v tail_n="$TAIL_LINES" -v full="$FULL" '
     {
       if (NF >= 3) {
