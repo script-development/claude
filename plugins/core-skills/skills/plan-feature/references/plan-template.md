@@ -176,10 +176,11 @@ documentation conventions (often a `site/` or `docs/` tree). Common categories w
 | **Any** docs change above | Every mirror of the docs — e.g. an LLM-facing text export (`llms-full.txt` or similar) copied verbatim into the build. A claim fixed in the source docs alone keeps shipping in the mirror; one past fix corrected one of two claim locations and review found the other |
 | Conventions, allowlists, or components this feature deletes or renames | The `CLAUDE.md` entry or design-system reference describing them — a stale description steers the next contributor toward a file that is gone |
 
-This table asks **which** documents change. What they then *claim* is graded after the fact by
-`docs-accuracy-reviewer`, which runs on any branch whose diff touches `doc_paths`. There is
-no eighth surface row for it: user-facing text is most often edited on branches that wrote no
-plan at all, so a plan question would never reach them and the gate has to sit at review time.
+This table asks **which** documents change. What they then *claim* is checked after the fact
+by `correctness-reviewer`'s promised-behaviour rule (Sins of omission), which runs on every
+branch. There is no eighth surface row for it: user-facing text is most often edited on branches
+that wrote no plan at all, so a plan question would never reach them and the check has to sit at
+review time.
 
 ## Edge Cases
 <cases from the Q&A — how each is handled>

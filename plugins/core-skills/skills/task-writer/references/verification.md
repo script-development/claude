@@ -78,8 +78,9 @@ April 2026 because first-pass scores were 9-10 nearly every time. The gate for
 a task is its verification: tests, types, lint.
 
 Review runs once against the whole branch via `/review-branch`, which spawns
-`runtime-integrity-reviewer` and `precedent-reviewer`. **Don't list them as
-verification steps in a task** — they don't run at task granularity, and the
+`runtime-integrity-reviewer`, `correctness-reviewer` and `precedent-reviewer`.
+**Don't list them as verification steps in a task** — they don't run at task
+granularity, and the
 defects they hunt (transaction boundaries, sibling drift) only become visible
 once the branch is whole.
 

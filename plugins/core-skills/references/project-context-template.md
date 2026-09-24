@@ -66,15 +66,6 @@ integration_branch:    # Override when auto-detection (origin/development, origi
                        # If this project's tracker auto-links branches, also document the
                        # issue-key format under House rules below — a truncated or malformed
                        # key silently breaks the auto-link.
-
-# --- Docs (used by: review-branch) ---
-doc_paths:             # This project's list of user-facing text prefixes — directory prefixes,
-                       # not `**` globs (git reads `<prefix>/**/*.md` as requiring an
-                       # intervening directory, so it silently misses `<prefix>/README.md`). May
-                       # include a `:(exclude)` pathspec for a sub-tree another reviewer owns.
-                       # No generic default: unset means docs-accuracy-reviewer never fires —
-                       # there's no universal answer for where a project's user-facing text
-                       # lives, unlike issue_tracker_skill's kendo-mcp default.
 ---
 
 # Project Context
@@ -158,22 +149,3 @@ Also the place for two narrower notes, when they apply: the issue-key format thi
 tracker expects if it auto-links branches (a truncated or malformed key silently breaks the
 link), and whether `worktree_dir`'s path is already covered by this project's own `.gitignore`
 (if so, `worktree` can skip writing its own ignore-list entry).
-
-## Docs
-
-`doc_paths` is this project's list of user-facing text prefixes — directory prefixes, not `**`
-globs, for the reason given in the frontmatter comment above. `docs-accuracy-reviewer` (spawned
-by `review-branch`) reads it to decide whether it joins a branch's review at all, and which files
-it audits when it does. Entries may carry a `:(exclude)` pathspec for a sub-tree another reviewer
-owns — passed through unchanged. Leaving the field unset means the reviewer never fires: unlike
-`issue_tracker_skill`'s `kendo-mcp` default, there's no generic answer for where a project's
-user-facing text lives.
-
-Example:
-
-```yaml
-doc_paths:
-  - docs/
-  - README.md
-  - "plugins/*/README.md"
-```

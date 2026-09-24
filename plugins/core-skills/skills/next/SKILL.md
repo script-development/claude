@@ -18,8 +18,8 @@ following TDD flow, and mark it done with learnings.
 > per-task checklist.
 
 > **Review runs once per branch, not per task.** Do not spawn reviewer agents after each task —
-> per-task reviews burn tokens for near-zero signal (first-pass scores are 9-10 the vast majority
-> of the time). The gate for a task is **verification** (tests + types + lint). Reviewers run
+> per-task reviews burn tokens for near-zero signal (first-pass reviews came back clean the vast
+> majority of the time). The gate for a task is **verification** (tests + types + lint). Reviewers run
 > once via `/review-branch` before `/pr`.
 
 ## Step 1: Locate TASKS.md
@@ -99,9 +99,8 @@ Common verification patterns:
 - Narrowed/pipeline test commands for the area you touched (avoid full-suite watch mode)
 - Coverage check if the project enforces a threshold
 
-**Verification is the per-task gate.** Reviewer agents (acceptance, simplicity, silent-failure,
-efficiency) no longer run per task — they run once against the full branch via `/review-branch`
-before `/pr`.
+**Verification is the per-task gate.** Reviewer agents no longer run per task — the three
+finders run once against the full branch via `/review-branch` before `/pr`.
 
 ## Step 6: Mark complete with metadata
 

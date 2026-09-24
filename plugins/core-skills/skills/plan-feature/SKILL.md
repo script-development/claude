@@ -20,9 +20,9 @@ produce the plan yourself — you have the deepest context, having read the code
 entire conversation.
 
 This skill is project-agnostic: it never assumes a specific issue tracker, tracker project id, or
-issue-key format. It reads `issue_tracker_skill` / `issue_tracker_project_id` (Phase 0, 1a, 4a),
-`plan_root` (Phase 4b, 4c) and `doc_paths` (Site Documentation Sync, via `references/plan-template.md`) from
-`.claude/project-context.md` — see this plugin's README for how that file and its notation work.
+issue-key format. It reads `issue_tracker_skill` / `issue_tracker_project_id` (Phase 0, 1a, 4a)
+and `plan_root` (Phase 4b, 4c) from `.claude/project-context.md` — see this plugin's README for
+how that file and its notation work.
 
 ## Phase 0: Parse arguments
 
