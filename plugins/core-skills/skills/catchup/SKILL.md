@@ -20,7 +20,7 @@ Load everything about the current branch, check alignment with the base branch, 
 concise working summary so you (and the user) can hit the ground running.
 
 This skill is project-agnostic: it never assumes a specific issue-tracker, plan layout, or issue
-key format. It reads `plan_dir` (Step 1.4) and `issue_tracker_skill` (Step 2) from
+key format. It reads `plan_root` (Step 1.5) and `issue_tracker_skill` (Step 2) from
 `.claude/project-context.md` — see this plugin's README for how that file and its notation
 work. `issue_tracker_skill` is the one field here with an org-level default rather than a plain
 skip — see Step 2. No file yet: offer `/core-skills:install` (which builds it from the shipped starter template
@@ -34,11 +34,14 @@ at `references/project-context-template.md`), don't require it.
    gh pr view --json baseRefName --jq '.baseRefName' 2>/dev/null || git symbolic-ref refs/remotes/origin/HEAD --short 2>/dev/null | sed 's|origin/||'
    ```
 3. If on the default branch (main/master/develop), skip alignment reporting — just output context
-4. Extract any issue key prefix from the branch name (e.g. `KD-0341` from `KD-0341-oauth-login-integratie` — any `[A-Z]+-\d+`-shaped token). If found, derive the plan directory: read `plan_dir` from `.claude/project-context.md` if that file and field exist (substitute the extracted issue key for `{issue_key}`); otherwise default to `docs/plans/<issue-key>/`. If no issue key, fall back to common locations: `PLAN.md`, `TASKS.md`, or any `docs/plans/` directory whose name overlaps with branch keywords.
-
-This deliberately stays a simpler, more tolerant lookup than a canonical plan-directory
-algorithm a project's own planning skill might use (matching on issue key only, no slug) — it
-just needs to find _any_ artefacts for the branch quickly, not resolve them precisely.
+4. Extract any issue key prefix from the branch name (e.g. `KD-0341` from `KD-0341-oauth-login-integratie` — any `[A-Z]+-\d+`-shaped token); Step 2's tracker lookup uses it.
+5. Resolve the plan directory with the canonical algorithm in
+   [`plan-directory.md`](../../references/plan-directory.md) (shipped with this plugin, shared
+   with `next`, `task-writer`, `implement-plan`, `review-branch` and `pr`), under `plan_root`
+   (default `docs/plans`). It tries the folder named after the branch first, then a single folder
+   starting with the issue key. Use its `catchup` fallback instead of asking: `PLAN.md` /
+   `TASKS.md` in the repository root, then "no plan directory"; several key-prefix matches → name
+   them all in the summary rather than reading one.
 
 ## Step 2: Gather context (run all in parallel)
 

@@ -19,8 +19,8 @@ End-to-end bug-fix workflow. Lighter than `/plan-feature`: bugs don't need
 interrogation, wireframes, task breakdown, or acceptance criteria — just a
 confirmed reproduction, a root cause, an approved fix, and proof the fix held.
 
-This skill reads `issue_tracker_skill` (Phase 1) from `.claude/project-context.md` — see this
-plugin's README for how that file and its notation work.
+This skill reads `issue_tracker_skill` (Phase 1) and `bug_root` (Phase 5) from
+`.claude/project-context.md` — see this plugin's README for how that file and its notation work.
 
 If a bug touches multiple domains with non-trivial design work (e.g. a race
 condition that reveals a missing synchronisation primitive), promote it to
@@ -121,9 +121,10 @@ If the bug doesn't reproduce on the base branch, stop. Tell the user which
 commit appears to have fixed it (link to the PR if you can find it) and
 suggest merging the base branch in instead of writing a duplicate fix.
 
-## Phase 5: Create docs/bugs/<slug>/BUG.md
+## Phase 5: Create <bug-root>/<slug>/BUG.md
 
-Use the same naming as plans: `docs/bugs/<KEY>-<short-slug>/`. The slug is
+`<bug-root>` is `bug_root`, default `docs/bugs`. Use the same naming as plans:
+`<bug-root>/<KEY>-<short-slug>/`. The slug is
 2-5 words of kebab-case summarising the defect, not a copy of the title.
 
 Write `BUG.md` using the template at
@@ -209,7 +210,7 @@ Agent({
   subagent_type: "bug-fix-verifier",
   prompt: `Verify the bug fix on this branch.
 
-Bug directory: docs/bugs/<slug>/
+Bug directory: <bug-root>/<slug>/
 
 Read BUG.md, re-run the repro against HEAD, confirm the bug no longer
 reproduces, and glance at touched files for obvious regressions. Write

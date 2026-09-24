@@ -19,7 +19,10 @@ A starter template ships with this plugin at
 the skills installed in this project read, detects values from the repo, and asks
 (AskUserQuestion) only for what it can't detect. It's additive, so re-run it after installing
 another plugin from this marketplace (e.g. `kendo-pm`) to add that plugin's fields without
-touching the ones already set. Copying the template by hand still works.
+touching the ones already set. The file it writes holds only values and links to the template,
+which stays the one place each field is documented: every skill reads the whole file, so
+copied-in documentation would cost context on every read. Copying the template by hand still
+works.
 
 **One install skill, not one per plugin.** Every plugin from this marketplace reads the same file,
 and its one template lives here; `kendo-pm` declares `core-skills` as a dependency, so this skill

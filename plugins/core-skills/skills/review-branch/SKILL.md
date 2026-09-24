@@ -16,7 +16,8 @@ Spawn the repository's canonical reviewer agents (bundled with this plugin) agai
 branch diff and report in chat. `/pr` consumes this session's report when its `Reviewed against
 commit:` sha matches HEAD.
 
-This skill reads `integration_branch` (Step 1) and `doc_paths` (Step 3) from
+This skill reads `integration_branch` (Step 1), `plan_root` / `bug_root` (Step 2) and
+`doc_paths` (Step 3) from
 `.claude/project-context.md` — see this plugin's README for how that file and its notation work.
 
 ## The questions
@@ -72,11 +73,12 @@ takes its own diff. Pulling it here only burns the orchestrator's window.
 
 Use the canonical algorithm in
 [`plan-directory.md`](../../references/plan-directory.md) (shipped with this plugin, shared with
-`next`, `task-writer` and `wireframe`).
+`next`, `task-writer` and `catchup`), under `plan_root` then `bug_root` (defaults `docs/plans`,
+`docs/bugs`).
 
-- **`docs/plans/<slug>/` exists** → full review. Read `PLAN.md` / `DECISIONS.md` /
+- **`<plan-root>/<slug>/` exists** → full review. Read `PLAN.md` / `DECISIONS.md` /
   `WIREFRAMES.md` / `TASKS.md` if present. Report in chat. Write nothing.
-- **`docs/bugs/<slug>/` exists** (bug branch) → full review. Read `BUG.md` if present. Report in
+- **`<bug-root>/<slug>/` exists** (bug branch) → full review. Read `BUG.md` if present. Report in
   chat. Write nothing. This review is **optional on bug branches** — `bug-fix-verifier` is their
   gate, and `/pr` never asks for this run there. It runs when a developer explicitly wants it.
 - **Neither exists** → still spawn the agents; report in chat only.
@@ -112,7 +114,7 @@ Agent({
   subagent_type: "runtime-integrity-reviewer",
   prompt: `Full-branch runtime-integrity audit.
 
-Plan directory: docs/plans/<slug>/   (or docs/bugs/<slug>/, or "none")
+Plan directory: <plan-root>/<slug>/   (or <bug-root>/<slug>/, or "none")
 Diff base: <the base resolved in Step 1 — origin/<integration-branch>, or <integration-branch> on fallback>
 
 Run your six checks against the full branch diff: external calls inside DB
@@ -127,7 +129,7 @@ Agent({
   subagent_type: "precedent-reviewer",
   prompt: `Full-branch precedent audit.
 
-Plan directory: docs/plans/<slug>/   (or docs/bugs/<slug>/, or "none")
+Plan directory: <plan-root>/<slug>/   (or <bug-root>/<slug>/, or "none")
 Diff base: <the base resolved in Step 1 — origin/<integration-branch>, or <integration-branch> on fallback>
 
 Run your checks against the full branch diff: conformance to the repo's
@@ -147,7 +149,7 @@ Agent({
   subagent_type: "docs-accuracy-reviewer",
   prompt: `Full-branch docs-accuracy audit.
 
-Plan directory: docs/plans/<slug>/   (or docs/bugs/<slug>/, or "none")
+Plan directory: <plan-root>/<slug>/   (or <bug-root>/<slug>/, or "none")
 Diff base: <the base resolved in Step 1 — origin/<integration-branch>, or <integration-branch> on fallback>
 Doc paths: <the doc_paths pathspecs resolved above>
 Text files in this diff: <the paths the trigger command returned>
@@ -156,7 +158,7 @@ Grade every claim in that text against the code this branch ships, and run the
 inverse pass: sentences the diff did not touch that its code change made false.
 Report per-claim verdicts with the quoted sentence, the file and symbol you read,
 and a suggested rewrite. Flag compliance claims separately.
-Do NOT review CLAUDE.md files, docs/plans/ or docs/bugs/ — those are
+Do NOT review CLAUDE.md files, <plan-root>/ or <bug-root>/ — those are
 precedent-reviewer's. Do NOT review any path doc_paths excludes.`
 })
 ```
@@ -176,7 +178,7 @@ the sha against HEAD:
 - Branch: `<branch-name>`
 - Base diff: `origin/<integration-branch>...HEAD`
 - Reviewed against commit: `<short-sha>`
-- Plan directory: `docs/plans/<slug>` (or `docs/bugs/<slug>`)
+- Plan directory: `<plan-root>/<slug>` (or `<bug-root>/<slug>`)
 - Generated: YYYY-MM-DD
 - Working tree state: clean / dirty
 
@@ -252,7 +254,7 @@ in chat. They do not go in the PR body.
 
 ## No-directory fallback (Step 2 found nothing)
 
-When there's no `docs/plans/<slug>/` or `docs/bugs/<slug>/`:
+When there's no `<plan-root>/<slug>/` or `<bug-root>/<slug>/`:
 
 1. Spawn the always-on agents anyway — neither requires `PLAN.md`. `precedent-reviewer` anchors
    on the repo's standing rules; `runtime-integrity-reviewer` anchors on the repo's conventions.

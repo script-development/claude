@@ -38,7 +38,8 @@ reviewer owns. Typical members:
 
 - Any sub-tree `<doc_paths>` excludes because another reviewer owns it with its own verdict
   vocabulary. If the diff touches one, say so in one line and move on.
-- `docs/plans/**` and `docs/bugs/**` — branch scratch, not a promise to a user.
+- The plan and bug roots (`plan_root` / `bug_root`, defaults `docs/plans/**` and `docs/bugs/**`)
+  — branch scratch, not a promise to a user.
   `precedent-reviewer` checks those against the branch.
 - `CLAUDE.md` files at any level, and `ARCHITECTURE.md` / `CONTEXT.md` — instructions
   to agents rather than promises to users. A wrong line there is `precedent-reviewer`'s

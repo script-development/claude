@@ -22,9 +22,9 @@ to `/implement-plan`** — same plan context, no per-task overhead. The
 fail-closed gate exists because the alternative — drafting TASKS.md "just
 in case" — turns small plans into ceremony every time.
 
-This skill is project-agnostic. It reads `issue_tracker_skill` /
-`issue_tracker_project_id` from `.claude/project-context.md`, only for the Output section's
-issue-backfill path — see this plugin's README for how that file and its notation work.
+This skill is project-agnostic. It reads `plan_root` (Output) and `issue_tracker_skill` /
+`issue_tracker_project_id` from `.claude/project-context.md`, the latter two only for the Output
+section's issue-backfill path — see this plugin's README for how that file and its notation work.
 
 ## Core philosophy
 
@@ -209,7 +209,7 @@ here would recreate the mega-skill we just trimmed away.
 
 Write tasks into the same directory that holds `PLAN.md` — derive it using the canonical
 algorithm in [`references/plan-directory.md`](../../references/plan-directory.md) (shipped with
-this plugin, shared with `next`).
+this plugin, shared with `next`), under `plan_root` (default `docs/plans`).
 
 **If that algorithm finds nothing** (a plan written ad hoc, with no tracked issue or directory
 yet): read `issue_tracker_skill` from `.claude/project-context.md`.
@@ -217,8 +217,8 @@ yet): read `issue_tracker_skill` from `.claude/project-context.md`.
 - **Tracker resolved** (defaults to `kendo-mcp`): create an issue scoped to
   `issue_tracker_project_id`. If the tracker skill ships its own issue-writing template
   (`kendo-mcp` does, at `references/issue-templates.md`) follow it — don't improvise a
-  structure. Use the returned key for the directory name: `docs/plans/<key>-<slug>/`.
-- **No tracker resolved**: ask the user for a directory slug directly — `docs/plans/<slug>/`.
+  structure. Use the returned key for the directory name: `<plan-root>/<key>-<slug>/`.
+- **No tracker resolved**: ask the user for a directory slug directly — `<plan-root>/<slug>/`.
 
 Create the directory if it doesn't exist yet.
 
