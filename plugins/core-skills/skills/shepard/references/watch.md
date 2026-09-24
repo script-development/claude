@@ -14,7 +14,7 @@ line lands after arming, or when a line is not in the short list in SKILL.md.
 | `[ci]  FAILING: <jobs>` | GitHub checks went red | full cycle |
 | `[ci]  red checks re-running, not green yet` | a red job went back to the queue | nothing yet; wait for the next `[ci]` line |
 | `[ci]  needs attention (neutral/stale): <lanes>` | a workflow lane finished with no verdict (NEUTRAL) or its result belongs to another commit (STALE); a stale required check does not satisfy branch protection. A check an app posts with no workflow behind it (a tracker card, NEUTRAL forever) is excluded, so this names lanes only. A SKIPPED lane is not here: path-filtered repos skip ten lanes per PR, and `ci-failures.sh` names each skip | not green: read the lane, then cycle if it raises work |
-| `[ci]  all checks green` | every check completed and none is red | nothing on its own; the cycle already knows |
+| `[ci]  all checks green` | every check completed, none is red, and every workflow run on the head has finished — so a gate job that `needs:` every other lane has reported too | nothing on its own; the cycle already knows |
 | `[ci]  no checks reported yet` | the rollup is empty | nothing yet |
 | `[bus] attached #N` | the review request landed; the bus surface is live from here | nothing on its own |
 | `[pr]  +N review(s)` / `+N comment(s)` | reviewer activity GitHub can see; fires whether or not a bus row is attached, so a round shows as one `[bus]` and one `[pr]` line | read it, then cycle if it raises work |

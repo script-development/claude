@@ -4,7 +4,8 @@
 # changes, never a running status.
 #
 # Two surfaces, one tick, with the bus first among them:
-#   GitHub  — PR state, head SHA, per-job check rollup, reviews, comments, decision.
+#   GitHub  — PR state, head SHA, per-job check rollup, whether the head's workflow runs
+#             have finished, reviews, comments, decision.
 #             Always, whatever the bus says: a reviewer that posts on GitHub and never
 #             reports to its bus row (emmie #1297) must still wake the watch.
 #   The bus — town-crier's ledger row: gate, trial, findings, reviewer (when the
@@ -146,10 +147,25 @@ bus_resolve_id() {
 GH_ERR=$(mktemp)
 
 gh_snapshot() {
-  local raw
+  local raw sha runs_active
   raw=$(gh pr view "$PR_NUMBER" --json state,headRefOid,statusCheckRollup,reviews,comments,reviewDecision 2>"$GH_ERR") || return 1
   [[ -z "$raw" ]] && return 1
-  jq -c '
+  # The rollup lists a job only once it is queued, so a gate job that `needs:` every other
+  # lane (emmie's `CI Gate` and `ci-passed`, kendo's `ci-passed`) is ABSENT, not pending,
+  # until the last lane finishes. In that window every listed check is complete and the
+  # rollup alone reads GREEN before the gate has run (emmie #1776). The workflow run stays
+  # in progress until its gate finishes, so an unfinished run on this head keeps the state
+  # PENDING. A listing gh cannot produce degrades to the rollup alone: one failed call
+  # must not pin the watch at PENDING, and the rollup is what this watch read before.
+  sha=$(jq -r '.headRefOid // ""' <<<"$raw" 2>/dev/null)
+  runs_active=""
+  if [[ -n "$sha" ]]; then
+    runs_active=$(gh run list --commit "$sha" --json status --limit 100 \
+      --jq '[.[] | select(.status != "completed")] | length' 2>/dev/null) || runs_active=""
+    runs_active=${runs_active%$'\r'}
+  fi
+  [[ "$runs_active" =~ ^[0-9]+$ ]] || runs_active=null
+  jq -c --argjson runs "$runs_active" '
     ([.statusCheckRollup[]?
       | {n: (.name // .context // "?"), c: (.conclusion // .state // ""), s: (.status // "COMPLETED"),
          # Which workflow the check belongs to, or "" for one an APP posted directly
@@ -188,9 +204,12 @@ gh_snapshot() {
         # on every linked PR forever. Counted, it made ATTN permanent, and the only
         # ATTN anyone would ever see was the harmless one. A never-firing gate and an
         # always-firing one fail the same way. (lokalekeuze)
-        ci_attn:    ([$checks[] | select((.c == "NEUTRAL" or .c == "STALE") and .w != "") | .n] | sort | join(","))
+        ci_attn:    ([$checks[] | select((.c == "NEUTRAL" or .c == "STALE") and .w != "") | .n] | sort | join(",")),
+        # Workflow runs on this head that have not completed; null when gh could not list
+        # them. See the comment above the call.
+        runs_active: $runs
       }
-    | .ci_state = (if .ci_fail != "" then "RED" elif .ci_pending > 0 then "PENDING"
+    | .ci_state = (if .ci_fail != "" then "RED" elif .ci_pending > 0 or (.runs_active // 0) > 0 then "PENDING"
                    elif .ci_attn != "" then "ATTN" elif .ci_pass > 0 then "GREEN" else "NONE" end)' <<<"$raw" 2>/dev/null
 }
 

@@ -54,6 +54,19 @@ case "$args" in
   *"--json number,url,title"*)
     echo '{"number":42,"url":"https://github.com/acme/widget/pull/42","title":"a title"}'
     exit 0 ;;
+  "run list"*)
+    # The head's workflow runs, read in the same tick as the snapshot before it: the
+    # fixture is keyed to the snapshot counter, not a counter of its own. No fixture
+    # means no runs; an empty one means the listing failed. --jq is applied with real
+    # jq, as gh applies it.
+    n=$(cat "$STATE/gh_n" 2>/dev/null || echo 0)
+    f="$STATE/runs_$n.json"
+    [[ -f "$f" ]] || { echo 0; exit 0; }
+    [[ -s "$f" ]] || exit 1
+    filter=""; prev=""
+    for a in "$@"; do [[ "$prev" == "--jq" ]] && filter="$a"; prev="$a"; done
+    jq "${filter:-.}" "$f"
+    exit 0 ;;
 esac
 n=$(cat "$STATE/gh_n" 2>/dev/null || echo 0)
 n=$((n + 1)); echo "$n" > "$STATE/gh_n"
@@ -433,6 +446,54 @@ gh_tick 3 MERGED aaaaaaaa 0 0
 out=$(run); rc=$?
 check "a neutral lane still speaks beside a neutral app check" 0 "$out" $rc \
   "[ci]  needs attention (neutral/stale): conditional-job" "!kendo"
+
+# A gate job that `needs:` every other lane is not in the rollup until the last lane
+# finishes: GitHub lists a job once it is queued, not before. In that window every
+# listed check is complete, and the rollup alone read GREEN before the gate had run
+# (emmie #1776, whose `CI Gate` and `ci-passed` both need every lane). The run is
+# still in progress then, and that is what keeps the state PENDING. The pass count
+# tells the two apart: a premature green prints at pass 2, and the real one after it
+# would then be GREEN -> GREEN, which prints nothing.
+reset; bus_absent
+cat > "$state/gh_1.json" <<'EOF'
+{"state":"OPEN","headRefOid":"aaaaaaaa",
+ "statusCheckRollup":[{"name":"unit","status":"IN_PROGRESS","conclusion":"","workflowName":"CI"},
+                      {"name":"lint","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"}],
+ "reviews":[],"comments":[],"reviewDecision":""}
+EOF
+echo '[{"status":"in_progress"}]' > "$state/runs_1.json"
+cat > "$state/gh_2.json" <<'EOF'
+{"state":"OPEN","headRefOid":"aaaaaaaa",
+ "statusCheckRollup":[{"name":"unit","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"},
+                      {"name":"lint","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"}],
+ "reviews":[],"comments":[],"reviewDecision":""}
+EOF
+echo '[{"status":"in_progress"}]' > "$state/runs_2.json"
+cat > "$state/gh_3.json" <<'EOF'
+{"state":"OPEN","headRefOid":"aaaaaaaa",
+ "statusCheckRollup":[{"name":"unit","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"},
+                      {"name":"lint","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"},
+                      {"name":"ci-passed","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"}],
+ "reviews":[],"comments":[],"reviewDecision":""}
+EOF
+echo '[{"status":"completed"}]' > "$state/runs_3.json"
+gh_tick 4 MERGED aaaaaaaa 0 0
+out=$(run); rc=$?
+check "a run still in progress is never green before its gate lands" 0 "$out" $rc \
+  "[ci]  all checks green (pass 3)" "!(pass 2)"
+
+# The run listing is a second call, and a failed one must not pin the watch at
+# PENDING forever: it degrades to the rollup alone, which is what this watch judged
+# by before the run listing existed.
+reset; bus_absent
+cat > "$state/gh_1.json" <<'EOF'
+{"state":"OPEN","headRefOid":"aaaaaaaa","statusCheckRollup":[],
+ "reviews":[],"comments":[],"reviewDecision":""}
+EOF
+gh_tick 2 OPEN aaaaaaaa 0 0; : > "$state/runs_2.json"
+gh_tick 3 MERGED aaaaaaaa 0 0
+out=$(run); rc=$?
+check "an unlistable run set falls back to the rollup" 0 "$out" $rc "[ci]  all checks green"
 
 # The header comment promises the token never appears in anything this script
 # emits. That promise covers stdout; it does not by itself cover argv, which
