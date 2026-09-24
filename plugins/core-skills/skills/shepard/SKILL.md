@@ -51,11 +51,12 @@ plugin's install, then a user-level install — and keep the first match:
 skill_dir=
 [ -d .claude/skills/shepard ] && skill_dir=$(cd .claude/skills/shepard && pwd)
 if [ -z "$skill_dir" ]; then
-  # Plugin-cache glob, last match wins (newest version) -- a plugin bump (a new cache
-  # directory) can never dangle this the way a version-embedded path would.
-  for d in "$HOME"/.claude/plugins/cache/*/core-skills/*/skills/shepard; do
-    [ -d "$d" ] && skill_dir=$d
-  done
+  # Plugin-cache glob, highest version wins -- a plugin bump (a new cache directory) can
+  # never dangle this the way a version-embedded path would. Sorted with sort -V, not the
+  # glob's own order: that is lexical, and ranks 0.3.0 above 0.22.0.
+  skill_dir=$(for d in "$HOME"/.claude/plugins/cache/*/core-skills/*/skills/shepard; do
+    [ -d "$d" ] && printf '%s\n' "$d"
+  done | sort -V | tail -n 1)
 fi
 [ -z "$skill_dir" ] && [ -d "$HOME/.claude/skills/shepard" ] && skill_dir="$HOME/.claude/skills/shepard"
 echo "skill_dir=$skill_dir"
