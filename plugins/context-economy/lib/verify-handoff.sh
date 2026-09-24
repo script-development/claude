@@ -72,7 +72,10 @@ handoff=$1
 checkout_arg=${2:-}
 
 [ -r "$handoff" ] || { echo "verify-handoff: cannot read $handoff" >&2; exit 2; }
-[ -x "$verifier" ] || { echo "verify-handoff: verify-citations.sh not found at $verifier" >&2; exit 2; }
+# -f, not -x, and run through `bash` below: a plugin install is a clone, and an exec bit lost in
+# git (core.filemode=false on the Windows checkout that authored these) made every gate run on
+# macOS and Linux exit 2 here, so every handoff read MALFORMED.
+[ -f "$verifier" ] || { echo "verify-handoff: verify-citations.sh not found at $verifier" >&2; exit 2; }
 
 # CR is stripped once, here. verify-citations.sh survives CRLF by accident — its
 # trailing-whitespace rule eats the CR, since CR is [[:space:]] — but this script
@@ -468,7 +471,7 @@ echo
 if [ -z "$(printf '%s' "$listed" | tr -d '[:space:]')" ]; then
     echo "no citations to check (Pointers is empty)"
 else
-    (cd "$checkout_root" && pointers_block | "$verifier")
+    (cd "$checkout_root" && pointers_block | bash "$verifier")
     verdict=$?
     # 2 is propagated rather than folded into 1. The resolver only exits 2 when
     # its input is not a citation list -- which, reached from here, means this

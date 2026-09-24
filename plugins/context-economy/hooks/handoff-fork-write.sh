@@ -206,7 +206,9 @@ slug=$(printf '%s' "$ref" | tr '/' '-')
 # feature this id enables, never the write itself.
 write_session_id=""
 if command -v uuidgen >/dev/null 2>&1; then
-    write_session_id=$(uuidgen 2>/dev/null)
+    # Lowercased: macOS's uuidgen prints uppercase, and the transcript this id names is later
+    # looked up by exact filename. The openssl branch below is lowercase already.
+    write_session_id=$(uuidgen 2>/dev/null | tr 'A-F' 'a-f')
 elif command -v openssl >/dev/null 2>&1; then
     write_session_id=$(openssl rand -hex 16 2>/dev/null \
         | sed -E 's/(.{8})(.{4})(.{4})(.{4})(.{12})/\1-\2-\3-\4-\5/')
@@ -220,17 +222,18 @@ handoff_store_write_skeleton "$skeleton_path" "$here" "$ref" "$write_session_id"
 # the detached turn's own prompt below, not for the skeleton just written. Kept in sync with
 # Step 1 by hand -- there is no shared source for a bash snippet meant to run both inside this
 # repo's own hooks and inside a detached child that may not have it.
-gate=
-for g in "$HOME"/.claude/plugins/cache/*/context-economy/*/lib/verify-handoff.sh; do
-    [ -x "$g" ] && gate=$g
-done
+# Highest cached version wins, sorted with sort -V as Step 1 does since 1.0.1: the glob's own
+# order is lexical and ranks 0.3.0 above 0.22.0. -f, not -x: the gate runs through `bash`, and
+# an exec bit lost in git must not make the lookup come up empty.
+gate=$(for g in "$HOME"/.claude/plugins/cache/*/context-economy/*/lib/verify-handoff.sh; do
+    [ -f "$g" ] && printf '%s\n' "$g"
+done | sort -V | tail -n 1)
 [ -n "$gate" ] || for g in "$hook_dir/../lib/verify-handoff.sh" "$HOME/.claude/lib/verify-handoff.sh"; do
-    [ -x "$g" ] && gate=$g && break
+    [ -f "$g" ] && gate=$g && break
 done
-skill=
-for k in "$HOME"/.claude/plugins/cache/*/context-economy/*/skills/handoff/SKILL.md; do
-    [ -r "$k" ] && skill=$k
-done
+skill=$(for k in "$HOME"/.claude/plugins/cache/*/context-economy/*/skills/handoff/SKILL.md; do
+    [ -r "$k" ] && printf '%s\n' "$k"
+done | sort -V | tail -n 1)
 [ -n "$skill" ] || for k in "$hook_dir/../skills/handoff/SKILL.md" "$HOME/.claude/skills/handoff/SKILL.md"; do
     [ -r "$k" ] && skill=$k && break
 done
@@ -291,12 +294,36 @@ When Step 3 finishes, reply with EXACTLY one line and nothing else:
 RESULT handoff=<path> step3_exit=<exit code>
 PROMPT
 
+# The bound on the detached turn. macOS ships no `timeout` (coreutils installs it as `gtimeout`),
+# and a runner that called it anyway exited 127 before `claude` ever started: the skeleton stayed
+# a skeleton, with only an rc=127 log line to say why. Neither present means a plain sleep/kill
+# watchdog, the same kill signal `timeout` sends (so the same caveat above applies to it).
+if command -v timeout >/dev/null 2>&1; then
+    bound="timeout ${timeout_s}"
+elif command -v gtimeout >/dev/null 2>&1; then
+    bound="gtimeout ${timeout_s}"
+else
+    bound=""
+fi
+turn_cmd="\"${claude_bin}\" -p --output-format json ${model_args} ${session_id_args} --allowedTools \"${allowed_tools}\" --strict-mcp-config < \"${prompt_file}\" > \"${out_file}\" 2> \"${err_file}\""
+if [ -n "$bound" ]; then
+    turn_block="${bound} ${turn_cmd}
+rc=\$?"
+else
+    turn_block="${turn_cmd} &
+turn_pid=\$!
+( sleep ${timeout_s}; kill \$turn_pid 2>/dev/null ) &
+dog_pid=\$!
+wait \$turn_pid
+rc=\$?
+kill \$dog_pid 2>/dev/null"
+fi
+
 async_script="$scratch/run.sh"
 cat > "$async_script" <<RUNNER
 #!/usr/bin/env bash
 ${HANDOFF_STORE_DIR:+export HANDOFF_STORE_DIR="${HANDOFF_STORE_DIR}"}
-timeout ${timeout_s} "${claude_bin}" -p --output-format json ${model_args} ${session_id_args} --allowedTools "${allowed_tools}" --strict-mcp-config < "${prompt_file}" > "${out_file}" 2> "${err_file}"
-rc=\$?
+${turn_block}
 log_dir="\$HOME/.claude/state/handoff-fork"
 mkdir -p "\$log_dir" 2>/dev/null
 printf '%s session=%s write_session=%s rc=%s scratch=%s\n' "\$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${session_id}" "${write_session_id:-none}" "\$rc" "${scratch}" >> "\$log_dir/log.txt" 2>/dev/null

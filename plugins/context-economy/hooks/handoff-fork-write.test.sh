@@ -223,6 +223,85 @@ case "$(cat "$skeleton_path" 2>/dev/null)" in
         "got [$(cat "$skeleton_path" 2>/dev/null)]" ;;
 esac
 
+# --- Portability: macOS's uuidgen, and a host with no `timeout` -------------------------------
+#
+# These cases run against STUBS, unlike the ones above: a `claude` that sleeps and a `uuidgen`
+# that prints uppercase, as macOS's does, first on PATH. What is under test is what the hook
+# writes into run.sh and how that runner behaves, not a real detached turn.
+# Arrange
+stubs="$fixture/stubs"
+mkdir -p "$stubs"
+printf '#!/usr/bin/env bash\nsleep 30\n' > "$stubs/claude"
+printf '#!/usr/bin/env bash\necho 3F2504E0-4F89-11D3-9A0C-0305E82C3301\n' > "$stubs/uuidgen"
+chmod +x "$stubs/claude" "$stubs/uuidgen"
+new_runner() {  # new_runner <before-snapshot> — the run.sh of the one firing since the snapshot
+    local d
+    d=$(comm -13 <(printf '%s\n' "$1" | sort) <(ls -d /tmp/handoff-fork.* 2>/dev/null | sort) | tail -n 1)
+    [ -n "$d" ] && printf '%s/run.sh' "$d"
+}
+
+# macOS's uuidgen prints uppercase. The id is recorded in the skeleton and later matched against
+# the transcript's filename, so it must reach both places lowercased and identical.
+# Act
+before=$(ls -d /tmp/handoff-fork.* 2>/dev/null)
+run "$(payload "upper-$$" "$transcript" "$repo")" PATH="$stubs:$PATH" CTX_FORK_TIMEOUT_SECONDS=1 HANDOFF_STORE_DIR="$store" >/dev/null
+runner=$(new_runner "$before")
+recorded=$(grep -m1 '^write_session: ' "$skeleton_path" 2>/dev/null | sed 's/^write_session: //')
+# Assert
+assert_eq "an uppercase uuidgen is recorded lowercased" '3f2504e0-4f89-11d3-9a0c-0305e82c3301' "$recorded"
+case "$(cat "$runner" 2>/dev/null)" in
+    *"--session-id 3f2504e0-4f89-11d3-9a0c-0305e82c3301"*) pass '...and passed to --session-id lowercased' ;;
+    *) fail '...and passed to --session-id lowercased' "run.sh: $(cat "$runner" 2>/dev/null)" ;;
+esac
+bash -n "$runner" 2>/dev/null && pass 'the runner written with timeout available parses' \
+    || fail 'the runner written with timeout available parses' "$(bash -n "$runner" 2>&1)"
+
+# No `timeout` and no `gtimeout` — stock macOS. The runner used to call `timeout` regardless and
+# exit 127 before the turn started. `timeout` sits in the same directory as tools the hook needs,
+# so it cannot be hidden by PATH; an exported `command` function, which the hook's bash inherits,
+# reports the two as absent and passes every other lookup through.
+#
+# Not on bash 3.2: there, calling a function imported from the environment empties the caller's
+# top-level BASH_SOURCE, so the hook's own `${BASH_SOURCE[0]}` trips `set -u` and it exits before
+# writing any runner (the hook's own functions do not do this; only imported ones). The runner
+# would then be empty and the timing check below would pass against nothing, so both are skipped.
+if [ "${BASH_VERSINFO[0]}" -lt 4 ]; then
+    pass 'with no timeout binary the runner uses a watchdog (skipped: bash 3.2 cannot run the exported-function stub)'
+    pass 'the watchdog ends a turn that overruns its bound (skipped: bash 3.2, as above)'
+else
+    # Arrange
+    command() {
+        if [ "${1:-}" = -v ] && { [ "${2:-}" = timeout ] || [ "${2:-}" = gtimeout ]; }; then return 1; fi
+        builtin command "$@"
+    }
+    export -f command
+    # Act
+    before=$(ls -d /tmp/handoff-fork.* 2>/dev/null)
+    run "$(payload "notimeout-$$" "$transcript" "$repo")" PATH="$stubs:$PATH" CTX_FORK_TIMEOUT_SECONDS=1 HANDOFF_STORE_DIR="$store" >/dev/null
+    unset -f command
+    runner=$(new_runner "$before")
+    # Assert
+    case "$(cat "$runner" 2>/dev/null)" in
+        *timeout\ 1\ *) fail 'with no timeout binary the runner uses a watchdog' "calls timeout anyway: $(cat "$runner")" ;;
+        *'kill $turn_pid'*) pass 'with no timeout binary the runner uses a watchdog' ;;
+        *) fail 'with no timeout binary the runner uses a watchdog' "run.sh: $(cat "$runner" 2>/dev/null)" ;;
+    esac
+    # The watchdog must actually bound the turn: the stub sleeps 30s, the bound is 1s. A missing
+    # runner is a failure, not a fast pass.
+    # Act
+    start=$SECONDS
+    [ -r "$runner" ] && env HOME="$home" PATH="$stubs:$PATH" bash "$runner" >/dev/null 2>&1
+    elapsed=$((SECONDS - start))
+    # Assert
+    if [ ! -r "$runner" ]; then
+        fail 'the watchdog ends a turn that overruns its bound' 'no runner was written'
+    elif [ "$elapsed" -le 10 ]; then
+        pass "the watchdog ends a turn that overruns its bound (${elapsed}s for a 1s bound)"
+    else
+        fail 'the watchdog ends a turn that overruns its bound' "took ${elapsed}s against a 1s bound"
+    fi
+fi
+
 # --- Cleanup: every spawn above that passed the guards genuinely launched a real detached
 # `claude -p` call (this machine's own install, no stub). Give them a moment, then sweep whatever
 # they left in the real HOME's own state dir and scratch space so this test suite does not leave
