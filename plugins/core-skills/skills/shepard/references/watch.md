@@ -1,7 +1,7 @@
 # The live watch — every line `pr-watch.sh` prints, and what to do with it
 
 `pr-watch.sh` reads two surfaces: GitHub (checks, reviews, comments, head) and the town-crier
-review bus. It prints only changes, so a quiet PR produces nothing. Read this file when the first
+review bus. After one `[watch] now:` line at arming it prints only changes, so a quiet PR produces nothing more. Read this file when the first
 line lands after arming, or when a line is not in the short list in SKILL.md.
 
 ## The lines
@@ -14,8 +14,10 @@ line lands after arming, or when a line is not in the short list in SKILL.md.
 | `[ci]  FAILING: <jobs>` | GitHub checks went red | full cycle |
 | `[ci]  red checks re-running, not green yet` | a red job went back to the queue | nothing yet; wait for the next `[ci]` line |
 | `[ci]  needs attention (neutral/stale): <lanes>` | a workflow lane finished with no verdict (NEUTRAL) or its result belongs to another commit (STALE); a stale required check does not satisfy branch protection. A check an app posts with no workflow behind it (a tracker card, NEUTRAL forever) is excluded, so this names lanes only. A SKIPPED lane is not here: path-filtered repos skip ten lanes per PR, and `ci-failures.sh` names each skip | not green: read the lane, then cycle if it raises work |
-| `[ci]  all checks green` | every check completed, none is red, and every workflow run on the head has finished — so a gate job that `needs:` every other lane has reported too | nothing on its own; the cycle already knows |
+| `[ci]  required check(s) never reported: <checks>` | every listed check passed and no run on the head is still going, but a check the base branch's rulesets require is not in the rollup — an always-green placeholder stood in for it, or no workflow that produces it fires on this PR (a base- or path-filtered CI). While a run is still in flight a missing gate is only not queued yet, and the state stays pending | not green, and waiting will not change it: find why the gate never ran (`ci-failures.sh` says the same as `INCOMPLETE`) and report it; do not call the PR mergeable |
+| `[ci]  all checks green` | every check completed, none is red, every workflow run on the head has finished — so a gate job that `needs:` every other lane has reported too — and every check the base's rulesets require is present | nothing on its own; the cycle already knows |
 | `[ci]  no checks reported yet` | the rollup is empty | nothing yet |
+| `[watch] now: ci <STATE> …` | printed once, on the first tick: where the PR stands at arming, since every later line is a change against it | act on the state as if its own line had landed: RED or MISSING mean work |
 | `[bus] attached #N` | the review request landed; the bus surface is live from here | nothing on its own |
 | `[pr]  +N review(s)` / `+N comment(s)` | reviewer activity GitHub can see; fires whether or not a bus row is attached, so a round shows as one `[bus]` and one `[pr]` line | read it, then cycle if it raises work |
 | `[pr]  head moved` | someone else pushed | re-snapshot before doing anything |
@@ -23,6 +25,13 @@ line lands after arming, or when a line is not in the short list in SKILL.md.
 | `[warn] …` | a surface went unreadable | the watch is blind on that side — say so |
 | `[hb]  alive` | nothing has happened for 30 min | nothing |
 | `[end] …` | terminal, the script exited | report and stop |
+
+## What the watch cannot see
+
+- **Branch protection that is not a ruleset.** Required checks come from `rules/branches/<base>`, readable by anyone who can read the repo. Classic branch protection needs admin to read, so a repo that requires its checks only there gets no `required check(s) never reported` line. An unreadable ruleset is treated the same way: the rollup alone decides.
+- **A job that failed but let the run pass.** A job with `continue-on-error: true` fails without failing its run. Whether GitHub then lists it in the rollup as a failure has not been observed; if it does, the watch goes RED on a lane the repo marked report-only (kendo `Frontend Fallow (report only)`). Read the lane before cycling on it.
+- **A job waiting on an environment approval.** It stays in the rollup as pending, and its run stays unfinished, so the watch holds at pending until someone approves it. Nothing the loop pushes will move it; say so rather than waiting.
+- **Checks from outside GitHub Actions** (Cloudflare Pages, a tracker app). They count in the rollup, so their red and their pending are seen. But "every workflow run has finished" covers only Actions, and `ci-failures.sh` lists and reads only Actions runs: an external red check has no log there, so read it on the PR.
 
 ## The bus half
 

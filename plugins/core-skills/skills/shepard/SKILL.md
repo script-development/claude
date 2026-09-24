@@ -164,7 +164,10 @@ Branch on the exit code **and** on whether the run has finished:
 | `1` | `Status: FAILING (run still in progress …)` | Failed jobs, **more may land** | **Keep polling.** Diagnose what is visible but do not push |
 | `1` | `Status: FAILING` | Failed jobs, run complete | The CI surface is final — carry on to 2b |
 | `2` | `Status: RUNNING — no failures yet` | Nothing failed yet | Keep polling |
-| `3` | `Status: UNKNOWN …`, or an error | No PR, no runs yet, or a job list gh could not read | Wait ~30s, retry once, then report |
+| `3` | `Status: UNKNOWN …`, `could not list workflow runs` | A job list or run listing gh could not read | Wait ~30s, retry once, then report |
+| `3` | `no workflow runs found` | Right after a push: CI has not started. Still there a few minutes later: no workflow's branch or path filters match this PR, and it will never change | Retry once after ~30s; if it persists, report that no CI runs on this PR — do not keep polling |
+| `3` | `Status: INCOMPLETE — required check(s) never reported` | Every run is green, but a check the base branch's rulesets require is absent — a placeholder stood in for it, or the workflow that produces it does not fire here | **Not green, and waiting will not fix it.** Report which check is missing and why; do not call the PR mergeable |
+| `3` | `gh could not look up …`, `no PR found` | gh itself failed (auth, network — its reason is printed), or there really is no PR for that number/branch | Fix the cause or the argument; do not retry blindly |
 
 **Never fix-and-push off a partial run.** The script returns `1` the moment one job goes red, while
 others may still be running. Pushing then buys a whole extra CI cycle to discover failures that were
@@ -172,6 +175,11 @@ already on their way. Wait for the run to complete, and use that window: diagnos
 against what is visible, fold in whatever lands late, push once in step 7. For the same reason, do
 not poll with `gh pr checks --watch --fail-fast` — it returns on the first red job, which is exactly
 the partial picture this rule avoids.
+
+A failed job whose log section says `the job ended outside its steps` died with its runner (a
+self-hosted runner lost or out of memory): its annotation is printed and there is no step log to
+read. Re-run that job with the printed `gh run rerun --job <id>`; that is not a fix-and-push, and
+only a second identical death points at the diff.
 
 If the script warns `local HEAD … differs from PR head`, stop. Fixes diagnosed against code you do
 not have checked out are guesses.
@@ -520,8 +528,8 @@ Arm it with the **Monitor** tool, `persistent: true`, running this skill's watch
 ```
 
 Run it from the checkout this turn used, so `gh` resolves the right repo. Default tick is 30s;
-pass `--interval` to slow it down. The script prints **only changes**, so a quiet PR produces no
-notifications at all, and it exits by itself when the PR merges or closes.
+pass `--interval` to slow it down. After one line saying where the PR stands at arming, the script prints **only changes**, so a quiet
+PR produces no further notifications, and it exits by itself when the PR merges or closes.
 
 **Not a cron.** `CronCreate` on this host is session-only and fires only while the REPL is idle;
 it buys nothing Monitor does not do sooner. Earlier versions of this skill claimed otherwise
@@ -538,7 +546,10 @@ The script prints one line per change, tagged `[ci]`, `[pr]`, `[bus]`, `[warn]`,
 `[end]`. `references/watch.md` lists every line and what to do with it; read it when the first
 line lands. The short version:
 
+- `[watch] now: …` lands once, on the first tick: where the PR stands at arming. Act on its state.
 - `[ci] FAILING`, `[bus] review` and `[pr] +N review(s)` mean a full cycle.
+- `[ci] required check(s) never reported` means every check that ran passed, but a check the base
+  requires never ran. Not green, and waiting will not change it: report which one and why.
 - `[ci] needs attention` means a lane finished neutral, or its result is for another commit.
   Not green: read the lane before treating CI as clean. Skipped lanes are not flagged here;
   `ci-failures.sh` names them.

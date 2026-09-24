@@ -14,7 +14,8 @@
 #   0  all runs completed green
 #   1  at least one failed job (run may still be in progress)
 #   2  in progress, nothing failed yet
-#   3  no PR / no runs / unreadable job list / bad arguments / missing dependency
+#   3  not GREEN and not a failure: no PR / gh failed / no runs / unreadable job list /
+#      a check the base requires never reported / bad arguments / missing dependency
 set -uo pipefail
 
 command -v gh >/dev/null || { echo "error: gh CLI required" >&2; exit 3; }
@@ -49,10 +50,19 @@ else
     [[ -z "$TARGET" ]] && { echo "error: no PR/branch argument and not on a branch" >&2; exit 3; }
   fi
 
+  # A gh that failed (expired auth, no network, not a GitHub checkout) is not "no PR": that
+  # message sends the reader looking for a PR that exists. gh's own reason is kept.
+  resolve_err=$(mktemp)
   if [[ "$TARGET" =~ ^[0-9]+$ ]]; then
-    pr_json=$(gh pr view "$TARGET" --json number,title,headRefOid,headRefName,url 2>/dev/null)
+    pr_json=$(gh pr view "$TARGET" --json number,title,headRefOid,headRefName,url 2>"$resolve_err")
   else
-    pr_json=$(gh pr list --head "$TARGET" --json number,title,headRefOid,headRefName,url --jq '.[0]' 2>/dev/null)
+    pr_json=$(gh pr list --head "$TARGET" --json number,title,headRefOid,headRefName,url --jq '.[0]' 2>"$resolve_err")
+  fi
+  resolve_rc=$?
+  resolve_why=$(tail -n 1 "$resolve_err" 2>/dev/null); resolve_why=${resolve_why%$'\r'}
+  rm -f "$resolve_err"
+  if [[ $resolve_rc -ne 0 && ! ( "$TARGET" =~ ^[0-9]+$ && "$resolve_why" == *"Could not resolve to a PullRequest"* ) ]]; then
+    echo "error: gh could not look up '$TARGET'${resolve_why:+ (${resolve_why})}" >&2; exit 3
   fi
   [[ -z "${pr_json:-}" || "$pr_json" == "null" ]] && { echo "error: no PR found for '$TARGET'" >&2; exit 3; }
 
@@ -82,7 +92,9 @@ else
     exit 3
   fi
   if [[ $(jq length <<<"$runs") -eq 0 ]]; then
-    echo "error: no workflow runs found for ${sha:0:9} (CI may not have started yet)" >&2
+    # Right after a push this is CI not started yet. Past a minute or two it is a workflow set
+    # whose branch or path filters match nothing on this PR, and it will never change.
+    echo "error: no workflow runs found for ${sha:0:9} (CI may not have started yet; if this persists, no workflow's branch/path filters match this PR)" >&2
     exit 3
   fi
 fi
@@ -207,7 +219,20 @@ if [[ ${#failed_jobs[@]} -gt 0 ]]; then
     if [[ -z "$job_log" ]]; then
       echo
       echo "--- ${entry#*	} ---"
-      echo "(logs not yet available — job may still be uploading; retry shortly)"
+      # A job that dies outside its steps — a self-hosted runner lost or OOM-killed mid-step
+      # (emmie job 106412195686) — has no failed step, so --log-failed stays empty forever and
+      # "retry shortly" would be waited on forever. The reason is in the job's check-run
+      # annotations (an Actions job id is its check-run id).
+      notes=$(gh api "repos/{owner}/{repo}/check-runs/${job_id}/annotations" \
+        --jq '.[] | select(.annotation_level == "failure") | .message' 2>/dev/null) || notes=""
+      if [[ -n "$notes" ]]; then
+        echo "(no failed-step log — the job ended outside its steps:)"
+        while IFS= read -r note; do echo "  ${note%$'\r'}"; done <<<"$notes"
+        echo "Usually infrastructure, not the diff: re-run it with  gh run rerun --job ${job_id}"
+        echo "If it dies the same way again, the job itself may be starving the runner (memory, CPU)."
+      else
+        echo "(logs not yet available — job may still be uploading; retry shortly)"
+      fi
     else
       trim_logs <<<"$job_log"
     fi
@@ -234,7 +259,34 @@ elif [[ $any_unreadable -eq 1 ]]; then
 elif [[ $any_running -eq 1 ]]; then
   echo "Status: RUNNING — no failures yet"
   exit 2
-else
-  echo "Status: GREEN"
-  exit 0
 fi
+
+# Every run finished and nothing failed, but the runs are only what DID fire. An always-green
+# placeholder check (emmie's stacked-PR `ci-passed`) or a CI filtered off this base leaves the
+# check the base actually requires absent, and absent is never red. The base branch's rulesets
+# name what a merge needs. The rollup is read now, not with the PR at the top, so a gate that
+# queued while the runs were being read is seen. Any call that fails here skips the check (the
+# runs alone decide, as before): classic branch protection is unreadable without admin anyway,
+# so this is a second opinion, not the gate. --run inspects one run with no PR, so it skips too.
+required_missing() {
+  [[ -n "${pr_number:-}" ]] || return 0
+  local view base rules
+  view=$(gh pr view "$pr_number" --json baseRefName,statusCheckRollup 2>/dev/null) || return 0
+  base=$(jq -r '.baseRefName // ""' <<<"$view" 2>/dev/null)
+  [[ -n "$base" ]] || return 0
+  rules=$(gh api "repos/{owner}/{repo}/rules/branches/$base" 2>/dev/null) || return 0
+  jq -rn --argjson v "$view" --argjson r "$rules" '
+    [$v.statusCheckRollup[]? | (.name // .context // empty)] as $have
+    | [$r[]? | select(.type == "required_status_checks") | .parameters.required_status_checks[]?.context]
+    | unique | map(select(. as $c | $have | index($c) | not)) | join(", ")' 2>/dev/null
+}
+missing=$(required_missing)
+missing=${missing%$'\r'}
+if [[ -n "$missing" ]]; then
+  echo "Status: INCOMPLETE — required check(s) never reported: ${missing}"
+  echo "  Every run on this head finished green, but the base branch's rulesets require the check(s)"
+  echo "  above and nothing on this head produced them. Not GREEN: the merge is blocked."
+  exit 3
+fi
+echo "Status: GREEN"
+exit 0

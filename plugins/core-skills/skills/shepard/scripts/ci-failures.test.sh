@@ -314,7 +314,23 @@ for arg in "$@"; do
     prev="$arg"
 done
 case "$1 $2" in
-    "pr view")  src="$FIXTURES/json/pr.json" ;;
+    "pr view")
+        # The GREEN-time re-read of the rollup asks for baseRefName; the resolve call does not.
+        if [[ "$*" == *baseRefName* ]]; then
+            [[ -n "${FAKE_VIEW:-}" ]] || { echo "fake gh: no view fixture" >&2; exit 1; }
+            src="$FIXTURES/json/view-$FAKE_VIEW.json"
+        else
+            [[ "${FAKE_RESOLVE:-}" == "fail" ]] && { echo "HTTP 401: Bad credentials (https://api.github.com/graphql)" >&2; exit 1; }
+            src="$FIXTURES/json/pr.json"
+        fi ;;
+    "api repos/{owner}/{repo}/rules/branches/"*)
+        [[ "${FAKE_RULES:-}" == "unreadable" ]] && { echo "HTTP 502: Bad Gateway" >&2; exit 1; }
+        src="$FIXTURES/json/rules-${FAKE_RULES:-none}.json"
+        [[ -f "$src" ]] || { echo '[]'; exit 0; } ;;
+    "api repos/{owner}/{repo}/check-runs/"*)
+        id=${2#repos/\{owner\}/\{repo\}/check-runs/}; id=${id%%/*}
+        src="$FIXTURES/json/annotations-$id.json"
+        [[ -f "$src" ]] || { echo '[]' > "$FIXTURES/json/annotations-none.json"; src="$FIXTURES/json/annotations-none.json"; } ;;
     "run list")
         [[ "$*" == *"--commit cafe1234"* ]] || { echo "fake gh: run list not scoped to the PR head: $*" >&2; exit 65; }
         [[ "$FAKE_RUNS" == "unlistable" ]] && { echo "HTTP 502: Bad Gateway" >&2; exit 1; }
@@ -386,9 +402,38 @@ JSON
 printf '{"jobs":[{"databaseId":9221,"name":"backend","status":"completed","conclusion":"stale"}]}\n' \
     > "$fixtures/json/jobs-922.json"
 
-# invoke_pr <runs-fixture> — run from outside any checkout, so no HEAD warning
+# A self-hosted runner lost mid-step (emmie job 106412195686): the job failed with no failed
+# step, so --log-failed is empty for good and the reason sits in its annotations.
+cat > "$fixtures/json/runs-runnerlost.json" <<'JSON'
+[{"databaseId":930,"workflowName":"CI","event":"pull_request","status":"completed","conclusion":"failure"}]
+JSON
+printf '{"jobs":[{"databaseId":9301,"name":"Backend Feature Tests","status":"completed","conclusion":"failure"}]}\n' \
+    > "$fixtures/json/jobs-930.json"
+cat > "$fixtures/json/annotations-9301.json" <<'JSON'
+[{"annotation_level":"failure","message":"The self-hosted runner lost communication with the server."},
+ {"annotation_level":"warning","message":"Node.js 16 actions are deprecated."}]
+JSON
+# The same shape with no annotation is a log still uploading: the old advice holds.
+cat > "$fixtures/json/runs-uploading.json" <<'JSON'
+[{"databaseId":931,"workflowName":"CI","event":"pull_request","status":"completed","conclusion":"failure"}]
+JSON
+printf '{"jobs":[{"databaseId":9311,"name":"backend","status":"completed","conclusion":"failure"}]}\n' \
+    > "$fixtures/json/jobs-931.json"
+
+# The base requires `CI Gate`; the head carries only a placeholder `ci-passed` (emmie's
+# stacked-PR workflow), or the gate as well.
+printf '[{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"CI Gate"}]}}]\n' \
+    > "$fixtures/json/rules-gate.json"
+printf '{"baseRefName":"development","statusCheckRollup":[{"name":"ci-passed","conclusion":"SUCCESS"}]}\n' \
+    > "$fixtures/json/view-placeholder.json"
+printf '{"baseRefName":"development","statusCheckRollup":[{"name":"ci-passed","conclusion":"SUCCESS"},{"name":"CI Gate","conclusion":"SUCCESS"}]}\n' \
+    > "$fixtures/json/view-gated.json"
+
+# invoke_pr <runs-fixture> — run from outside any checkout, so no HEAD warning.
+# FAKE_VIEW / FAKE_RULES / FAKE_RESOLVE, when set by the caller, pick the fixtures above.
 invoke_pr() {
-    out=$(cd "$tmp" && FAKE_RUNS="$1" PATH="$json_bin:$PATH" bash "$subject" 77 2>&1)
+    out=$(cd "$tmp" && FAKE_RUNS="$1" FAKE_VIEW="${FAKE_VIEW:-}" FAKE_RULES="${FAKE_RULES:-}" \
+          FAKE_RESOLVE="${FAKE_RESOLVE:-}" PATH="$json_bin:$PATH" bash "$subject" 77 2>&1)
     rc=$?
 }
 
@@ -427,6 +472,39 @@ invoke_pr unlistable
 expect_rc 3 "a run listing gh could not produce exits 3"
 expect_contains "could not list workflow runs" "the failed listing is named"
 expect_absent "Status: GREEN" "a failed listing never lands on GREEN"
+
+invoke_pr runnerlost
+expect_rc 1 "a job lost with its runner still fails the PR"
+expect_contains "lost communication with the server" "the runner-loss annotation is shown"
+expect_contains "gh run rerun --job 9301" "the re-run command names the job"
+expect_absent "retry shortly" "a lost runner is not reported as a log still uploading"
+expect_absent "deprecated" "warning-level annotations are not shown as the cause"
+
+invoke_pr uploading
+expect_rc 1 "a failed job with no log yet still fails the PR"
+expect_contains "retry shortly" "no annotation keeps the still-uploading advice"
+
+# Every run green is not enough when the check the base requires never ran.
+FAKE_VIEW=placeholder FAKE_RULES=gate invoke_pr reopened
+expect_rc 3 "a required check that never reported is not green"
+expect_contains "required check(s) never reported: CI Gate" "the missing required check is named"
+expect_absent "Status: GREEN" "a missing required check never lands on GREEN"
+
+FAKE_VIEW=gated FAKE_RULES=gate invoke_pr reopened
+expect_rc 0 "a required check that reported lets the PR be green"
+expect_contains "Status: GREEN" "the reported gate lands on GREEN"
+
+# A failed rules or rollup call is no second opinion; the runs alone decide, as before.
+FAKE_VIEW=placeholder FAKE_RULES=unreadable invoke_pr reopened
+expect_rc 0 "unreadable rulesets fall back to the runs"
+
+# A gh that cannot reach GitHub is not "no PR" — that sends the reader hunting for a PR
+# that exists.
+FAKE_RESOLVE=fail invoke_pr reopened
+expect_rc 3 "a failed PR lookup exits 3"
+expect_contains "gh could not look up '77'" "the failed lookup is named as gh's failure"
+expect_contains "Bad credentials" "gh's own reason is kept"
+expect_absent "no PR found" "a failed lookup is not reported as a missing PR"
 
 # ---------------------------------------------------------------- summary ---
 echo
