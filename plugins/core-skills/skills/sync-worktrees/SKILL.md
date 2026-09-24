@@ -68,9 +68,10 @@ this plugin's install, then a user-level install — keep the first match:
 skill_dir=
 [ -d .claude/skills/sync-worktrees ] && skill_dir=$(cd .claude/skills/sync-worktrees && pwd)
 if [ -z "$skill_dir" ]; then
-  for d in "$HOME"/.claude/plugins/cache/*/core-skills/*/skills/sync-worktrees; do
-    [ -d "$d" ] && skill_dir=$d
-  done
+  # Highest cached version wins: sort -V, not the glob's lexical order (0.3.0 > 0.22.0).
+  skill_dir=$(for d in "$HOME"/.claude/plugins/cache/*/core-skills/*/skills/sync-worktrees; do
+    [ -d "$d" ] && printf '%s\n' "$d"
+  done | sort -V | tail -n 1)
 fi
 [ -z "$skill_dir" ] && [ -d "$HOME/.claude/skills/sync-worktrees" ] && skill_dir="$HOME/.claude/skills/sync-worktrees"
 echo "skill_dir=$skill_dir"
