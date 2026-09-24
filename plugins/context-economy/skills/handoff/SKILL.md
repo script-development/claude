@@ -194,13 +194,13 @@ here=$(git -C "$TARGET" rev-parse --show-toplevel)
 ref=$(git -C "$TARGET" rev-parse --abbrev-ref HEAD)
 [ "$ref" = HEAD ] && ref=$(git -C "$TARGET" rev-parse --short HEAD)
 slug=$(printf '%s' "$ref" | tr '/' '-')
-# Plugin-cache glob first, last match wins (newest version) -- the same pattern
-# statusline.sh already uses for context-thresholds.sh, so a plugin bump (a new cache
-# directory) can never dangle this the way a version-embedding path would.
-gate=
-for g in "$HOME"/.claude/plugins/cache/*/context-economy/*/lib/verify-handoff.sh; do
-    [ -x "$g" ] && gate=$g
-done
+# Plugin-cache glob first, highest version wins -- the same pattern statusline.sh
+# already uses for context-thresholds.sh, so a plugin bump (a new cache directory) can
+# never dangle this the way a version-embedding path would. Sorted with sort -V, not the
+# glob's own order: that is lexical, and ranks 0.3.0 above 0.22.0.
+gate=$(for g in "$HOME"/.claude/plugins/cache/*/context-economy/*/lib/verify-handoff.sh; do
+    [ -x "$g" ] && printf '%s\n' "$g"
+done | sort -V | tail -n 1)
 if [ -z "$gate" ]; then
     for g in "$here/lib/verify-handoff.sh" \
              "$HOME/.claude/lib/verify-handoff.sh" \
@@ -208,10 +208,9 @@ if [ -z "$gate" ]; then
         [ -x "$g" ] && gate=$g && break
     done
 fi
-store=
-for s in "$HOME"/.claude/plugins/cache/*/context-economy/*/lib/handoff-store.sh; do
-    [ -r "$s" ] && store=$s
-done
+store=$(for s in "$HOME"/.claude/plugins/cache/*/context-economy/*/lib/handoff-store.sh; do
+    [ -r "$s" ] && printf '%s\n' "$s"
+done | sort -V | tail -n 1)
 if [ -z "$store" ]; then
     for s in "$here/lib/handoff-store.sh" \
              "$HOME/.claude/lib/handoff-store.sh" \

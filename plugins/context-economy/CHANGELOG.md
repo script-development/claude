@@ -5,6 +5,16 @@ incrementally — see `RELEASING.md` for why. Format follows [Keep a Changelog](
 versioning follows [Semantic Versioning](https://semver.org/), scoped to this plugin's own
 convention in `RELEASING.md`.
 
+## [1.0.1] - 2026-09-24
+
+### Fixed
+
+- **The handoff skill's plugin-cache probes picked the lexically last cached version, not the
+  newest.** Step 1's `gate` and `store` lookups kept the glob's last match, and a glob sorts
+  lexically, so with `0.3.0` and `0.22.0` both cached it resolved `0.3.0`. Both now sort the
+  matches with `sort -V` and take the last. `hooks/handoff-fork-write.sh` still probes with the
+  old last-match loop and is not yet aligned with Step 1.
+
 ## [1.0.0] - 2026-09-21
 
 `1.0.0` was earmarked in `RELEASING.md` for if/when this plugin moved under an organization; the

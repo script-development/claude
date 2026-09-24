@@ -31,10 +31,10 @@ plugin's root, two levels above this skill's own directory). If this skill's bas
 known, resolve it:
 
 ```bash
-tpl=""
-for d in "$HOME"/.claude/plugins/cache/*/core-skills/*/references/project-context-template.md; do
-  [ -f "$d" ] && tpl=$d   # last match wins: newest cached version
-done
+# Highest cached version wins: sort -V, not the glob's lexical order (0.3.0 > 0.22.0).
+tpl=$(for d in "$HOME"/.claude/plugins/cache/*/core-skills/*/references/project-context-template.md; do
+  [ -f "$d" ] && printf '%s\n' "$d"
+done | sort -V | tail -n 1)
 echo "tpl=$tpl"
 ```
 
