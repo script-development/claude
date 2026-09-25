@@ -13,18 +13,19 @@ description: |
 # Task Writer
 
 Translate an approved PLAN.md into a TDD task breakdown (`TASKS.md`) that
-`/next` can execute one task at a time. Lighter than `/plan-feature` — no
-interrogation, no design — but heavier than `/implement-plan` because it
-owns the per-task contract that `/next` reads.
+`/core-skills:next` can execute one task at a time. Lighter than `/core-skills:plan-feature` — no
+interrogation, no design — but heavier than `/core-skills:implement-plan` because it
+owns the per-task contract that `/core-skills:next` reads.
 
 If the plan is small enough to skip TASKS.md entirely, **Phase 0 hands off
-to `/implement-plan`** — same plan context, no per-task overhead. The
+to `/core-skills:implement-plan`** — same plan context, no per-task overhead. The
 fail-closed gate exists because the alternative — drafting TASKS.md "just
 in case" — turns small plans into ceremony every time.
 
-This skill is project-agnostic. It reads `plan_root` (Output) and `issue_tracker_skill` /
-`issue_tracker_project_id` from `.claude/project-context.md`, the latter two only for the Output
-section's issue-backfill path — see this plugin's README for how that file and its notation work.
+This skill is project-agnostic. It reads `plan_root` (Output), `references.site_docs_sync` and
+`references.issue_examples`, and `issue_tracker_skill` / `issue_tracker_project_id` from
+`.claude/project-context.md`, the tracker fields only for the Output section's issue-backfill
+path — see this plugin's README for how that file and its notation work.
 
 ## Core philosophy
 
@@ -44,8 +45,8 @@ splits, load [`references/task-sizing.md`](references/task-sizing.md).
 Before extracting tasks, check whether this plan is small enough that a
 TASKS.md breakdown is overkill. The full inventory + task table is
 valuable when work spans multiple integration boundaries — and noise when
-it doesn't. Closing this loop matters because `/next` already has the
-symmetric branch ("no TASKS.md → use `/implement-plan`"); both skills
+it doesn't. Closing this loop matters because `/core-skills:next` already has the
+symmetric branch ("no TASKS.md → use `/core-skills:implement-plan`"); both skills
 should agree on what's small enough to skip the breakdown.
 
 Read PLAN.md and count:
@@ -62,11 +63,11 @@ Read PLAN.md and count:
 
 If **all three** thresholds are met, output the redirect and stop:
 
-> "This plan is small enough that a TASKS.md breakdown would be ceremony, not value: <N> Approach steps, single coordinated slice (<layer/domain summary>), one-PR shape. Recommending `/implement-plan` instead — it loads the same plan context, runs TDD, and ends at the acceptance gate without the per-task overhead.
+> "This plan is small enough that a TASKS.md breakdown would be ceremony, not value: <N> Approach steps, single coordinated slice (<layer/domain summary>), one-PR shape. Recommending `/core-skills:implement-plan` instead — it loads the same plan context, runs TDD, and ends at the acceptance gate without the per-task overhead.
 >
-> Want me to invoke `/implement-plan` now, or do you want TASKS.md anyway?"
+> Want me to invoke `/core-skills:implement-plan` now, or do you want TASKS.md anyway?"
 
-Wait for the developer's answer. If they confirm `/implement-plan`, hand
+Wait for the developer's answer. If they confirm `/core-skills:implement-plan`, hand
 off. If they want TASKS.md anyway (sometimes the case for risk gates or
 PR-handoff coordination even on small plans), proceed to Phase 1 — but
 **cite the developer's reason** in the eventual TASKS.md so future readers
@@ -119,7 +120,7 @@ on either side are not.
 
 Write the tasks using the literal format in
 [`references/tasks-template.md`](references/tasks-template.md). The
-template is the contract — `/next` parses the section names, so don't rename
+template is the contract — `/core-skills:next` parses the section names, so don't rename
 or omit them.
 
 For sizing decisions (when to split, when to bundle), load
@@ -198,10 +199,10 @@ the gap by silently editing the plan.
 Tasks are written and the Phase 4 coverage gate passed. Stop here —
 implementation is owned by a separate skill:
 
-- **`/next`** — execute one task at a time, TDD loop, verification (tests + types + lint) as the per-task gate
-- **`/implement-plan`** — execute the full plan in one pass without TASKS.md (Phase 0 should have routed here for small plans)
+- **`/core-skills:next`** — execute one task at a time, TDD loop, verification (tests + types + lint) as the per-task gate
+- **`/core-skills:implement-plan`** — execute the full plan in one pass without TASKS.md (Phase 0 should have routed here for small plans)
 
-Do not invoke `/next`, `/implement-plan`, or their reviewers from inside
+Do not invoke `/core-skills:next`, `/core-skills:implement-plan`, or their reviewers from inside
 this skill. Each downstream skill owns its own quality gate; chaining them
 here would recreate the mega-skill we just trimmed away.
 
@@ -217,7 +218,7 @@ yet): read `issue_tracker_skill` from `.claude/project-context.md`.
 - **Tracker resolved** (defaults to `kendo-mcp`): create an issue scoped to
   `issue_tracker_project_id`. If the tracker skill ships its own issue-writing template
   (`kendo-mcp` does, at `references/issue-templates.md`) follow it — don't improvise a
-  structure. Use the returned key for the directory name: `<plan-root>/<key>-<slug>/`.
+  structure. When `.claude/project-context.md` sets `references.issue_examples`, read that file too: the project's filled-in examples of those templates. Use the returned key for the directory name: `<plan-root>/<key>-<slug>/`.
 - **No tracker resolved**: ask the user for a directory slug directly — `<plan-root>/<slug>/`.
 
 Create the directory if it doesn't exist yet.

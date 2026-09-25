@@ -1,12 +1,13 @@
 # `<repo-name>` — repo reference
 
-**This is a template, not a dependency.** Copy it into the repo as
-`.claude/references/shepard-<repo-name>.md` when the repo runs `/shepard` from the plugin, or to
-`<repo-name>.md` beside this file for a checked-in or user-level copy of the skill. `<repo-name>`
-is what `/shepard` resolves from `git remote get-url origin` (last path segment, `.git`
+**This is a template, not a dependency.** When the repo runs `/core-skills:shepard` from the plugin, copy it
+into the repo (conventionally `.claude/references/shepard-<repo-name>.md`) and name that path as
+`references.shepard_notes` in `.claude/project-context.md`. For a checked-in or user-level copy of
+the skill, copy it to `<repo-name>.md` beside this file instead. `<repo-name>`
+is what `/core-skills:shepard` resolves from `git remote get-url origin` (last path segment, `.git`
 stripped). Gates and house rules the repo already records in `.claude/project-context.md` need
-not be repeated here: `/shepard` reads that file too. If no notes match the repo you are standing
-in, `/shepard` runs on its defaults and says so — that is a supported outcome, not a gap. You
+not be repeated here: `/core-skills:shepard` reads that file too. If no notes match the repo you are standing
+in, `/core-skills:shepard` runs on its defaults and says so — that is a supported outcome, not a gap. You
 never need this file to use the skill.
 
 This file holds the repo. The reviewer's contract is not repeated here: it lives once in
@@ -57,7 +58,7 @@ stops a session burning a cycle on `--fix`.
 ## Board
 
 What a finding outside the diff becomes — an issue or a report — and who decided that. A repo
-admin may say "always reports"; with no line here, `/shepard` asks the developer once per PR.
+admin may say "always reports"; with no line here, `/core-skills:shepard` asks the developer once per PR.
 Then the tracker, the tool or CLI that reaches it, the issue key format, and the template. If the
 branch name must carry the key for the tracker to auto-link it, say that here.
 

@@ -1,7 +1,7 @@
 # PLAN.md template
 
 Save the plan to `<plan-root>/<slug>/PLAN.md` (`plan_root`, default `docs/plans`). Use this exact structure — the downstream
-agents (`plan-reviewer`, `surface-reviewer`, `/wireframe`, `/task-writer`, `/implement-plan`,
+agents (`plan-reviewer`, `surface-reviewer`, `/wireframe`, `/core-skills:task-writer`, `/core-skills:implement-plan`,
 `precedent-reviewer`) parse the section names, so don't rename the ones you keep.
 
 The plan has two readers, and every section is sized for them: the implementing session, which
@@ -162,8 +162,10 @@ a weaker gate, it is no gate at all>
 
 Check if the feature touches any public-facing documentation surface. Every matching area gets
 its own row marked **Update** or **N/A — <reason>** — "checked, nothing to update" is a row, not
-an omission. The exact source-to-docs map is project-specific; consult the project's
-documentation conventions (often a `site/` or `docs/` tree). Common categories worth checking:
+an omission. The exact source-to-docs map is project-specific: when `.claude/project-context.md`
+sets `references.site_docs_sync`, that file's map replaces the table below — one row per entry in
+it. Otherwise consult the project's documentation conventions (often a `site/` or `docs/` tree).
+Common categories worth checking:
 
 | Source change | Update docs |
 |---|---|

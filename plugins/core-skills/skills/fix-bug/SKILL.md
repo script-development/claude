@@ -8,24 +8,24 @@ description: |
   fixes on manual browser confirmation before PR. Use whenever the user wants
   to fix a bug, says "fix bug", "bug fix", "debug this issue", "work on bug
   <key>", "/fix-bug", or is picking up a bug-type issue. Prefer this over
-  /plan-feature for bugs — bugs don't have wireframes or acceptance criteria,
+  /core-skills:plan-feature for bugs — bugs don't have wireframes or acceptance criteria,
   they have "does the defect still reproduce?". This skill is the bug-side
-  analogue of /plan-feature + /implement-plan collapsed into one lighter flow.
+  analogue of /core-skills:plan-feature + /core-skills:implement-plan collapsed into one lighter flow.
 ---
 
 # Fix Bug
 
-End-to-end bug-fix workflow. Lighter than `/plan-feature`: bugs don't need
+End-to-end bug-fix workflow. Lighter than `/core-skills:plan-feature`: bugs don't need
 interrogation, wireframes, task breakdown, or acceptance criteria — just a
 confirmed reproduction, a root cause, an approved fix, and proof the fix held.
 
-This skill reads `issue_tracker_skill` (Phase 1), `bug_root` (Phase 5) and `bug_runtime_review`
-(Phase 8) from `.claude/project-context.md` — see this plugin's README for how that file and its
-notation work.
+This skill reads `issue_tracker_skill` (Phase 1), `integration_branch` (Phase 2), `bug_root`
+(Phase 5), and `bug_runtime_review` and `references.hazards` (Phase 8) from
+`.claude/project-context.md` — see this plugin's README for how that file and its notation work.
 
 If a bug touches multiple domains with non-trivial design work (e.g. a race
 condition that reveals a missing synchronisation primitive), promote it to
-`/plan-feature` instead — the extra structure is worth it.
+`/core-skills:plan-feature` instead — the extra structure is worth it.
 
 **Path 3b carve-outs.** Mechanical fixes (typo / off-by-one / null-deref
 with a stack trace) skip the hypothesis-ranking ceremony in Phase 6 and
@@ -42,7 +42,7 @@ The developer may pass an issue key, an issue URL, or nothing.
 343 — never extract the number from a key and use it as an ID.
 
 If no argument, auto-detect from the current branch — branches from
-`/prepare-issue` typically look like `<KEY>-<slug>`. If the branch has no key,
+`/kendo-pm:prepare-issue` typically look like `<KEY>-<slug>`. If the branch has no key,
 ask which issue this is.
 
 ## Phase 1: Fetch the issue
@@ -56,21 +56,27 @@ Otherwise, read the issue through the resolved tracker skill. Keep in memory:
 
 - **id**, **key**, **title**
 - **type** — must be a bug. If it's a feature or task, stop and point the user
-  at `/plan-feature`.
+  at `/core-skills:plan-feature`.
 - **description**, **comments**, **attachments**
 
 Note any existing **branch links** — a branch may already exist.
 
 ## Phase 2: Branch guard
 
-This skill does **not** create branches — that's `/prepare-issue`'s job (or
-`/newbranch` for projects without an issue tracker).
+Resolve `<base>`, the integration branch every later phase compares against: `integration_branch`
+from `.claude/project-context.md` when set, otherwise the first of `origin/development`,
+`origin/develop` that exists, otherwise the remote default branch
+(`git symbolic-ref refs/remotes/origin/HEAD`). The remote default alone gets it wrong wherever
+work merges into a branch other than the one production ships from.
+
+This skill does **not** create branches — that's `/kendo-pm:prepare-issue`'s job (or
+`/core-skills:newbranch` for projects without an issue tracker).
 
 | Branch state | Action |
 |---|---|
-| On the base branch (e.g. `main`, `development`) | Stop. Tell the user to run `/prepare-issue <KEY>` or `/newbranch`. |
+| On `<base>`, or on `main` / `master` | Stop. Tell the user to run `/kendo-pm:prepare-issue <KEY>` or `/core-skills:newbranch`. |
 | Branch name contains the issue key | Proceed. |
-| Any other branch | Stop. Ask if this is the right branch; if not, point at `/prepare-issue`. |
+| Any other branch | Stop. Ask if this is the right branch; if not, point at `/kendo-pm:prepare-issue`. |
 
 Hard stop — do not silently create a branch from here. The developer made a
 choice at branch-creation time (primary vs. worktree, existing branch vs.
@@ -166,7 +172,7 @@ fix for a non-bug. Explain the finding to the developer (cite
 > <KEY>, already fixed on the base branch">`. Abandon this branch?
 > - **Yes, abandon** — update Status to `Abandoned`, note why in Notes
 >   / Follow-ups, and stop the workflow. Do not proceed to Phase 7 or
->   `/pr`.
+>   `/core-skills:pr`.
 > - **No, the diagnosis is wrong / keep investigating** — stay in
 >   Phase 6, revise Root Cause with the developer's correction.
 
@@ -234,6 +240,7 @@ Agent({
 Skill dir: <review-branch skill dir>
 Plan directory: <bug-root>/<slug>/
 Diff base: origin/<base>
+Project hazards: <references.hazards from .claude/project-context.md, or "none">
 
 FIRST: read <skill dir>/references/finder-base.md, then your three corpus sections under
 <skill dir>/references/corpus/. Return ## Findings and ## Checked only, in the finder shape.
@@ -249,7 +256,7 @@ match: skip the reviewer and say so — the verifier's gate doesn't depend on it
 
 When the reviewer returns, append its finder report **below** the verifier's block under
 `## Verification`, as a `### Runtime integrity` subsection carrying its `## Findings` and
-`## Checked` verbatim. Below, not above: `/pr` reads the **first** `**Verdict:**` line under
+`## Checked` verbatim. Below, not above: `/core-skills:pr` reads the **first** `**Verdict:**` line under
 `## Verification` as the verifier's verdict, and the reviewer's block must never be the first
 thing there. Do not judge, route, or write READY / NEEDS WORK. The parent session sees the
 findings and decides what to do; they never block the verdict below.
@@ -261,7 +268,7 @@ findings and decides what to do; they never block the verdict below.
   Update Status to `Verified`. Runtime-integrity findings do not block this.
 - **Score < 7, OR Verdict reads `PARTIAL`/`FAIL`, OR "Required fixes
   before PR" is non-empty** — fix what the verifier found, re-run your
-  repro, re-spawn. Don't hand off to `/pr` until the verdict reads a
+  repro, re-spawn. Don't hand off to `/core-skills:pr` until the verdict reads a
   clean `PASS` (in either form above) with no outstanding required
   fixes. The score and the verdict are independently-written fields; a
   high score doesn't override a verdict or a required-fix list that
@@ -307,7 +314,7 @@ with rendering:
 > This change touches styling, animation, or something else I can only
 > confirm by eye. Have you re-run the reproduction steps and confirmed
 > the bug is actually fixed?
-> - **Yes, verified — proceed to /pr**
+> - **Yes, verified — proceed to /core-skills:pr**
 > - **Run a browser-driving skill or the Playwright MCP first** — good
 >   for catching visual issues via screenshots, but take a look yourself
 >   too; it won't catch timing or race-condition problems
@@ -315,29 +322,29 @@ with rendering:
 
 Each answer resolves BUG.md's `## Verification` section before Phase 9 can
 run — a path-3c fix otherwise carries the verifier's literal `PASS
-(requires developer confirmation)` string, which `/pr`'s gate does not
+(requires developer confirmation)` string, which `/core-skills:pr`'s gate does not
 recognise as a plain `PASS`:
 
 - **Yes** — update **Verdict:** to plain `PASS`. This is what actually
-  unblocks `/pr`'s gate (see [`pr/SKILL.md`](../pr/SKILL.md) § Bug
+  unblocks `/core-skills:pr`'s gate (see [`pr/SKILL.md`](../pr/SKILL.md) § Bug
   branches) — confirming here without rewriting the Verdict leaves the
-  old string in place and `/pr` would ask for an override anyway.
+  old string in place and `/core-skills:pr` would ask for an override anyway.
 - **Run a browser-driving skill or the Playwright MCP first** — after it
   finishes, re-ask the same question above. Don't fall through to Phase 9
   on completion alone; a screenshot is not a "Yes."
-- **No — hold off** — stop the workflow here, do not hand off to `/pr`.
+- **No — hold off** — stop the workflow here, do not hand off to `/core-skills:pr`.
   Update **Verdict:** to `BLOCKED — pending manual browser confirmation`
-  and set **Status:** back to `Fixing`. `/pr`'s bug-branch gate reads this
-  section directly, so this is what actually stops a later `/pr` run in a
+  and set **Status:** back to `Fixing`. `/core-skills:pr`'s bug-branch gate reads this
+  section directly, so this is what actually stops a later `/core-skills:pr` run in a
   fresh session — a note in Notes / Follow-ups alone would not.
 
-## Phase 9: Hand off to /pr
+## Phase 9: Hand off to /core-skills:pr
 
-Run `/pr`. It will push, post the standard feedback comment on the
+Run `/core-skills:pr`. It will push, post the standard feedback comment on the
 linked issue, and embed `bug-fix-verifier`'s verdict from BUG.md's
 `## Verification` section as the gate — bug fixes are gated by the
-verifier, not by the pre-PR finders, so `/pr` will not ask for a
-`/review-branch` handoff on a bug branch.
+verifier, not by the pre-PR finders, so `/core-skills:pr` will not ask for a
+`/core-skills:review-branch` handoff on a bug branch.
 
 PR title names the defect (`fix: modal backdrop sticks after escape during
 open animation`) rather than the issue key alone. PR body cites the issue
@@ -346,7 +353,7 @@ reviewers can grasp the change without opening the file.
 
 ## Phase 10: Post-mortem prompt (optional)
 
-Once `/pr` is open and the verifier has signed off, you have more
+Once `/core-skills:pr` is open and the verifier has signed off, you have more
 information than when Phase 3 started. Spend 30 seconds asking: **what
 would have prevented this bug?**
 

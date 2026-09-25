@@ -1,6 +1,6 @@
 ---
 name: precedent-reviewer
-description: Review a branch against what is already written down — the repo's standing rules and architecture decisions, the sibling implementation that already solves this shape, the branch's own plan prose, and the CI configuration that decides what a green check means. Carries the Recorded rulings, Sibling precedent, and CI-config awareness corpus sections. Spawned always by `/review-branch` in parallel with `runtime-integrity-reviewer` and `correctness-reviewer`.
+description: Review a branch against what is already written down — the repo's standing rules and architecture decisions, the sibling implementation that already solves this shape, the branch's own plan prose, and the CI configuration that decides what a green check means. Carries the Recorded rulings, Sibling precedent, and CI-config awareness corpus sections. Spawned always by `/core-skills:review-branch` in parallel with `runtime-integrity-reviewer` and `correctness-reviewer`.
 tools: Read, Glob, Grep, Bash, WebFetch
 model: sonnet
 ---

@@ -37,6 +37,13 @@ value, not the field's literal name. This paragraph is the one place that mechan
 explained — an individual skill only needs to say *which* fields it reads and *what* it falls
 back to, not re-explain the degrade-not-fail contract itself.
 
+**Project reference files.** A project's own notes that a skill reads beside its shipped text —
+hazards, a docs-sync map, filled-in issue examples, agent-ready calibration, shepard's repo
+notes — live in the repo and are named under the one `references:` map in that file (e.g.
+`references.hazards`). The plugin install directory is shared and replaced on every update, so
+nothing a project writes there survives. Each key's reader and default are documented on the key
+in the template.
+
 ## Skills
 
 | Skill | Description |
@@ -45,15 +52,15 @@ back to, not re-explain the degrade-not-fail contract itself.
 | [catchup](skills/catchup/) | Load branch context, show progress, sync with base branch |
 | [worktree](skills/worktree/) | Cut a fresh git worktree: branch, deps, env files, project house rules, then hand back the path |
 | [commit](skills/commit/) | Small, focused commits matching this project's own message convention, plan kept in step, + push and PR Summary refresh |
-| [fix-bug](skills/fix-bug/) | End-to-end bug-fix workflow: reproduce, diagnose, propose, implement, gate on the bundled bug-fix-verifier agent (plus runtime-integrity-reviewer when `bug_runtime_review` is on), and hand off to `/pr` |
-| [implement-plan](skills/implement-plan/) | Execute a feature plan end-to-end without TASKS.md; runs `/review-branch` and acts on its findings before capturing learnings |
+| [fix-bug](skills/fix-bug/) | End-to-end bug-fix workflow: reproduce, diagnose, propose, implement, gate on the bundled bug-fix-verifier agent (plus runtime-integrity-reviewer when `bug_runtime_review` is on), and hand off to `/core-skills:pr` |
+| [implement-plan](skills/implement-plan/) | Execute a feature plan end-to-end without TASKS.md; runs `/core-skills:review-branch` and acts on its findings before capturing learnings |
 | [newbranch](skills/newbranch/) | Create a new branch from this project's integration branch; if an issue tracker is configured, resolve/create the issue and start work on it |
 | [next](skills/next/) | Continue through TASKS.md — find next task, execute with TDD flow, mark done |
 | [plan-feature](skills/plan-feature/) | Interrogate the developer with codebase-informed questions, then produce PLAN.md and DECISIONS.md; self-gated by the bundled plan-reviewer and surface-reviewer agents |
-| [pr](skills/pr/) | Create a pull request with automatic issue feedback; offers `/review-branch` when this session has none for HEAD, and gates bug branches on `bug-fix-verifier`'s BUG.md verdict |
+| [pr](skills/pr/) | Create a pull request with automatic issue feedback; offers `/core-skills:review-branch` when this session has none for HEAD, and gates bug branches on `bug-fix-verifier`'s BUG.md verdict |
 | [review-branch](skills/review-branch/) | Full-branch review vs the integration branch: three finders (runtime-integrity, correctness, precedent) in parallel against a shared hunting corpus; reports tagged findings in chat |
 | [review-mcp-descriptions](skills/review-mcp-descriptions/) | Improve MCP tool/resource descriptions for Tool Search discoverability |
-| [shepard](skills/shepard/) | Drive one PR to green and answered: fix red CI, dispose every review finding, push once per cycle, arm a live watch; reads the repo's notes from `.claude/references/shepard-<repo>.md` |
+| [shepard](skills/shepard/) | Drive one PR to green and answered: fix red CI, dispose every review finding, push once per cycle, arm a live watch; reads the repo's own notes via `references.shepard_notes` |
 | [sync-worktrees](skills/sync-worktrees/) | Sync every secondary git worktree with the primary: env files, dependencies, optional fast-forward |
 | [task-writer](skills/task-writer/) | Break down an approved PLAN.md into phased TASKS.md with a self-administered coverage checklist |
 
@@ -64,12 +71,12 @@ root, auto-discovered, no `plugin.json` entry needed.
 
 | Agent | Description |
 |-------|-------------|
-| [bug-fix-verifier](agents/bug-fix-verifier.md) | Verify a bug fix actually resolves BUG.md's defect and glance at touched files for regressions; spawned by `/fix-bug` before PR |
-| [correctness-reviewer](agents/correctness-reviewer.md) | Find code that computes the wrong thing on paths the tests never take, and obligations the change created but did not meet — including user-facing text that promises what the code does not do; spawned always by `/review-branch` |
-| [plan-reviewer](agents/plan-reviewer.md) | Re-apply the module-shape lens independently and check a plan against codebase conventions (enums, auth, arch tests); spawned by `/plan-feature` Phase 5 in parallel with surface-reviewer |
-| [precedent-reviewer](agents/precedent-reviewer.md) | Check a branch against the repo's standing rules, sibling implementations, its own plan prose, and the CI config that decides what green means; spawned always by `/review-branch` |
-| [runtime-integrity-reviewer](agents/runtime-integrity-reviewer.md) | Find failures that vanish and guards that got weaker — swallowed errors, partial completion, unchecked boundaries, entry points missing a guard; spawned always by `/review-branch`, and by `/fix-bug` on bug branches that opt in |
-| [surface-reviewer](agents/surface-reviewer.md) | Audit a plan's Security & Cost Surface prose against the seven canonical row questions and the repo's standing rules; spawned by `/plan-feature` Phase 5 in parallel with plan-reviewer |
+| [bug-fix-verifier](agents/bug-fix-verifier.md) | Verify a bug fix actually resolves BUG.md's defect and glance at touched files for regressions; spawned by `/core-skills:fix-bug` before PR |
+| [correctness-reviewer](agents/correctness-reviewer.md) | Find code that computes the wrong thing on paths the tests never take, and obligations the change created but did not meet — including user-facing text that promises what the code does not do; spawned always by `/core-skills:review-branch` |
+| [plan-reviewer](agents/plan-reviewer.md) | Re-apply the module-shape lens independently and check a plan against codebase conventions (enums, auth, arch tests); spawned by `/core-skills:plan-feature` Phase 5 in parallel with surface-reviewer |
+| [precedent-reviewer](agents/precedent-reviewer.md) | Check a branch against the repo's standing rules, sibling implementations, its own plan prose, and the CI config that decides what green means; spawned always by `/core-skills:review-branch` |
+| [runtime-integrity-reviewer](agents/runtime-integrity-reviewer.md) | Find failures that vanish and guards that got weaker — swallowed errors, partial completion, unchecked boundaries, entry points missing a guard; spawned always by `/core-skills:review-branch`, and by `/core-skills:fix-bug` on bug branches that opt in |
+| [surface-reviewer](agents/surface-reviewer.md) | Audit a plan's Security & Cost Surface prose against the seven canonical row questions and the repo's standing rules; spawned by `/core-skills:plan-feature` Phase 5 in parallel with plan-reviewer |
 
 ## Design record
 

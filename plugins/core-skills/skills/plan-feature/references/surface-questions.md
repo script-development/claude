@@ -2,7 +2,7 @@
 
 This is the **single source of truth** for the seven row questions that:
 
-- the planner answers in PLAN.md's `## Security & Cost Surface` section during Phase 1.6 of `/plan-feature`
+- the planner answers in PLAN.md's `## Security & Cost Surface` section during Phase 1.6 of `/core-skills:plan-feature`
 - the `surface-reviewer` agent grades the answers against at plan-time (prose-vs-Approach) and `precedent-reviewer` runs drift detection against at PR-time (prose-vs-code)
 
 The rows are deliberately **question-shaped, not field-shaped**. Filling in a form trains for the past; answering a question generalises to the next feature. Worked examples below each row show what a strong answer reads like — they are illustrative, not templates. They name the kind of file or rule to cite; substitute the repo's own.

@@ -59,16 +59,44 @@ worktree_dir:          # e.g. .claude/worktrees/{slug} — override the default 
                        # Used by: worktree.
 
 # --- Review (used by: fix-bug) ---
-bug_runtime_review:    # true — /fix-bug also spawns runtime-integrity-reviewer beside
-                       # bug-fix-verifier on a bug branch, and /pr points at its report. Off by
+bug_runtime_review:    # true — /core-skills:fix-bug also spawns runtime-integrity-reviewer beside
+                       # bug-fix-verifier on a bug branch, and /core-skills:pr points at its report. Off by
                        # default: a bug branch is gated by the verifier alone, and the pre-PR
                        # finders don't run on it. Turn it on when bug fixes here regularly
                        # introduce the defects that reviewer hunts: a stale response assigned
                        # after a later request, a retry that turns a delete into a no-op, a
                        # side effect fired inside a transaction. It never blocks the PR.
 
+# --- References ---
+# Project-owned reference files that plugin skills read beside their own shipped text. One map,
+# one contract for every key: a path from the repo root, read by the skill(s) named on that key,
+# degrading to the skill's own default when the key is unset or the file is missing — never a
+# hard failure. The plugin install directory is shared and replaced on every update, so a
+# project's own notes can't live there; they live in the repo and are named here. Add a key
+# here, not a new field, the next time a skill needs a project file; don't add one speculatively.
+references:
+  hazards:             # e.g. .claude/references/hazards.md — defect shapes that reached review
+                       # in this repo more than once, each with the seam or gate that ends it.
+                       # plan-feature reads it at the Security & Cost Surface for worked
+                       # examples; review-branch hands it to its finders to hunt in their lanes.
+                       # Used by: plan-feature, surface-reviewer, review-branch, fix-bug.
+  site_docs_sync:      # e.g. .claude/references/site-docs-sync.md — this repo's source-change →
+                       # docs-page map, replacing the generic categories in the plan's Site
+                       # Documentation Sync table and task-writer's documentation-sync task.
+                       # Used by: plan-feature, task-writer.
+  issue_examples:      # e.g. .claude/references/issue-examples.md — filled-in, stack-specific
+                       # examples of the tracker skill's issue templates, read beside them
+                       # whenever an issue is written. Used by: kendo-mcp, newbranch,
+                       # task-writer.
+  agent_ready:         # e.g. .claude/references/agent-ready.md — this project's own calibration
+                       # of the Ready for Agent criteria; replaces the generic criteria kendo-mcp
+                       # ships. Used by: triage-reports.
+  shepard_notes:       # e.g. .claude/references/shepard-<repo>.md — the repo notes /core-skills:shepard
+                       # reads (gates, auto-fixers, board, merge signal), in the shape of its
+                       # references/repos/_template.md. Used by: shepard.
+
 # --- Worktrees (used by: worktree, commit, newbranch, review-branch, sync-worktrees, shepard,
-#     next, implement-plan) ---
+#     next, implement-plan, fix-bug) ---
 integration_branch:    # Override when auto-detection (origin/development, origin/develop,
                        # then the remote default branch) would get it wrong for this project.
                        # sync-worktrees auto-detects differently (origin/HEAD, then main, then
@@ -112,10 +140,18 @@ here, not a new `##` heading, the next time a skill hardcodes a directory conven
 
 ## Review
 
-- `bug_runtime_review` — opts bug branches into one of the three pre-PR finders. `/fix-bug`
+- `bug_runtime_review` — opts bug branches into one of the three pre-PR finders. `/core-skills:fix-bug`
   Phase 8 spawns `runtime-integrity-reviewer` alongside `bug-fix-verifier`, appends its report to
-  BUG.md's `## Verification` below the verifier's verdict, and `/pr` points at it from the PR
+  BUG.md's `## Verification` below the verifier's verdict, and `/core-skills:pr` points at it from the PR
   body. The findings inform; the verifier's verdict stays the only gate.
+
+## References
+
+Every key under `references` shares the one contract in the frontmatter comment: a path from the
+repo root, a default when it's unset or missing. What each file holds and who reads it is
+documented on its key. Kept here, not in the skills' install directory, because that directory is
+shared by every project and replaced on each plugin update; kept as one map, not a field per
+skill, so a new file costs one key rather than a new mechanism.
 
 ## Worktrees
 

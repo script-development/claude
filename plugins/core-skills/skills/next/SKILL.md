@@ -13,14 +13,14 @@ description: |
 Continue working through a TASKS.md file: locate it, find the next uncompleted task, execute it
 following TDD flow, and mark it done with learnings.
 
-> **No TASKS.md, just PLAN.md + DECISIONS.md?** Use `/implement-plan` instead. It runs the same
+> **No TASKS.md, just PLAN.md + DECISIONS.md?** Use `/core-skills:implement-plan` instead. It runs the same
 > context-recovery / TDD / verification machinery against the plan directly, without expecting a
 > per-task checklist.
 
 > **Review runs once per branch, not per task.** Do not spawn reviewer agents after each task —
 > per-task reviews burn tokens for near-zero signal (first-pass reviews came back clean the vast
 > majority of the time). The gate for a task is **verification** (tests + types + lint). Reviewers run
-> once via `/review-branch` before `/pr`.
+> once via `/core-skills:review-branch` before `/core-skills:pr`.
 
 ## Step 1: Locate TASKS.md
 
@@ -107,7 +107,7 @@ that hook — don't pre-emptively rerun them here. When a hook fails, fix the un
 re-commit or re-push; never bypass it.
 
 **Verification is the per-task gate.** Reviewer agents no longer run per task — the three
-finders run once against the full branch via `/review-branch` before `/pr`.
+finders run once against the full branch via `/core-skills:review-branch` before `/core-skills:pr`.
 
 ## Step 6: Mark complete with metadata
 
@@ -139,7 +139,7 @@ Summarize what was done, then suggest committing the work as a natural checkpoin
 ```
 Done: 2.1 — Implemented X with tests
 
-Suggest committing before continuing. Want me to /commit?
+Suggest committing before continuing. Want me to /core-skills:commit?
 ```
 
 If the user wants to continue, loop back to Step 2 for the next task.

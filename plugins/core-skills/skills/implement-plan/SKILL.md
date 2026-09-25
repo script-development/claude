@@ -5,12 +5,12 @@ description: |
   Use this for smaller plans where the plan's Approach section is already a good enough
   roadmap and a separate task file would be overkill. Loads the full plan context
   (goal, decisions, scope, approach, acceptance criteria, wireframes), executes the work
-  end-to-end with TDD discipline, runs verification and `/review-branch`,
+  end-to-end with TDD discipline, runs verification and `/core-skills:review-branch`,
   then captures learnings in IMPLEMENTATION.md so future sessions can resume.
   Trigger on: "implement the plan", "implement plan", "build this plan", "execute the plan",
   "/implement-plan", "ship this plan", "just do the plan", or whenever the user wants to
   build a feature straight from a plan document without writing TASKS.md first.
-  Prefer /next when TASKS.md already exists in the plan directory.
+  Prefer /core-skills:next when TASKS.md already exists in the plan directory.
 ---
 
 # Implement Plan
@@ -19,20 +19,20 @@ Execute a feature plan end-to-end without a TASKS.md intermediary. Built for sma
 the Approach section in PLAN.md already gives enough structure that a separate task breakdown
 would be busywork.
 
-This skill is the sibling of `/next`. The two share most of their machinery — context recovery,
+This skill is the sibling of `/core-skills:next`. The two share most of their machinery — context recovery,
 testing-skill loading, TDD ordering, verification, acceptance review, learnings capture — but
-diverge on iteration shape: `/next` walks a checklist, this one walks a plan.
+diverge on iteration shape: `/core-skills:next` walks a checklist, this one walks a plan.
 
-## When to use this vs. /next
+## When to use this vs. /core-skills:next
 
 | Situation | Use |
 |-----------|-----|
-| TASKS.md already exists in the plan dir | `/next` (don't re-plan; execute the existing breakdown) |
-| Plan is small (~5 or fewer Approach steps, single domain) | `/implement-plan` |
-| Plan touches many files across multiple layers, will span several commits | `/task-writer` first, then `/next` |
-| Plan has no PLAN.md at all | Stop. Run `/plan-feature` first. |
+| TASKS.md already exists in the plan dir | `/core-skills:next` (don't re-plan; execute the existing breakdown) |
+| Plan is small (~5 or fewer Approach steps, single domain) | `/core-skills:implement-plan` |
+| Plan touches many files across multiple layers, will span several commits | `/core-skills:task-writer` first, then `/core-skills:next` |
+| Plan has no PLAN.md at all | Stop. Run `/core-skills:plan-feature` first. |
 
-If unsure, err toward `/implement-plan` for tight focused changes and `/task-writer` → `/next`
+If unsure, err toward `/core-skills:implement-plan` for tight focused changes and `/core-skills:task-writer` → `/core-skills:next`
 for anything that genuinely benefits from per-task acceptance gating.
 
 ## Step 1: Locate the plan directory
@@ -43,7 +43,7 @@ Derive the plan directory from the current git branch using the canonical algori
 `docs/plans`), then look for `PLAN.md` inside it.
 If not found, ask the user where the plan lives — don't guess.
 
-If you find a `TASKS.md` next to `PLAN.md`, **stop and tell the user** — they probably want `/next`,
+If you find a `TASKS.md` next to `PLAN.md`, **stop and tell the user** — they probably want `/core-skills:next`,
 not this skill. Confirm before continuing.
 
 ## Step 2: Load the full plan context
@@ -135,15 +135,15 @@ broken.
 
 ## Step 7: Branch review
 
-Run `/review-branch`. It spawns the canonical pre-PR reviewers in parallel against the full
-branch diff and reports in chat for `/pr` to consume in this session. Don't spawn reviewer
-agents directly here — `/review-branch` owns that orchestration, so the two flows can't drift
+Run `/core-skills:review-branch`. It spawns the canonical pre-PR reviewers in parallel against the full
+branch diff and reports in chat for `/core-skills:pr` to consume in this session. Don't spawn reviewer
+agents directly here — `/core-skills:review-branch` owns that orchestration, so the two flows can't drift
 apart.
 
 **What to do with the result:** the parent session sees the report and decides. Fix
 unambiguous findings, re-running verification (Step 6) after each fix; ask the developer on a
 real design call. Then proceed to Step 8. Do not wait on a READY / NEEDS WORK line —
-`/review-branch` does not emit one.
+`/core-skills:review-branch` does not emit one.
 
 ## Step 8: Capture learnings to IMPLEMENTATION.md
 
@@ -157,7 +157,7 @@ Use this structure:
 
 ## YYYY-MM-DD — <one-line summary of this session's work>
 
-**Review:** N findings across the three lanes (from `/review-branch`)
+**Review:** N findings across the three lanes (from `/core-skills:review-branch`)
 
 **Key Changes:**
 - Created `path/to/new/file.ts`
@@ -191,7 +191,7 @@ Summarise what shipped and offer to commit:
 Implemented <KEY> — <one-sentence summary>
 Review: 2 findings across the three lanes, both fixed. IMPLEMENTATION.md updated.
 
-Suggest committing now. Want me to /commit?
+Suggest committing now. Want me to /core-skills:commit?
 ```
 
 If the user wants to keep iterating (e.g. spotted something during review), loop back to the

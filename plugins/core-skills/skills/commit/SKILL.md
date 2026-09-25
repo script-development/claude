@@ -53,7 +53,7 @@ under `plan_root` (default `docs/plans`). When one exists and a commit's diff ch
 that `PLAN.md`'s Approach or Scope, or a `DECISIONS.md` entry, describes, patch those files **in
 that same commit** — before `git commit`, not after the push. Lint fixes, tests and renames leave
 the plan alone. A plan that no longer matches its diff is what `precedent-reviewer` flags at
-`/review-branch`, and a stale plan misleads every later session that resumes from it.
+`/core-skills:review-branch`, and a stale plan misleads every later session that resumes from it.
 
 ### 4. For each commit
 

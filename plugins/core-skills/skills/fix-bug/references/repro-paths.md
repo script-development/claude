@@ -1,6 +1,6 @@
 # Repro paths
 
-Phase 3 of `/fix-bug` produces **something executable or describable that demonstrates the defect** — that's what Phase 8's verifier checks against. Three valid paths, plus a pre-flight validation step and a hard "cannot reproduce" stop condition.
+Phase 3 of `/core-skills:fix-bug` produces **something executable or describable that demonstrates the defect** — that's what Phase 8's verifier checks against. Three valid paths, plus a pre-flight validation step and a hard "cannot reproduce" stop condition.
 
 ## Before picking a path: validate the issue's contract
 

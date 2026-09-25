@@ -73,11 +73,11 @@ hanging is worse than not flagging it at all.
 
 ## Review happens once per branch, not per task
 
-`/next` does **not** spawn reviewer agents — per-task review was retired in
+`/core-skills:next` does **not** spawn reviewer agents — per-task review was retired in
 April 2026 because first-pass scores were 9-10 nearly every time. The gate for
 a task is its verification: tests, types, lint.
 
-Review runs once against the whole branch via `/review-branch`, which spawns
+Review runs once against the whole branch via `/core-skills:review-branch`, which spawns
 `runtime-integrity-reviewer`, `correctness-reviewer` and `precedent-reviewer`.
 **Don't list them as verification steps in a task** — they don't run at task
 granularity, and the

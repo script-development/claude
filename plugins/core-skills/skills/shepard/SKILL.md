@@ -68,9 +68,9 @@ reinstall the skill or plugin."* Otherwise, read the repo's notes and the review
 - **The repo notes** — integration branch, gates, auto-fixers, board, merge signal, house rules,
   in the shape of `<skill dir>/references/repos/_template.md`. They override every default below.
   Take the first that exists, where `<repo-name>` is resolved above:
-  1. `.claude/references/shepard-<repo-name>.md` in the repo itself — the path for a repo that
-     runs this skill from the plugin, whose install directory is shared and read-only, so a
-     note written there would be lost on the next update;
+  1. `references.shepard_notes` from `.claude/project-context.md` — a file in the repo itself,
+     for a repo that runs this skill from the plugin: its install directory is shared and
+     replaced on every update, so notes written there would be lost;
   2. `<skill dir>/references/repos/<repo-name>.md` — beside a checked-in or user-level copy.
 
   Then read `.claude/project-context.md`, if it exists: `integration_branch`, and the
@@ -507,7 +507,7 @@ which surfaces it reached, and that it dies with this session).
 
 ## Running as a loop — two counters
 
-`/shepard` loops by default. Both surfaces are re-read each cycle, bounded by two independent
+`/core-skills:shepard` loops by default. Both surfaces are re-read each cycle, bounded by two independent
 counters:
 
 | Counter | Limit | Counts |
@@ -536,7 +536,7 @@ fixed and pushed, everything else is filed, noted or skipped without a push. Mea
 kendo#2113 (2026-09-05): pushing every nitpick cost two extra rounds and a fresh set of findings;
 skipping every nitpick would have shipped a real blob-URL leak.
 
-## Keep watching — arm this on every `/shepard`
+## Keep watching — arm this on every `/core-skills:shepard`
 
 The in-session loop exits while a reviewer may still be running. **Always arm a live watch on
 this PR before you hand back**, unless the PR is already merged or closed, or the user said stop
@@ -605,8 +605,9 @@ hand-back.
 Two kinds, in separate files, so a repo's facts never mix with the reviewer's contract:
 
 - **The repo notes** — one per repo, from `repos/_template.md`, only what was verified in that
-  repo, each rule with its why. A repo on the plugin keeps its own at
-  `.claude/references/shepard-<repo-name>.md`; a checked-in or user-level copy of this skill can
+  repo, each rule with its why. A repo on the plugin keeps its own in the repo and names it as
+  `references.shepard_notes` in `.claude/project-context.md` (conventionally
+  `.claude/references/shepard-<repo-name>.md`); a checked-in or user-level copy of this skill can
   keep it at `references/repos/<repo-name>.md` beside it.
 - **`references/reviewers/crit.md`** — the reviewer's contract, shared by every consumer and read
   from crit's own code with the files named. When crit changes how it reads threads, what settles

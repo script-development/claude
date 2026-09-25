@@ -1,6 +1,6 @@
 ---
 name: plan-reviewer
-description: Review feature plans for codebase convention violations before approval. Use when a plan has been produced by /plan-feature and needs convention checking, or when the task mentions plan review, convention check, or plan audit.
+description: Review feature plans for codebase convention violations before approval. Use when a plan has been produced by /core-skills:plan-feature and needs convention checking, or when the task mentions plan review, convention check, or plan audit.
 tools: Read, Glob, Grep, Bash
 model: opus
 ---
@@ -84,7 +84,7 @@ Report any arch test violations in the Convention Scan table with a new row:
 | Arch Tests | <what plan proposes> | <rule from specific test file:line> | PASS/FAIL |
 ```
 
-> **Surface analysis is not your job.** PLAN.md's `## Security & Cost Surface` section is graded by the `surface-reviewer` agent, which runs in parallel with you at Phase 5 of `/plan-feature`. Don't audit it here — your remit is codebase conventions and module shape. If the section is missing entirely, mention it once in the Summary so the parent agent re-spawns surface-reviewer, but don't penalise it under your score.
+> **Surface analysis is not your job.** PLAN.md's `## Security & Cost Surface` section is graded by the `surface-reviewer` agent, which runs in parallel with you at Phase 5 of `/core-skills:plan-feature`. Don't audit it here — your remit is codebase conventions and module shape. If the section is missing entirely, mention it once in the Summary so the parent agent re-spawns surface-reviewer, but don't penalise it under your score.
 
 ### Step 3: Scan the full plan for convention violations
 

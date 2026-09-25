@@ -15,7 +15,7 @@ active sprint, move to In Progress).
 
 This skill is project-agnostic: it never assumes a specific tracker, tracker project id, or
 issue-key format. It reads `integration_branch` (Step 1) and `issue_tracker_skill` /
-`issue_tracker_project_id` (Step 2) from `.claude/project-context.md` — see this plugin's
+`issue_tracker_project_id` / `references.issue_examples` (Step 2) from `.claude/project-context.md` — see this plugin's
 README for how that file and its notation work.
 
 ## Step 1: Fetch latest
@@ -47,6 +47,7 @@ Ask the user which issue to branch from. Options:
   ships its own issue-writing template (`kendo-mcp` does, at `references/issue-templates.md` —
   the feature-story and bug-report shapes used across this project) follow it; don't improvise a
   structure — reviewers and future developers searching the backlog rely on it being consistent.
+  When `.claude/project-context.md` sets `references.issue_examples`, read that file too: the project's filled-in examples of those templates.
   No such template shipped: use a generic title + description + acceptance-criteria shape.
 
 Capture the issue's **key** and **title** — used for the branch name in Step 3 and the

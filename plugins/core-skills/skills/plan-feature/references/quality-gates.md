@@ -1,6 +1,6 @@
 # Quality gates — input (Phase 1.5), security (Phase 1.6), and output (Phase 4d)
 
-`/plan-feature` runs three fail-closed gates that bracket the drafting work. The tables themselves live in SKILL.md so they fire reliably. This document carries the rationale, sycophancy guards, and operating notes — load it when you reach a gate.
+`/core-skills:plan-feature` runs three fail-closed gates that bracket the drafting work. The tables themselves live in SKILL.md so they fire reliably. This document carries the rationale, sycophancy guards, and operating notes — load it when you reach a gate.
 
 ## Why three gates
 

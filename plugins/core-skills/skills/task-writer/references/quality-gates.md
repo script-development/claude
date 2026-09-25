@@ -1,6 +1,6 @@
 # Quality gates — Phase 0 (right-size) and Phase 4 (alignment)
 
-`/task-writer` runs two fail-closed gates that bracket the breakdown work.
+`/core-skills:task-writer` runs two fail-closed gates that bracket the breakdown work.
 The tables themselves live in SKILL.md so they fire reliably. This document
 carries the rationale, sycophancy guards, and operating notes — load it
 when you reach a gate.
@@ -18,7 +18,7 @@ catch). Two gates, two failure modes.
 
 **The rule:** if **all three** thresholds are met, output the redirect
 and stop. The developer can override and request TASKS.md anyway, but the
-default branches to `/implement-plan`. Fail-closed.
+default branches to `/core-skills:implement-plan`. Fail-closed.
 
 ### Sycophancy guards
 

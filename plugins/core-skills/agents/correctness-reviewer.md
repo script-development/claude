@@ -1,6 +1,6 @@
 ---
 name: correctness-reviewer
-description: Review a branch for code that computes the wrong thing, paths the happy-path test never takes, and obligations the change created but did not meet — including user-facing text that promises behaviour the code does not deliver. Carries the Runtime-state simulation, Sins of omission, and Test disciplines corpus sections. Spawned always by `/review-branch` in parallel with `runtime-integrity-reviewer` and `precedent-reviewer`.
+description: Review a branch for code that computes the wrong thing, paths the happy-path test never takes, and obligations the change created but did not meet — including user-facing text that promises behaviour the code does not deliver. Carries the Runtime-state simulation, Sins of omission, and Test disciplines corpus sections. Spawned always by `/core-skills:review-branch` in parallel with `runtime-integrity-reviewer` and `precedent-reviewer`.
 tools: Read, Glob, Grep, Bash
 model: sonnet
 ---

@@ -94,6 +94,7 @@ can be compared line by line.
 | `plan_root` | Where do existing `PLAN.md` / `TASKS.md` / `DECISIONS.md` files live (`git ls-files '*/PLAN.md' '*/DECISIONS.md'`)? | They sit one folder deep under a root other than `docs/plans/`, or `docs/plans/` already holds something that isn't per-branch plan folders |
 | `bug_root` | Same for `BUG.md` | Same, against `docs/bugs/` |
 | `bug_runtime_review` | Does a checked-in `.claude/skills/fix-bug/SKILL.md` (or its git history) spawn `runtime-integrity-reviewer` in its verification phase? Do past `BUG.md` files carry a `### Runtime integrity` block (`git grep -l '### Runtime integrity' -- '*/BUG.md'`)? | Either is true → `true`. Default (unset) is off |
+| `references.*` (`hazards`, `site_docs_sync`, `issue_examples`, `agent_ready`, `shepard_notes`) | Files the project already keeps for these: `git ls-files '.claude/references/*'`, then the checked-in copies the plugin replaces (`plan-feature/references/hazards.md`, the Site Documentation Sync table in a checked-in `plan-template.md`, filled-in examples in a checked-in `kendo-mcp/references/issue-templates.md`, `kendo-mcp/references/agent-ready.md`, a PR driver's `references/repos/<repo-name>.md`) | A file exists → its path. A checked-in copy only → offer to move it to `.claude/references/<name>.md` (the plugin never reads a skill copy's references) and record that path; the move is the user's to confirm. Nothing found → unset; each reading skill falls back to its own default |
 | `worktree_dir` | A Docker build context at the repo root (`docker build .`, compose `context: .`), test-runner or IDE globs over the whole tree | The default `.claude/worktrees/` sits inside that context and the project's `.dockerignore` doesn't exclude it. Check the ignore file, not the Dockerfile's `COPY` lines: the whole context is sent to the daemon before any `COPY` runs, and root-anchored patterns like `backend/vendor` don't match a nested worktree's `.claude/worktrees/x/backend/vendor`. A sibling folder named like the project's existing worktrees (`git worktree list`) is the usual candidate. A `.gitignore` entry already covering the default is not a reason to override — it goes under House rules |
 
 **Plan and bug folder names aren't a field.** Only the roots are configurable; the folder
@@ -197,7 +198,7 @@ worktree_dir: ../kendo-{slug}
   the old value pointed outside `docs/plans/`.
 
 Nothing to add → change nothing and say the file is already up to date for the installed
-plugins. Don't commit — the file belongs to the project; leave it for the user or `/commit`.
+plugins. Don't commit — the file belongs to the project; leave it for the user or `/core-skills:commit`.
 
 ## Step 6: Summarize
 

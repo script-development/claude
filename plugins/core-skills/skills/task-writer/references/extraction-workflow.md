@@ -7,7 +7,7 @@ rules. Load it the moment you start the inventory.
 The point of an explicit inventory — instead of "read the plan and write
 tasks" — is to make scope creep and gaps visible **before** task wording
 locks them in. A missing category at this stage costs an extra round of
-revisions; a missing category after `/next` starts costs a re-plan.
+revisions; a missing category after `/core-skills:next` starts costs a re-plan.
 
 ## The literal inventory
 
