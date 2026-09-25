@@ -52,7 +52,31 @@ case "$args" in
     echo 'null'
     exit 0 ;;
   *"--json number,url,title"*)
+    [[ -f "$STATE/resolve_fail" ]] && { echo "HTTP 401: Bad credentials (https://api.github.com/graphql)" >&2; exit 1; }
     echo '{"number":42,"url":"https://github.com/acme/widget/pull/42","title":"a title"}'
+    exit 0 ;;
+  "run list"*)
+    # The head's workflow runs, read in the same tick as the snapshot before it: the
+    # fixture is keyed to the snapshot counter, not a counter of its own. No fixture
+    # means no runs; an empty one means the listing failed. --jq is applied with real
+    # jq, as gh applies it.
+    n=$(cat "$STATE/gh_n" 2>/dev/null || echo 0)
+    f="$STATE/runs_$n.json"
+    [[ -f "$f" ]] || { echo 0; exit 0; }
+    [[ -s "$f" ]] || exit 1
+    filter=""; prev=""
+    for a in "$@"; do [[ "$prev" == "--jq" ]] && filter="$a"; prev="$a"; done
+    jq "${filter:-.}" "$f"
+    exit 0 ;;
+  "api repos/{owner}/{repo}/rules/branches/"*)
+    # The base's rulesets. No fixture means a base with no rules; an empty one means the
+    # call failed. --jq is applied with real jq, as gh applies it.
+    f="$STATE/rules.json"
+    [[ -f "$f" ]] || { echo '[]'; exit 0; }
+    [[ -s "$f" ]] || exit 1
+    filter=""; prev=""
+    for a in "$@"; do [[ "$prev" == "--jq" ]] && filter="$a"; prev="$a"; done
+    jq "${filter:-.}" "$f"
     exit 0 ;;
 esac
 n=$(cat "$STATE/gh_n" 2>/dev/null || echo 0)
@@ -97,7 +121,7 @@ gh_tick() {  # gh_tick <n> <state> <head> <reviews> <comments> <ci_fail_name>
   reviews=$(seq 1 "$4" 2>/dev/null | sed 's/.*/{}/' | paste -sd, -)
   comments=$(seq 1 "$5" 2>/dev/null | sed 's/.*/{}/' | paste -sd, -)
   cat > "$state/gh_$1.json" <<EOF
-{"state":"$2","headRefOid":"$3","statusCheckRollup":$checks,
+{"state":"$2","headRefOid":"$3","baseRefName":"main","statusCheckRollup":$checks,
  "reviews":[${reviews}],"comments":[${comments}],"reviewDecision":""}
 EOF
 }
@@ -115,7 +139,13 @@ bus_listed() {
 }
 bus_absent() { echo '{"requests":[]}' > "$state/bus_list.json"; }
 
-reset() { rm -f "$state"/*.json "$state"/gh_n "$state"/bus_n "$state"/curl_argv.log; }
+reset() { rm -f "$state"/*.json "$state"/gh_n "$state"/bus_n "$state"/curl_argv.log "$state"/resolve_fail; }
+
+requires() {  # requires <context>... — the base's rulesets require these checks
+  local ctx="" c
+  for c in "$@"; do ctx+="${ctx:+,}{\"context\":\"$c\"}"; done
+  echo "[{\"type\":\"required_status_checks\",\"parameters\":{\"required_status_checks\":[$ctx]}}]" > "$state/rules.json"
+}
 
 run() { TOWN_CRIER_TOKEN=fake-token TOWN_CRIER_URL=https://bus.test bash "$subject" 42 --interval 0 --heartbeat 0 "$@" 2>&1; }
 
@@ -433,6 +463,102 @@ gh_tick 3 MERGED aaaaaaaa 0 0
 out=$(run); rc=$?
 check "a neutral lane still speaks beside a neutral app check" 0 "$out" $rc \
   "[ci]  needs attention (neutral/stale): conditional-job" "!kendo"
+
+# A gate job that `needs:` every other lane is not in the rollup until the last lane
+# finishes: GitHub lists a job once it is queued, not before. In that window every
+# listed check is complete, and the rollup alone read GREEN before the gate had run
+# (emmie #1776, whose `CI Gate` and `ci-passed` both need every lane). The run is
+# still in progress then, and that is what keeps the state PENDING. The pass count
+# tells the two apart: a premature green prints at pass 2, and the real one after it
+# would then be GREEN -> GREEN, which prints nothing.
+reset; bus_absent
+cat > "$state/gh_1.json" <<'EOF'
+{"state":"OPEN","headRefOid":"aaaaaaaa",
+ "statusCheckRollup":[{"name":"unit","status":"IN_PROGRESS","conclusion":"","workflowName":"CI"},
+                      {"name":"lint","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"}],
+ "reviews":[],"comments":[],"reviewDecision":""}
+EOF
+echo '[{"status":"in_progress"}]' > "$state/runs_1.json"
+cat > "$state/gh_2.json" <<'EOF'
+{"state":"OPEN","headRefOid":"aaaaaaaa",
+ "statusCheckRollup":[{"name":"unit","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"},
+                      {"name":"lint","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"}],
+ "reviews":[],"comments":[],"reviewDecision":""}
+EOF
+echo '[{"status":"in_progress"}]' > "$state/runs_2.json"
+cat > "$state/gh_3.json" <<'EOF'
+{"state":"OPEN","headRefOid":"aaaaaaaa",
+ "statusCheckRollup":[{"name":"unit","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"},
+                      {"name":"lint","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"},
+                      {"name":"ci-passed","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"}],
+ "reviews":[],"comments":[],"reviewDecision":""}
+EOF
+echo '[{"status":"completed"}]' > "$state/runs_3.json"
+gh_tick 4 MERGED aaaaaaaa 0 0
+out=$(run); rc=$?
+check "a run still in progress is never green before its gate lands" 0 "$out" $rc \
+  "[ci]  all checks green (pass 3)" "!(pass 2)"
+
+# The run listing is a second call, and a failed one must not pin the watch at
+# PENDING forever: it degrades to the rollup alone, which is what this watch judged
+# by before the run listing existed.
+reset; bus_absent
+cat > "$state/gh_1.json" <<'EOF'
+{"state":"OPEN","headRefOid":"aaaaaaaa","statusCheckRollup":[],
+ "reviews":[],"comments":[],"reviewDecision":""}
+EOF
+gh_tick 2 OPEN aaaaaaaa 0 0; : > "$state/runs_2.json"
+gh_tick 3 MERGED aaaaaaaa 0 0
+out=$(run); rc=$?
+check "an unlistable run set falls back to the rollup" 0 "$out" $rc "[ci]  all checks green"
+
+# The rollup lists only checks that exist. emmie's stacked-PR workflow posts an always-green
+# placeholder `ci-passed` while the base requires `CI Gate`, and a base-filtered CI that never
+# fires leaves its gate absent the same way: every listed check passed, nothing is running,
+# and the rollup alone read GREEN on a PR the base would refuse. The first tick also states
+# where the PR stands, since an armed watch on a PR that is already stuck otherwise says
+# nothing at all.
+reset; bus_absent; requires "CI Gate"
+gh_tick 1 OPEN aaaaaaaa 0 0
+cat > "$state/gh_2.json" <<'EOF'
+{"state":"OPEN","headRefOid":"aaaaaaaa","baseRefName":"main",
+ "statusCheckRollup":[{"name":"ci-passed","conclusion":"SUCCESS"},{"name":"CI Gate","conclusion":"SUCCESS"}],
+ "reviews":[],"comments":[],"reviewDecision":""}
+EOF
+gh_tick 3 MERGED aaaaaaaa 0 0
+out=$(run); rc=$?
+check "a required check that never reported is not green" 0 "$out" $rc \
+  "[watch] now: ci MISSING: CI Gate never reported" "[ci]  all checks green (pass 2)"
+
+# While a run is in flight the missing gate is merely not queued yet — the `needs:` window
+# the run listing exists for — so it stays PENDING and never claims the gate is lost.
+reset; bus_absent; requires "ci-passed"
+cat > "$state/gh_1.json" <<'EOF'
+{"state":"OPEN","headRefOid":"aaaaaaaa","baseRefName":"main",
+ "statusCheckRollup":[{"name":"unit","conclusion":"SUCCESS","workflowName":"CI"}],
+ "reviews":[],"comments":[],"reviewDecision":""}
+EOF
+echo '[{"status":"in_progress"}]' > "$state/runs_1.json"
+gh_tick 2 OPEN aaaaaaaa 0 0
+gh_tick 3 MERGED aaaaaaaa 0 0
+out=$(run); rc=$?
+check "a required gate still queuing is pending, not missing" 0 "$out" $rc \
+  "[watch] now: ci PENDING" "[ci]  all checks green" "!never reported"
+
+# Unreadable rulesets degrade to the rollup alone, as an unreadable run listing does: one
+# failed call must not turn every PR on the repo into MISSING.
+reset; bus_absent; : > "$state/rules.json"
+gh_tick 1 OPEN aaaaaaaa 0 0
+gh_tick 2 MERGED aaaaaaaa 0 0
+out=$(run); rc=$?
+check "unreadable rulesets fall back to the rollup" 0 "$out" $rc "[watch] now: ci GREEN" "!never reported"
+
+# A gh that cannot reach GitHub is not "no PR": that line sends the reader hunting for a
+# PR that exists. gh's own reason reaches stdout.
+reset; bus_absent; touch "$state/resolve_fail"
+out=$(setup_run 42 --once); rc=$?
+check "a failed PR lookup says why, not 'no PR found'" 3 "$out" $rc \
+  "gh could not look up '42'" "Bad credentials" "!no PR found"
 
 # The header comment promises the token never appears in anything this script
 # emits. That promise covers stdout; it does not by itself cover argv, which

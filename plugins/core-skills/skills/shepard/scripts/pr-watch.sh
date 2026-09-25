@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # pr-watch.sh — live watch on ONE pull request. Built for /shepard's Monitor tool:
-# every stdout line becomes one chat notification, so the script prints ONLY
-# changes, never a running status.
+# every stdout line becomes one chat notification, so past one line on the first
+# tick saying where the PR stands, the script prints ONLY changes, never a running status.
 #
 # Two surfaces, one tick, with the bus first among them:
-#   GitHub  — PR state, head SHA, per-job check rollup, reviews, comments, decision.
+#   GitHub  — PR state, head SHA, per-job check rollup, whether the head's workflow runs
+#             have finished, reviews, comments, decision.
 #             Always, whatever the bus says: a reviewer that posts on GitHub and never
 #             reports to its bus row (emmie #1297) must still wake the watch.
 #   The bus — town-crier's ledger row: gate, trial, findings, reviewer (when the
@@ -28,7 +29,7 @@
 #
 # Exit codes:
 #   0  the PR reached a terminal state (MERGED or CLOSED) — the watch is done
-#   3  setup failure, said on stdout: no PR, missing dependency, bad flag value — or `--source bus`
+#   3  setup failure, said on stdout: no PR, gh failed, bash older than 4, missing dependency, bad flag value — or `--source bus`
 #      with no town-crier row for this PR after 20 ticks
 #
 # The token is read from $TOWN_CRIER_TOKEN, else from the env file named by
@@ -41,6 +42,10 @@ set -uo pipefail
 # stderr-only exit here would look like an armed, quiet watch.
 die() { ended=setup; echo "[end] setup failed: $1 — watch never started"; exit 3; }
 
+# The change detection below keeps its state in associative arrays, which bash 3.2 (stock
+# macOS /bin/bash) parses as indexed ones: every key folds to index 0 and no change is ever
+# seen. A watch that cannot see changes must refuse to start, not arm and stay quiet.
+(( BASH_VERSINFO[0] >= 4 )) || die "bash 4+ required, this is ${BASH_VERSION} (macOS: brew install bash, then put it first on PATH)"
 command -v gh   >/dev/null || die "gh CLI required"
 command -v jq   >/dev/null || die "jq required"
 
@@ -73,10 +78,19 @@ if [[ -z "$TARGET" ]]; then
   [[ -z "$TARGET" ]] && die "no PR/branch argument and not on a branch"
 fi
 
+# A gh that failed (expired auth, no network, not a GitHub checkout) is not "no PR": saying
+# "no PR found" sends the reader looking for a PR that exists. gh's own reason is kept.
+resolve_err=$(mktemp)
 if [[ "$TARGET" =~ ^[0-9]+$ ]]; then
-  pr_json=$(gh pr view "$TARGET" --json number,url,title 2>/dev/null)
+  pr_json=$(gh pr view "$TARGET" --json number,url,title 2>"$resolve_err")
 else
-  pr_json=$(gh pr list --head "$TARGET" --json number,url,title --jq '.[0]' 2>/dev/null)
+  pr_json=$(gh pr list --head "$TARGET" --json number,url,title --jq '.[0]' 2>"$resolve_err")
+fi
+resolve_rc=$?
+resolve_why=$(tail -n 1 "$resolve_err" 2>/dev/null); resolve_why=${resolve_why%$'\r'}
+rm -f "$resolve_err"
+if [[ $resolve_rc -ne 0 && ! ( "$TARGET" =~ ^[0-9]+$ && "$resolve_why" == *"Could not resolve to a PullRequest"* ) ]]; then
+  die "gh could not look up '$TARGET'${resolve_why:+ (${resolve_why})}"
 fi
 [[ -z "${pr_json:-}" || "$pr_json" == "null" ]] && die "no PR found for '$TARGET'"
 
@@ -146,10 +160,40 @@ bus_resolve_id() {
 GH_ERR=$(mktemp)
 
 gh_snapshot() {
-  local raw
-  raw=$(gh pr view "$PR_NUMBER" --json state,headRefOid,statusCheckRollup,reviews,comments,reviewDecision 2>"$GH_ERR") || return 1
+  local raw sha runs_active base required
+  raw=$(gh pr view "$PR_NUMBER" --json state,headRefOid,baseRefName,statusCheckRollup,reviews,comments,reviewDecision 2>"$GH_ERR") || return 1
   [[ -z "$raw" ]] && return 1
-  jq -c '
+  # The rollup lists a job only once it is queued, so a gate job that `needs:` every other
+  # lane (emmie's `CI Gate` and `ci-passed`, kendo's `ci-passed`) is ABSENT, not pending,
+  # until the last lane finishes. In that window every listed check is complete and the
+  # rollup alone reads GREEN before the gate has run (emmie #1776). The workflow run stays
+  # in progress until its gate finishes, so an unfinished run on this head keeps the state
+  # PENDING. A listing gh cannot produce degrades to the rollup alone: one failed call
+  # must not pin the watch at PENDING, and the rollup is what this watch read before.
+  sha=$(jq -r '.headRefOid // ""' <<<"$raw" 2>/dev/null)
+  runs_active=""
+  if [[ -n "$sha" ]]; then
+    runs_active=$(gh run list --commit "$sha" --json status --limit 100 \
+      --jq '[.[] | select(.status != "completed")] | length' 2>/dev/null) || runs_active=""
+    runs_active=${runs_active%$'\r'}
+  fi
+  [[ "$runs_active" =~ ^[0-9]+$ ]] || runs_active=null
+  # The rollup lists only checks that EXIST, and a check that never runs is never red: an
+  # always-green placeholder (emmie's stacked-PR `ci-passed`) or a PR whose base-filtered CI
+  # never fires reads GREEN with the required gate nowhere in sight. The base branch's
+  # rulesets name what a merge needs; one of those missing from the rollup is not green.
+  # Read per tick because a stacked PR is retargeted when its parent merges. Classic branch
+  # protection is not readable without admin, so a repo that uses only that goes unchecked,
+  # and an unreadable ruleset degrades to the rollup alone, as the run listing does.
+  base=$(jq -r '.baseRefName // ""' <<<"$raw" 2>/dev/null)
+  required=""
+  if [[ -n "$base" ]]; then
+    required=$(gh api "repos/{owner}/{repo}/rules/branches/$base" \
+      --jq '[.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[]?.context] | unique' 2>/dev/null) || required=""
+    required=${required%$'\r'}
+  fi
+  [[ "$required" == \[* ]] || required=null
+  jq -c --argjson runs "$runs_active" --argjson required "$required" '
     ([.statusCheckRollup[]?
       | {n: (.name // .context // "?"), c: (.conclusion // .state // ""), s: (.status // "COMPLETED"),
          # Which workflow the check belongs to, or "" for one an APP posted directly
@@ -188,9 +232,21 @@ gh_snapshot() {
         # on every linked PR forever. Counted, it made ATTN permanent, and the only
         # ATTN anyone would ever see was the harmless one. A never-firing gate and an
         # always-firing one fail the same way. (lokalekeuze)
-        ci_attn:    ([$checks[] | select((.c == "NEUTRAL" or .c == "STALE") and .w != "") | .n] | sort | join(","))
+        ci_attn:    ([$checks[] | select((.c == "NEUTRAL" or .c == "STALE") and .w != "") | .n] | sort | join(",")),
+        # Workflow runs on this head that have not completed; null when gh could not list
+        # them. See the comment above the call.
+        runs_active: $runs,
+        # Checks the base branch requires that the rollup does not list; "" when none are
+        # required or the rulesets could not be read. See the comment above the call.
+        ci_missing: (if $required == null then ""
+                     else [$required[] as $r | select([$checks[].n] | index($r) | not) | $r] | sort | join(",") end)
       }
-    | .ci_state = (if .ci_fail != "" then "RED" elif .ci_pending > 0 then "PENDING"
+    # MISSING sits after PENDING, so a gate that `needs:` every lane and is merely not queued
+    # yet stays PENDING while its run is in flight, and after the empty-rollup NONE case, so
+    # the tick between a push and its first queued check does not claim the gate is lost.
+    | .ci_state = (if .ci_fail != "" then "RED" elif .ci_pending > 0 or (.runs_active // 0) > 0 then "PENDING"
+                   elif ($checks | length) == 0 then "NONE"
+                   elif .ci_missing != "" then "MISSING"
                    elif .ci_attn != "" then "ATTN" elif .ci_pass > 0 then "GREEN" else "NONE" end)' <<<"$raw" 2>/dev/null
 }
 
@@ -268,10 +324,11 @@ emit_changes() {
   # back to the queue, and the whole rollup going green. Jobs finishing one by one inside
   # PENDING say nothing. Bucketing an in-flight check as PENDING empties ci_fail while the
   # job is still red, so an emptied ci_fail alone must never print "cleared".
-  if changed ci_fail || changed ci_attn || changed ci_state; then
+  if changed ci_fail || changed ci_attn || changed ci_missing || changed ci_state; then
     case "${cur[ci_state]-}" in
       RED)     echo "[ci]  FAILING: ${cur[ci_fail]}  (pass ${cur[ci_pass]-?} · pending ${cur[ci_pending]-?})" ;;
       PENDING) [[ -n "${prev[ci_fail]-}" ]] && echo "[ci]  red checks re-running, not green yet (pass ${cur[ci_pass]-?} · pending ${cur[ci_pending]-?})" ;;
+      MISSING) echo "[ci]  required check(s) never reported: ${cur[ci_missing]} — the base requires them and no run on this head is left to produce them  (pass ${cur[ci_pass]-?})" ;;
       # Never green while a lane is neutral or stale — a stale required check does
       # not satisfy branch protection even with every sibling passing, and a neutral
       # lane never reached a verdict at all.
@@ -418,8 +475,19 @@ while true; do
     ended=once; exit 0
   fi
 
+  # The first tick has nothing to compare against, so it states where the PR stands once.
+  # Without it an armed watch on a PR that is already pending, red or missing its gate says
+  # nothing until the state next moves, which reads exactly like a PR with no news.
   if [[ ${#prev[@]} -gt 0 ]]; then
     emit_changes
+  else
+    now_ci="${cur[ci_state]-?}"
+    case "$now_ci" in
+      RED)     now_ci+=": ${cur[ci_fail]-}" ;;
+      MISSING) now_ci+=": ${cur[ci_missing]-} never reported" ;;
+      ATTN)    now_ci+=": ${cur[ci_attn]-}" ;;
+    esac
+    echo "[watch] now: ci ${now_ci} (pass ${cur[ci_pass]-?} · pending ${cur[ci_pending]-?}) · head ${cur[head]-?} · review ${cur[decision]-?}"
   fi
 
   case "${cur[pr_state]-}" in
