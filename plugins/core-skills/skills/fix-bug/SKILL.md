@@ -19,8 +19,9 @@ End-to-end bug-fix workflow. Lighter than `/plan-feature`: bugs don't need
 interrogation, wireframes, task breakdown, or acceptance criteria — just a
 confirmed reproduction, a root cause, an approved fix, and proof the fix held.
 
-This skill reads `issue_tracker_skill` (Phase 1) and `bug_root` (Phase 5) from
-`.claude/project-context.md` — see this plugin's README for how that file and its notation work.
+This skill reads `issue_tracker_skill` (Phase 1), `bug_root` (Phase 5) and `bug_runtime_review`
+(Phase 8) from `.claude/project-context.md` — see this plugin's README for how that file and its
+notation work.
 
 If a bug touches multiple domains with non-trivial design work (e.g. a race
 condition that reveals a missing synchronisation primitive), promote it to
@@ -205,6 +206,13 @@ Spawn the `bug-fix-verifier` agent (bundled with this plugin) — it has no cont
 conversation and works purely from BUG.md and the diff. It confirms the bug
 is gone; it doesn't re-plan or re-scope.
 
+**Runtime-integrity opt-in.** When `.claude/project-context.md` sets `bug_runtime_review: true`,
+also spawn `runtime-integrity-reviewer` (bundled with this plugin), **in the same message** as the
+verifier. It reads the same diff for the defects a fix introduces while closing another: a
+response assigned after a later request, a retry that turns a delete into a no-op, a side effect
+fired inside a transaction, work that grows with the data. Unset or `false`: the verifier runs
+alone. `precedent-reviewer` stays off either way — a bug fix has no plan prose to drift from.
+
 ```
 Agent({
   subagent_type: "bug-fix-verifier",
@@ -217,13 +225,40 @@ reproduces, and glance at touched files for obvious regressions. Write
 your verdict into the BUG.md Verification section and report back with
 a score (1-10). Threshold: 7.`
 })
+
+// Only when bug_runtime_review: true
+Agent({
+  subagent_type: "runtime-integrity-reviewer",
+  prompt: `Full-branch review, runtime-integrity lane, on a bug-fix branch.
+
+Skill dir: <review-branch skill dir>
+Plan directory: <bug-root>/<slug>/
+Diff base: origin/<base>
+
+FIRST: read <skill dir>/references/finder-base.md, then your three corpus sections under
+<skill dir>/references/corpus/. Return ## Findings and ## Checked only, in the finder shape.
+No score, no severity, no waiver applied. Do NOT re-verify the reproduction — bug-fix-verifier
+owns that.`
+})
 ```
+
+`<review-branch skill dir>` is `review-branch`'s own directory, which holds the finder contract
+and corpus. Resolve it with the block in [`review-branch/SKILL.md`](../review-branch/SKILL.md)
+Step 1 (checked-in copy, then the highest cached plugin version, then a user-level install). No
+match: skip the reviewer and say so — the verifier's gate doesn't depend on it.
+
+When the reviewer returns, append its finder report **below** the verifier's block under
+`## Verification`, as a `### Runtime integrity` subsection carrying its `## Findings` and
+`## Checked` verbatim. Below, not above: `/pr` reads the **first** `**Verdict:**` line under
+`## Verification` as the verifier's verdict, and the reviewer's block must never be the first
+thing there. Do not judge, route, or write READY / NEEDS WORK. The parent session sees the
+findings and decides what to do; they never block the verdict below.
 
 - **Score ≥ 7 AND Verdict reads `PASS`** (plain, or the literal `PASS
   (requires developer confirmation)` that path-3c reproductions get —
   Phase 8.5 is what resolves that string, so treat it as a pass here
   too) — check Phase 8.5's visual-risk gate, then proceed to Phase 9.
-  Update Status to `Verified`.
+  Update Status to `Verified`. Runtime-integrity findings do not block this.
 - **Score < 7, OR Verdict reads `PARTIAL`/`FAIL`, OR "Required fixes
   before PR" is non-empty** — fix what the verifier found, re-run your
   repro, re-spawn. Don't hand off to `/pr` until the verdict reads a

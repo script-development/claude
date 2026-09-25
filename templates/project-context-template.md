@@ -58,7 +58,17 @@ worktree_dir:          # e.g. .claude/worktrees/{slug} — override the default 
                        # below instead, so worktree can skip its own ignore-list write.
                        # Used by: worktree.
 
-# --- Worktrees (used by: worktree, commit, newbranch, review-branch, sync-worktrees) ---
+# --- Review (used by: fix-bug) ---
+bug_runtime_review:    # true — /fix-bug also spawns runtime-integrity-reviewer beside
+                       # bug-fix-verifier on a bug branch, and /pr points at its report. Off by
+                       # default: a bug branch is gated by the verifier alone, and the pre-PR
+                       # finders don't run on it. Turn it on when bug fixes here regularly
+                       # introduce the defects that reviewer hunts: a stale response assigned
+                       # after a later request, a retry that turns a delete into a no-op, a
+                       # side effect fired inside a transaction. It never blocks the PR.
+
+# --- Worktrees (used by: worktree, commit, newbranch, review-branch, sync-worktrees, shepard,
+#     next, implement-plan) ---
 integration_branch:    # Override when auto-detection (origin/development, origin/develop,
                        # then the remote default branch) would get it wrong for this project.
                        # sync-worktrees auto-detects differently (origin/HEAD, then main, then
@@ -99,6 +109,13 @@ here, not a new `##` heading, the next time a skill hardcodes a directory conven
 - `bug_root` — the same for bug investigations (`BUG.md`).
 - `worktree_dir` — where a cut worktree lives; see Worktrees below for the richer,
   worktree-specific knowledge this field's own section still carries.
+
+## Review
+
+- `bug_runtime_review` — opts bug branches into one of the three pre-PR finders. `/fix-bug`
+  Phase 8 spawns `runtime-integrity-reviewer` alongside `bug-fix-verifier`, appends its report to
+  BUG.md's `## Verification` below the verifier's verdict, and `/pr` points at it from the PR
+  body. The findings inform; the verifier's verdict stays the only gate.
 
 ## Worktrees
 

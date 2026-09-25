@@ -183,6 +183,12 @@ directly, skipping Phase 8). Treat this the same as a blocking verdict, not as "
 
 Default no.
 
+**Runtime integrity on a bug branch.** With `bug_runtime_review: true` in
+`.claude/project-context.md`, `/fix-bug` Phase 8 spawns `runtime-integrity-reviewer` beside the
+verifier and appends its finder report as `### Runtime integrity` under `## Verification`, below
+the verifier's block. Do not block the PR on those findings. When that subsection exists, add a
+pointer to it in the PR body's `## Bug Fix Verification` block.
+
 **Never prompt for `/review-branch` on a bug branch.**
 
 If a `/review-branch` report *is* in this session — it runs on bug branches when a developer asks
@@ -234,6 +240,7 @@ gh pr create --base <base-branch> --title "PR title here" --body "$(cat <<'EOF'
 <!-- Bug branches only. Omit on plan-driven and no-directory branches. -->
 - Verifier: 9/10 (PASS) — defect no longer reproduces
 - See `<bug-root>/<slug>/BUG.md` § Verification.
+- Runtime integrity: 1 finding, see BUG.md § Verification › Runtime integrity.  <!-- only when that subsection exists -->
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 EOF
