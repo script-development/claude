@@ -55,7 +55,8 @@ Use this ID for all `project_id` parameters and resource URIs below.
 | `mcp__kendo__unlink-branch-tool` | Remove a git branch link from an issue (multi-repo: pass `repo_full_name` to disambiguate) |
 | `mcp__kendo__prepare-project-context-tool` | Read-only bundle: returns `project + lanes + sprints (Planned/Active) + active_sprint shortcut + labels + members + members_count + current_user` in one call. Use as the gather step for any project-scoped flow (triage, board sync, branch creation, picking up an issue); replaces separate reads of `kendo://projects/{id}`, `kendo://projects/{id}/lanes`, `kendo://projects/{id}/sprints`, `kendo://projects/{id}/members`, plus the legacy `git config user.email` heuristic |
 | `mcp__kendo__prepare-issue-context-tool` | Read-only bundle: returns `issue + epic` (full issue payload with comments, branches, attachments). For project meta, fire `prepare-project-context-tool` in parallel — see the parallel-gather pattern below |
-| `mcp__kendo__search-issues-tool` | Text search across title, description, and issue key. Does not match numeric database IDs |
+| `mcp__kendo__search-issues-tool` | Search, filter or count issues in one project — see [Search Issues](#search-issues) |
+| `mcp__kendo__get-my-issues-tool` | Your assigned issues across all projects, done lane excluded (filter by `project_id`, `priority`, `type`, `query`) |
 | `mcp__kendo__start-work-on-issue-tool` | Idempotent one-call write: assigns user, moves to lane, optionally updates sprint, and links a git branch. The act step that pairs with the gather tools. Repo is auto-resolved from the project's primary GitHub repo |
 
 ### Time Logging
@@ -216,8 +217,39 @@ and time spent. **Always prefer this over searching when you have the issue ID.*
 
 ### Search Issues
 
-Use `mcp__kendo__search-issues-tool` for text-based discovery across title, description, and issue key.
-Note: this searches text fields only — it does not match on numeric database IDs.
+Use `mcp__kendo__search-issues-tool` to find, filter or count issues in one project. `query` searches
+title, description and issue key; it does not match on numeric database IDs.
+
+- **Lists match any value.** `lane_ids`, `assignee_ids`, `sprint_ids`, `epic_ids`, `label_ids`,
+  `priorities`, `types`. The scalar forms (`lane_id`, `priority`, …) still work and merge into the list.
+- **`exclude_*` leaves issues out** (`exclude_lane_ids`, `exclude_types`, …). An exclusion wins over an
+  inclusion of the same value.
+- **`0` means none** in assignee, sprint and epic lists: unassigned, backlog, no epic. An exclusion keeps
+  issues without a value unless `0` is in it, so `exclude_epic_ids: [0]` returns only issues with an epic.
+- **`group_by` counts instead of listing** (`lane`, `assignee`, `sprint`, `epic`, `priority`, `type`,
+  `label`). It returns `total` plus `groups` of `{key, label, count}`, uncapped; the "none" group has
+  key `0`. Grouped by label the counts can sum above `total`.
+- **`include_description: false`** drops each description. Use it for any list you only scan.
+- **`limit`** is 1–100, default 25. Check `truncated` before treating a list as complete.
+
+Each row names its lane, assignee, sprint and epic next to their IDs, carries `labels` as `{id, name}`,
+and gives `priority_name` / `type_name` beside the numeric `priority` / `type`. Answer the user from the
+names and feed the IDs to the next call — no `get-labels` round-trip is needed to name a label.
+
+One call answers questions that used to take several:
+
+```
+# Open issues per lane, without Tasks. Nothing is excluded by default, so leave out the
+# done lane yourself: it is the highest-order lane in prepare-project-context's lanes.
+search-issues-tool  project_id: <your-project-id>, group_by: "lane", exclude_lane_ids: [<done lane>], exclude_types: [2]
+
+# Unassigned bugs in the active sprint, light rows
+search-issues-tool  project_id: <your-project-id>, sprint_ids: [<active>], assignee_ids: [0], types: [1], include_description: false
+```
+
+`mcp__kendo__get-my-issues-tool` rows name the lane, project, sprint and epic the same way and carry
+`labels` as `{id, name}`. Its `priority` and `type` are already names, with `priority_value` /
+`type_value` for the numbers.
 
 ## References
 
