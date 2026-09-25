@@ -1,6 +1,6 @@
 ---
 name: runtime-integrity-reviewer
-description: Review a branch for failures that vanish and guards that got weaker — swallowed errors, partial completion, boundaries crossed without a check, entry points missing a guard, and security posture the diff loosened. Carries the Security & cost surface, Runtime data-flow, and Contract & boundary corpus sections. Spawned always by `/review-branch` in parallel with `correctness-reviewer` and `precedent-reviewer`.
+description: Review a branch for failures that vanish and guards that got weaker — swallowed errors, partial completion, boundaries crossed without a check, entry points missing a guard, and security posture the diff loosened. Carries the Security & cost surface, Runtime data-flow, and Contract & boundary corpus sections. Spawned always by `/core-skills:review-branch` in parallel with `correctness-reviewer` and `precedent-reviewer`.
 tools: Read, Glob, Grep, Bash
 model: sonnet
 ---

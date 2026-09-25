@@ -3,20 +3,20 @@ name: review-branch
 description: >
   Full-branch review of the current branch vs the integration branch. Spawns
   `runtime-integrity-reviewer`, `correctness-reviewer` and `precedent-reviewer` in parallel and
-  reports in chat for `/pr` to consume in this session. Use whenever the user wants to review a
+  reports in chat for `/core-skills:pr` to consume in this session. Use whenever the user wants to review a
   branch, says "review my changes", "review branch", "check my code", "what did I change", "write
-  the handoff", "branch review", "review handoff", or is about to open a PR. **Chat only.** `/pr`
+  the handoff", "branch review", "review handoff", or is about to open a PR. **Chat only.** `/core-skills:pr`
   offers to run this skill when this session has no review for current HEAD.
 ---
 
 # Review Branch
 
 Spawn the repository's three finders (bundled with this plugin) against the full branch diff and
-report in chat. `/pr` may consume this session's report when its `Reviewed against commit:` sha
+report in chat. `/core-skills:pr` may consume this session's report when its `Reviewed against commit:` sha
 matches HEAD.
 
-This skill reads `integration_branch` (Step 1) and `plan_root` / `bug_root` (Step 2) from
-`.claude/project-context.md` — see this plugin's README for how that file and its notation work.
+This skill reads `integration_branch` (Step 1), `plan_root` / `bug_root` (Step 2) and
+`references.hazards` (Step 3) from `.claude/project-context.md` — see this plugin's README for how that file and its notation work.
 
 ## The lanes
 
@@ -44,8 +44,8 @@ omission) checks it on every branch, whichever paths the diff touches.
 
 ## When this skill runs
 
-- User invokes it directly (`/review-branch`, "review my changes", etc.).
-- `/pr` Step 4 finds no review in this session for current HEAD (or only a stale one) and offers
+- User invokes it directly (`/core-skills:review-branch`, "review my changes", etc.).
+- `/core-skills:pr` Step 4 finds no review in this session for current HEAD (or only a stale one) and offers
   to run this first.
 
 ## Step 1: Gather branch context
@@ -73,9 +73,11 @@ install, then a user-level install. Keep the first match:
 skill_dir=
 [ -d .claude/skills/review-branch ] && skill_dir=$(cd .claude/skills/review-branch && pwd)
 if [ -z "$skill_dir" ]; then
-  for d in "$HOME"/.claude/plugins/cache/*/core-skills/*/skills/review-branch; do
-    [ -d "$d" ] && skill_dir=$d
-  done
+  # Highest cached version wins: sort -V, not the glob's lexical order (0.3.0 > 0.22.0).
+  skill_dir=$(for d in "$HOME"/.claude/plugins/cache/*/core-skills/*/skills/review-branch; do
+    [ -d "$d" ] && printf '%s
+' "$d"
+  done | sort -V | tail -n 1)
 fi
 [ -z "$skill_dir" ] && [ -d "$HOME/.claude/skills/review-branch" ] && skill_dir="$HOME/.claude/skills/review-branch"
 echo "skill_dir=$skill_dir"
@@ -93,7 +95,7 @@ Use the canonical algorithm in
 - **`<plan-root>/<slug>/` exists** → read `PLAN.md` / `DECISIONS.md` / `WIREFRAMES.md` /
   `TASKS.md` if present. Report in chat. Write nothing.
 - **`<bug-root>/<slug>/` exists** (bug branch) → read `BUG.md` if present. This review is
-  **optional on bug branches** — `bug-fix-verifier` is their gate, and `/pr` never asks for
+  **optional on bug branches** — `bug-fix-verifier` is their gate, and `/core-skills:pr` never asks for
   this run there. It runs when a developer explicitly wants it.
 - **Neither exists** → still spawn the finders; report in chat only.
 
@@ -114,6 +116,7 @@ Agent({
 Skill dir: <skill dir resolved in Step 1>
 Plan directory: <plan-root>/<slug>/   (or <bug-root>/<slug>/, or "none")
 Diff base: <the base resolved in Step 1 — origin/<integration-branch>, or <integration-branch> on fallback>
+Project hazards: <references.hazards from .claude/project-context.md, or "none">
 
 FIRST: read <skill dir>/references/finder-base.md, then your three corpus sections under
 <skill dir>/references/corpus/. Return ## Findings and ## Checked only, in the finder shape.
@@ -127,6 +130,7 @@ Agent({
 Skill dir: <skill dir resolved in Step 1>
 Plan directory: <plan-root>/<slug>/   (or <bug-root>/<slug>/, or "none")
 Diff base: <the base resolved in Step 1 — origin/<integration-branch>, or <integration-branch> on fallback>
+Project hazards: <references.hazards from .claude/project-context.md, or "none">
 
 FIRST: read <skill dir>/references/finder-base.md, then your three corpus sections under
 <skill dir>/references/corpus/. Return ## Findings and ## Checked only, in the finder shape.
@@ -140,6 +144,7 @@ Agent({
 Skill dir: <skill dir resolved in Step 1>
 Plan directory: <plan-root>/<slug>/   (or <bug-root>/<slug>/, or "none")
 Diff base: <the base resolved in Step 1 — origin/<integration-branch>, or <integration-branch> on fallback>
+Project hazards: <references.hazards from .claude/project-context.md, or "none">
 
 FIRST: read <skill dir>/references/finder-base.md, then your three corpus sections under
 <skill dir>/references/corpus/. Return ## Findings and ## Checked only, in the finder shape.
@@ -152,7 +157,7 @@ home for it, and the second home drifts.
 
 ## Step 4: Synthesize in chat
 
-Report in this conversation. Do not write a file. Use this exact structure so `/pr` can match
+Report in this conversation. Do not write a file. Use this exact structure so `/core-skills:pr` can match
 the sha against HEAD:
 
 ```markdown
@@ -221,7 +226,7 @@ The Step 4 block **is** the report. Also state in chat:
 
 - Finding count per lane.
 - The `Reviewed against commit:` sha (must equal `git rev-parse --short HEAD`).
-- If `Required Fixes` is non-empty, list them and recommend fixing before `/pr`.
+- If `Required Fixes` is non-empty, list them and recommend fixing before `/core-skills:pr`.
 
 Nothing from this report goes in the PR body; the pushed code is the record.
 

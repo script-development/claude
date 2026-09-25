@@ -1,6 +1,6 @@
 ---
 name: precedent-reviewer
-description: Review a branch against what is already written down — the repo's standing rules and architecture decisions, the sibling implementation that already solves this shape, the branch's own plan prose, and the CI configuration that decides what a green check means. Carries the Recorded rulings, Sibling precedent, and CI-config awareness corpus sections. Spawned always by `/review-branch` in parallel with `runtime-integrity-reviewer` and `correctness-reviewer`.
+description: Review a branch against what is already written down — the repo's standing rules and architecture decisions, the sibling implementation that already solves this shape, the branch's own plan prose, and the CI configuration that decides what a green check means. Carries the Recorded rulings, Sibling precedent, and CI-config awareness corpus sections. Spawned always by `/core-skills:review-branch` in parallel with `runtime-integrity-reviewer` and `correctness-reviewer`.
 tools: Read, Glob, Grep, Bash, WebFetch
 model: sonnet
 ---
@@ -39,9 +39,11 @@ user-level install:
 pf_dir=
 [ -d .claude/skills/plan-feature ] && pf_dir=$(cd .claude/skills/plan-feature && pwd)
 if [ -z "$pf_dir" ]; then
-  for d in "$HOME"/.claude/plugins/cache/*/core-skills/*/skills/plan-feature; do
-    [ -d "$d" ] && pf_dir=$d
-  done
+  # Highest cached version wins: sort -V, not the glob's lexical order (0.3.0 > 0.22.0).
+  pf_dir=$(for d in "$HOME"/.claude/plugins/cache/*/core-skills/*/skills/plan-feature; do
+    [ -d "$d" ] && printf '%s
+' "$d"
+  done | sort -V | tail -n 1)
 fi
 [ -z "$pf_dir" ] && [ -d "$HOME/.claude/skills/plan-feature" ] && pf_dir="$HOME/.claude/skills/plan-feature"
 ```

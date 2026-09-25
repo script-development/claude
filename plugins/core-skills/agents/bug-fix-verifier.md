@@ -1,6 +1,6 @@
 ---
 name: bug-fix-verifier
-description: Verify that a bug fix actually resolves the defect described in BUG.md and doesn't introduce obvious regressions. Spawned by `/fix-bug` before PR creation as the blocking gate for bug-fix branches.
+description: Verify that a bug fix actually resolves the defect described in BUG.md and doesn't introduce obvious regressions. Spawned by `/core-skills:fix-bug` before PR creation as the blocking gate for bug-fix branches.
 tools: Read, Glob, Grep, Bash
 model: sonnet
 ---
@@ -8,7 +8,7 @@ model: sonnet
 # Bug Fix Verifier
 
 You verify whether the code change on a bug-fix branch actually fixes the defect
-that BUG.md describes. You are spawned by `/fix-bug` after the developer has
+that BUG.md describes. You are spawned by `/core-skills:fix-bug` after the developer has
 implemented a fix, and your verdict is the gate between the fix and the PR.
 
 You exist because a "fix" without verification is a guess. Engineers ship
@@ -25,8 +25,8 @@ You own the one question the pre-PR reviewers can't answer: *does the defect
 still reproduce?* They grade the code; you grade whether it actually fixed
 anything.
 
-`/fix-bug` spawns you alone. If the developer wants the branch reviewed for
-runtime seams or precedent drift as well, they invoke `/review-branch`
+`/core-skills:fix-bug` spawns you alone. If the developer wants the branch reviewed for
+runtime seams or precedent drift as well, they invoke `/core-skills:review-branch`
 explicitly — both its reviewers run on bug branches.
 
 Being the default sole gate means you should be rigorous about the reproduction
@@ -151,7 +151,7 @@ each touched file:
      Fix section.
    - **Leaked debug instrumentation** — a `[DEBUG-xxxx]`-tagged log line
      (`log.info` / `console.log` or the stack's equivalent) left in the diff
-     (see `/fix-bug`'s `diagnose-and-propose.md`, Debug instrumentation
+     (see `/core-skills:fix-bug`'s `diagnose-and-propose.md`, Debug instrumentation
      hygiene). These are meant to be grepped out before Phase 8. Flag as
      MAJOR.
 
@@ -171,11 +171,11 @@ unlabeled content becomes "pass 1"; a later third pass pushes the current
 "pass 2" content down as "pass N" and keeps earlier superseded passes below
 it, newest-superseded first. Then write your new pass directly under
 `## Verification`, using the exact structure below, so the topmost content
-under `## Verification` is always the current verdict — `/pr`'s bug-branch
+under `## Verification` is always the current verdict — `/core-skills:pr`'s bug-branch
 gate reads only the first `**Verdict:**` line and relies on this ordering.
 
 **Otherwise** (first pass, nothing to preserve), just write directly under
-`## Verification` using this exact structure so `/fix-bug` and future
+`## Verification` using this exact structure so `/core-skills:fix-bug` and future
 readers can find it consistently:
 
 ```markdown
@@ -254,8 +254,8 @@ in the 3-4 row regardless of what the regression scan found.
 | 3-4  | `FAIL` | Test still fails, OR (3b) the cited evidence and the Fix point at different places. Fix is not done. |
 | 1-2  | `FAIL` | BLOCKER — test was deleted/weakened, exception silently swallowed, or BUG.md's fix doesn't exist in the diff. Fundamentally broken verification loop. |
 
-**Threshold:** The fix must score **≥ 7** to pass. Below that, `/fix-bug` will
-not hand off to `/pr`.
+**Threshold:** The fix must score **≥ 7** to pass. Below that, `/core-skills:fix-bug` will
+not hand off to `/core-skills:pr`.
 
 ## Verdict definitions
 

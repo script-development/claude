@@ -3,7 +3,7 @@
 Write decisions to `<plan-root>/<slug>/DECISIONS.md` (`plan_root`, default `docs/plans`) **as they are made** during planning,
 not after the plan is finalized. Rejected proposals and their reasoning are valuable context.
 
-`/implement-plan` and `/next` read this file whole, in a session that usually holds nothing
+`/core-skills:implement-plan` and `/core-skills:next` read this file whole, in a session that usually holds nothing
 else. Every line costs the implementer context, so an entry carries the trade-off and nothing
 around it.
 

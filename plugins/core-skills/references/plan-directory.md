@@ -74,9 +74,9 @@ With both roots unset (`docs/plans`, `docs/bugs`):
   *Which root* above it resolves the plan root then the bug root and reads whichever it found for
   context. It reports in chat on every branch shape and writes nothing, so a missing directory
   changes the context the finders get, not the deliverable.
-- **`pr`** — on a plan-driven branch, asks whether to run `/review-branch` (default no); a missing
+- **`pr`** — on a plan-driven branch, asks whether to run `/core-skills:review-branch` (default no); a missing
   review does not block. On a bug branch it reads `bug-fix-verifier`'s verdict from `BUG.md`
-  instead and never asks for `/review-branch`. On the `neither` row it skips the finder check.
+  instead and never asks for `/core-skills:review-branch`. On the `neither` row it skips the finder check.
 
 ## Writers
 

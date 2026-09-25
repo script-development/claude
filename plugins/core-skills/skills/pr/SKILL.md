@@ -3,7 +3,7 @@ name: pr
 description: >
   Create a pull request for the current branch targeting the base branch, with automatic issue
   feedback (when the branch links to a tracked issue and this project has an issue tracker
-  configured). Offers to run `/review-branch` when this session has no review for HEAD, gates bug
+  configured). Offers to run `/core-skills:review-branch` when this session has no review for HEAD, gates bug
   branches on `bug-fix-verifier`'s verdict, and embeds that verdict in the PR body. Use this skill whenever the user wants to
   create a PR, open a pull request, submit their work for review, or is done with a feature/fix
   branch. Also triggers on phrases like "make a PR", "open PR", "create pull request", "submit
@@ -110,14 +110,14 @@ comment/note.
 
 ### 4. Check the pre-PR review gate
 
-`/pr` does not spawn the three pre-PR finders itself. A `/review-branch` report in this
+`/core-skills:pr` does not spawn the three pre-PR finders itself. A `/core-skills:review-branch` report in this
 session is optional. **Which gate applies depends on the branch type**, and the two are not
 interchangeable:
 
 | Branch | Gate | Artifact | Missing artifact |
 |---|---|---|---|
-| `<plan-root>/<slug>/` exists | none required | optional `/review-branch` report | **ask** whether to run `/review-branch` |
-| `<bug-root>/<slug>/` exists | `bug-fix-verifier` | BUG.md `## Verification` | **never prompt** for `/review-branch` — see below |
+| `<plan-root>/<slug>/` exists | none required | optional `/core-skills:review-branch` report | **ask** whether to run `/core-skills:review-branch` |
+| `<bug-root>/<slug>/` exists | `bug-fix-verifier` | BUG.md `## Verification` | **never prompt** for `/core-skills:review-branch` — see below |
 | neither | none | — | skip the finder check |
 
 Derive the directory using the canonical algorithm in
@@ -127,21 +127,21 @@ Derive the directory using the canonical algorithm in
 
 ### Plan-driven branches
 
-Look in **this conversation** for a `/review-branch` report whose `Reviewed against commit:`
+Look in **this conversation** for a `/core-skills:review-branch` report whose `Reviewed against commit:`
 matches `git rev-parse --short HEAD`. **Fresh** means it matches HEAD.
 
 **Not found** → prompt:
 
-> No review in this session for HEAD `<sha>`. Run `/review-branch` first? [y/N]
+> No review in this session for HEAD `<sha>`. Run `/core-skills:review-branch` first? [y/N]
 
-Default **no**. If accepted, invoke `/review-branch` and wait for it before continuing. If
+Default **no**. If accepted, invoke `/core-skills:review-branch` and wait for it before continuing. If
 declined, proceed to step 5. A missing review does not block the PR.
 
 **Stale** (a report exists but its sha is not HEAD) → prompt:
 
 > Review is stale: reviewed `<sha>`, now at `<sha>`.
 >
-> Re-run `/review-branch`? [y/N]
+> Re-run `/core-skills:review-branch`? [y/N]
 
 Default **no**. **Fresh** or declined → proceed. Do **not** embed the review in the PR body.
 The pushed code is the record.
@@ -155,7 +155,7 @@ substitutes for the three finders, because a bug fix has no acceptance criteria 
 only "does the defect still reproduce?". Embed that verdict in the PR body.
 
 **Verdict blocks the PR** if the current one reads anything other than the exact string `PASS` —
-including `FAIL`, `PARTIAL`, `BLOCKED` (the marker `/fix-bug`'s Phase 8.5 visual-risk gate writes
+including `FAIL`, `PARTIAL`, `BLOCKED` (the marker `/core-skills:fix-bug`'s Phase 8.5 visual-risk gate writes
 when a developer deferred a manual browser confirmation), and `PASS (requires developer
 confirmation)` (the literal string path-3c reproductions get from `bug-fix-verifier` — this reads
 as PASS at a glance but is exactly the unconfirmed case this gate exists to catch; don't treat a
@@ -169,23 +169,29 @@ older verdicts in place marked superseded; those don't gate the PR. Warn the use
 >
 > Proceed with PR anyway? [y/N]
 
-Default no. This check applies even when `/pr` is invoked directly, without going through
-`/fix-bug` in the same session — the Verification section is the durable record, not the
+Default no. This check applies even when `/core-skills:pr` is invoked directly, without going through
+`/core-skills:fix-bug` in the same session — the Verification section is the durable record, not the
 conversation.
 
-**No `**Verdict:**` line found at all** — `bug-fix-verifier` has never run (e.g. `/pr` invoked
+**No `**Verdict:**` line found at all** — `bug-fix-verifier` has never run (e.g. `/core-skills:pr` invoked
 directly, skipping Phase 8). Treat this the same as a blocking verdict, not as "nothing to check":
 
 > No bug-fix verification found in BUG.md § Verification. Run `bug-fix-verifier` (Phase 8 of
-> `/fix-bug`) before creating this PR.
+> `/core-skills:fix-bug`) before creating this PR.
 >
 > Proceed with PR anyway? [y/N]
 
 Default no.
 
-**Never prompt for `/review-branch` on a bug branch.**
+**Runtime integrity on a bug branch.** With `bug_runtime_review: true` in
+`.claude/project-context.md`, `/core-skills:fix-bug` Phase 8 spawns `runtime-integrity-reviewer` beside the
+verifier and appends its finder report as `### Runtime integrity` under `## Verification`, below
+the verifier's block. Do not block the PR on those findings. When that subsection exists, add a
+pointer to it in the PR body's `## Bug Fix Verification` block.
 
-If a `/review-branch` report *is* in this session — it runs on bug branches when a developer asks
+**Never prompt for `/core-skills:review-branch` on a bug branch.**
+
+If a `/core-skills:review-branch` report *is* in this session — it runs on bug branches when a developer asks
 for it — the parent session has already seen its findings. They do not block the PR, and a stale
 or absent report is not checked.
 
@@ -234,6 +240,7 @@ gh pr create --base <base-branch> --title "PR title here" --body "$(cat <<'EOF'
 <!-- Bug branches only. Omit on plan-driven and no-directory branches. -->
 - Verifier: 9/10 (PASS) — defect no longer reproduces
 - See `<bug-root>/<slug>/BUG.md` § Verification.
+- Runtime integrity: 1 finding, see BUG.md § Verification › Runtime integrity.  <!-- only when that subsection exists -->
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 EOF

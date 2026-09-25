@@ -1,6 +1,6 @@
 # Task sizing — when to bundle, when to split
 
-The default for `/task-writer` is **coarser-grained tasks**. One task should
+The default for `/core-skills:task-writer` is **coarser-grained tasks**. One task should
 own a coherent layer end-to-end — backend (migrations + models + DTOs +
 services + HTTP + tests) is *one* task, not three. Splitting at intra-backend
 layer boundaries creates handoffs without reducing risk: the model holds a
@@ -35,13 +35,13 @@ Phase N: [Feature Name] (2-3 tasks)
       → Arch tests + unit tests + feature tests, per the project's testing conventions
       → Load the project's backend testing skill before writing tests
       → Success: backend test suite passes, type/static analysis passes
-      → On completion, verification is the gate (tests + types + lint); review runs once per branch via `/review-branch`
+      → On completion, verification is the gate (tests + types + lint); review runs once per branch via `/core-skills:review-branch`
 
 - [ ] N.2 Frontend end-to-end (TDD)
       → Types, state, pages, components, modals, frontend tests
       → Load the project's frontend testing skill before writing tests
       → Success: frontend test suite passes (use the project's narrowed domain test command)
-      → On completion, verification is the gate (tests + types + lint); review runs once per branch via `/review-branch`
+      → On completion, verification is the gate (tests + types + lint); review runs once per branch via `/core-skills:review-branch`
 
 - [ ] N.3 Manual verification
       → Hands-on browser testing of the full feature
@@ -54,7 +54,9 @@ For **frontend-only** features, skip N.1. For **backend-only**, skip N.2.
 ## Documentation-sync task
 
 If the feature adds or changes API routes, MCP tools, or user-facing
-capabilities, add:
+capabilities, add the task below. When `.claude/project-context.md` sets
+`references.site_docs_sync`, its source-change → docs-page map replaces the
+generic arrows: one arrow per entry the feature touches, naming the real page.
 
 ```
 - [ ] N.X Update site documentation
@@ -109,7 +111,7 @@ When the default backend / frontend split isn't enough:
 
 If the work is genuinely trivial — a one-line copy change, a config flip, a
 prop rename — don't create TASKS.md at all. Phase 0 in SKILL.md routes
-small plans to `/implement-plan`; truly trivial work falls below even that
+small plans to `/core-skills:implement-plan`; truly trivial work falls below even that
 threshold and should be done inline. Tell the developer:
 
-> "This is a one-touch change — TASKS.md and `/implement-plan` would both be ceremony. Do it inline?"
+> "This is a one-touch change — TASKS.md and `/core-skills:implement-plan` would both be ceremony. Do it inline?"

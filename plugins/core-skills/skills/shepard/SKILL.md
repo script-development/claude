@@ -63,12 +63,22 @@ echo "skill_dir=$skill_dir"
 ```
 
 No match on any of the three — stop: *"shepard can't find its own reference files or scripts;
-reinstall the skill or plugin."* Otherwise, read two reference files in `<skill dir>`:
+reinstall the skill or plugin."* Otherwise, read the repo's notes and the reviewer's contract:
 
-- **`references/repos/<repo-name>.md`** — the repo: integration branch, gates, auto-fixers, board,
-  merge signal, house rules. It overrides every default below. The catalog ships only
-  `repos/_template.md`, so no file is the normal case: run on the defaults and say so in the
-  hand-back. Never refuse a repo for lacking one.
+- **The repo notes** — integration branch, gates, auto-fixers, board, merge signal, house rules,
+  in the shape of `<skill dir>/references/repos/_template.md`. They override every default below.
+  Take the first that exists, where `<repo-name>` is resolved above:
+  1. `references.shepard_notes` from `.claude/project-context.md` — a file in the repo itself,
+     for a repo that runs this skill from the plugin: its install directory is shared and
+     replaced on every update, so notes written there would be lost;
+  2. `<skill dir>/references/repos/<repo-name>.md` — beside a checked-in or user-level copy.
+
+  Then read `.claude/project-context.md`, if it exists: `integration_branch`, and the
+  **Worktrees › Gates** and **House rules** sections. They fill whatever the notes leave out
+  (the notes win where both speak), and with no notes file they are the repo's whole record.
+  The catalog ships only `repos/_template.md`, so having neither is the normal case for a
+  repo that hasn't written one: run on the defaults and say so in the hand-back. Never refuse a
+  repo for lacking one.
 - **`references/reviewers/crit.md`** — the reviewer. crit reviews every repo this skill runs in,
   and its contract decides what a reply must say and who closes a thread. Read it every time.
 
@@ -286,7 +296,7 @@ waits for the next cycle; get the job green first.
 
 Only the FIX rows, and only after step 3 is agreed. Mirror the repo's own precedent — the shape the
 neighbouring code already demonstrates beats the shape you would invent. The repo's `CLAUDE.md` and
-the repo file carry its rules.
+the repo notes carry its rules.
 
 **Leave the code simpler, not the diff smaller.** The quickest way to close a finding in a
 few lines is to add something: a flag, a guard, a lock, a retry key, a mode. Each addition is
@@ -317,7 +327,7 @@ came a median 84 minutes after the push, so a fix pushed without these answers c
 round.
 
 Auto-fixable CI rows run their tool, then verify locally. Formatters, linters with a `--fix` mode,
-and codemod tools all land here; the repo file names them. Rows needing a real change get
+and codemod tools all land here; the repo notes name them. Rows needing a real change get
 diagnosed from the failure log: type errors, static analysis, failing tests, build errors, spelling,
 layer-boundary violations, coverage gaps.
 
@@ -355,12 +365,12 @@ key in a reply buys nothing at all.**
 
 **Issue or report is the repo's call, not this skill's.** A tracker with an intake queue offers
 two shapes: an issue is committed work on the board; a report is a finding nobody has weighed yet,
-and triage ends it in Promote, Park or Dismiss with a recorded reason. The repo file says which
+and triage ends it in Promote, Park or Dismiss with a recorded reason. The repo notes say which
 one this repo files for findings outside the diff — a repo admin may say "always reports". Where
 it does not, ask the developer once per PR through `AskUserQuestion`, recommend the report where
 an intake queue exists, and keep the answer for the rest of that PR.
 
-**It goes on the board that owns the code**, which the repo file names. Never file a finding
+**It goes on the board that owns the code**, which the repo notes name. Never file a finding
 from one repo on another repo's board, and never on a staging or test instance of a tracker — an
 item filed there is invisible to the people who would fix it.
 
@@ -394,7 +404,8 @@ is one `gh pr view --json reviews,comments` away. Fold its findings into this pu
 stranding that review at the old head; crit #192 round 4 was a push over a review nobody had read.
 
 **Run the narrowest checks that cover the change, not the full suite.** Three things, scoped to what
-the cycle touched — the repo file names the exact commands:
+the cycle touched — the repo notes name the exact commands, else project-context.md's Gates table
+(never a script it marks as hanging):
 
 1. the narrowest test that proves the fix (one spec, one filter, one package)
 2. types and static analysis
@@ -406,6 +417,12 @@ CI row. Judge every run by exit code plus the suite's own file-summary line, nev
 a collection failure registers zero tests, so the count stays green while the suite is red.
 
 **Hooks are the gate. Fix the underlying issue on failure** — never `--no-verify`.
+
+Before committing, keep the plan in step: when the branch has a plan directory (resolved per
+[`plan-directory.md`](../../references/plan-directory.md) under `plan_root`, default
+`docs/plans`) and a fix changes behaviour its `PLAN.md` Approach or Scope, or a `DECISIONS.md`
+entry, describes, patch those files in the same commit. A plan that no longer matches the diff
+is itself a finding on the next round.
 
 Then commit additively onto the PR's own branch. One commit for the cycle where the fixes are
 related; separate commits only where they genuinely are not, but still a single push. Reference
@@ -427,6 +444,10 @@ overwritten. Verify the upstream before pushing; if it reads the integration bra
 `git push -u origin HEAD` rather than pushing straight to the base.
 
 Record the pushed head; the step-9 report cites it.
+
+When the cycle changed what the PR does — not a lint fix or a test rename — splice the PR body's
+`## Summary` to match, using the recipe in [`pr/SKILL.md`](../pr/SKILL.md) § Refreshing an
+existing PR body. Summary only: never pass a partial body, and never rewrite another section.
 
 ### 8 · Reply in every thread. Never resolve one.
 
@@ -480,13 +501,13 @@ CI now: 1 job still red, run in progress
 ```
 
 Then, at the end: the pushed head, the disposition of every row one line each, the issues and
-reports filed with their keys or titles, the CI state, whether a repo file was found or the
+reports filed with their keys or titles, the CI state, whether repo notes were found or the
 defaults were used, and the watch (tick interval,
 which surfaces it reached, and that it dies with this session).
 
 ## Running as a loop — two counters
 
-`/shepard` loops by default. Both surfaces are re-read each cycle, bounded by two independent
+`/core-skills:shepard` loops by default. Both surfaces are re-read each cycle, bounded by two independent
 counters:
 
 | Counter | Limit | Counts |
@@ -515,7 +536,7 @@ fixed and pushed, everything else is filed, noted or skipped without a push. Mea
 kendo#2113 (2026-09-05): pushing every nitpick cost two extra rounds and a fresh set of findings;
 skipping every nitpick would have shipped a real blob-URL leak.
 
-## Keep watching — arm this on every `/shepard`
+## Keep watching — arm this on every `/core-skills:shepard`
 
 The in-session loop exits while a reviewer may still be running. **Always arm a live watch on
 this PR before you hand back**, unless the PR is already merged or closed, or the user said stop
@@ -574,17 +595,20 @@ hand-back.
 
 - **The repo has its own PR-driving skill** → use that. It knows the repo's gates and board.
 - **The answer is "replace the construct"** → that is new work, not a fix. Hand it to the repo's
-  planning skill, which the repo file names; this loop pushes fixes.
+  planning skill, which the repo notes name; this loop pushes fixes.
 - **Merge conflicts** → resolve them yourself; this loop pushes fixes, it does not rebase.
 - **The user only wants to know where the PR stands** → read it back and post nothing. Do not arm a watch.
 - **The user says stop watching** → `TaskStop` the monitor for this PR and say so.
 
 ## Reference files
 
-Two kinds, in two folders, so a repo's facts never mix with the reviewer's contract:
+Two kinds, in separate files, so a repo's facts never mix with the reviewer's contract:
 
-- **`references/repos/<repo-name>.md`** — one per repo, written by the consumer that copies this
-  skill, from `repos/_template.md`. Only what was verified in that repo, each rule with its why.
+- **The repo notes** — one per repo, from `repos/_template.md`, only what was verified in that
+  repo, each rule with its why. A repo on the plugin keeps its own in the repo and names it as
+  `references.shepard_notes` in `.claude/project-context.md` (conventionally
+  `.claude/references/shepard-<repo-name>.md`); a checked-in or user-level copy of this skill can
+  keep it at `references/repos/<repo-name>.md` beside it.
 - **`references/reviewers/crit.md`** — the reviewer's contract, shared by every consumer and read
   from crit's own code with the files named. When crit changes how it reads threads, what settles
   one, or what it posts, update this file in the catalog and propagate it.

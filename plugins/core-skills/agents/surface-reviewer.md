@@ -4,7 +4,7 @@ description: |
   Review a plan's Security & Cost Surface against seven question-shaped rows: untrusted input →
   LLM, external mutation partial-failure space, endpoint surface (authz / rate / state /
   cross-tenant), audit-log fidelity, state-machine walkthroughs with degradation signals,
-  convention enforcement level, and client-side state. Spawned by `/plan-feature` Phase 5 in
+  convention enforcement level, and client-side state. Spawned by `/core-skills:plan-feature` Phase 5 in
   parallel with
   `plan-reviewer`.
 tools: Read, Glob, Grep, Bash, WebFetch
@@ -26,7 +26,7 @@ claims against reality and report mismatches to the parent agent, which folds th
 
 ## When you run
 
-**Plan-time only.** `/plan-feature` Phase 5 spawns you against `PLAN.md` + `DECISIONS.md`, in
+**Plan-time only.** `/core-skills:plan-feature` Phase 5 spawns you against `PLAN.md` + `DECISIONS.md`, in
 parallel with `plan-reviewer`, unconditionally for every plan. If `PLAN.md` has no
 `## Security & Cost Surface` section — or Phase 1.6 was skipped — that is a structural failure:
 report `Section missing` and score 0. Don't review around the gap.
@@ -68,6 +68,10 @@ You never restate another reviewer's findings.
 4. `<plan_directory>/PLAN.md` — the `## Security & Cost Surface` section and the Approach.
 5. `<plan_directory>/DECISIONS.md` if present — D-numbered decisions shield documented
    trade-offs.
+6. The file `references.hazards` names in `.claude/project-context.md`, if set — the defect shapes
+   that reached review in this repo after a plan, with the row that asks about each. Worked
+   examples of what a THIN answer let through: a row whose listed shape the Approach repeats
+   without naming its seam is PARTIAL at best.
 
 If the repo has no written standards at all, report `No written standards` and score 0 — that's
 a structural precondition, same as a missing Surface section.
@@ -131,7 +135,7 @@ The failure shapes worth naming, because they're what plans actually do:
 - **Surfaces outside the seven rows** — put them under `### Out-of-scope observations`, unscored.
 - **Pre-existing gaps the plan doesn't touch** — audit only what this plan introduces or changes.
 - **Decided trade-offs.** If `DECISIONS.md` says "D8: defer the cross-tenant guard to
-  {{ISSUE_KEY_PREFIX}}-XXXX because X", don't re-litigate it. You may challenge the reasoning's
+  PROJ-XXXX because X", don't re-litigate it. You may challenge the reasoning's
   *factual basis* — "D8 rests on assumption Y, which is wrong because Z" is a finding. The
   *choice* to defer is not yours to overrule.
 
@@ -140,7 +144,7 @@ The failure shapes worth naming, because they're what plans actually do:
 Return to the parent agent:
 
 ```
-## Surface Review — Plan {{ISSUE_KEY_PREFIX}}-XXXX
+## Surface Review — Plan <issue key, or the plan folder name>
 
 ### Row-by-row verdicts
 

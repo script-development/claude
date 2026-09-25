@@ -7,7 +7,7 @@ Save to `<bug-root>/<KEY>-<short-slug>/BUG.md` (`bug_root`, default `docs/bugs`)
 - **Phase 5 (now):** Problem, Reproduction Steps, Status: `Investigating`.
 - **Phase 6:** Root Cause (Status → `Diagnosed`), then Chosen Approach once the developer picks a candidate.
 - **Phase 7:** Fix (Status → `Fixing`).
-- **Phase 8:** Verification (filled by the `bug-fix-verifier` agent). Status → `Verified` after PASS.
+- **Phase 8:** Verification (filled by the `bug-fix-verifier` agent; with `bug_runtime_review: true`, `runtime-integrity-reviewer`'s report is appended below it as `### Runtime integrity`). Status → `Verified` after PASS.
 - **Notes / Follow-ups:** any time something adjacent surfaces. Empty is fine.
 
 ## Template
@@ -57,8 +57,10 @@ root cause. Not a diff dump — a short explanation a future reader can grasp
 without opening the PR.>
 
 ## Verification
-<Filled by bug-fix-verifier in Phase 8. Score, verdict, evidence. Empty
-until the agent writes it.>
+<Filled by bug-fix-verifier in Phase 8. Score, verdict, evidence. With
+bug_runtime_review on, runtime-integrity-reviewer's `### Runtime integrity`
+block follows it: findings and checked, verbatim. Empty until the agents
+write it.>
 
 ## Notes / Follow-ups
 <Adjacent issues, missing tests elsewhere, refactors worth doing later.

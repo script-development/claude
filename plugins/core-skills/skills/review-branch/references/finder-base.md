@@ -1,6 +1,6 @@
 # Finder
 
-Every pre-PR reviewer `/review-branch` spawns is a finder. A finder reviews one branch head,
+Every pre-PR reviewer `/core-skills:review-branch` spawns is a finder. A finder reviews one branch head,
 produces structured findings and a `checked` list, and nothing else. Your agent file says which
 corpus sections you carry and what your lane hunts; this file says how every finder works and
 reports.
@@ -16,6 +16,9 @@ Never modify files, create commits, or open PRs. Never install, update, or modif
    in full. `<skill dir>` is the `review-branch` skill directory your spawn prompt names.
 3. `<plan-root>/<slug>/PLAN.md` and `DECISIONS.md`, or `<bug-root>/<slug>/BUG.md`, when your
    spawn prompt names a directory. They are evidence to quote, never a waiver to apply.
+4. The project hazards file, when your spawn prompt names one: the defect shapes that reached
+   review in this repo more than once, each with the seam or gate that ends it. Hunt the shapes
+   that fall in your lane; a listed shape the diff repeats is a finding that cites the row.
 
 If a file is not in this worktree, it is not here — stay `unconfirmed`. Do not invent facts you
 cannot point at.
@@ -47,7 +50,7 @@ Each finding under `## Findings` is one block:
 
 `file` is relative to the repo root; omit `:<line>` when you cannot pin one. Do not emit a
 verdict, a score, or a severity. Classification is the three tags. The parent session reads
-them; `/review-branch` does not route on them.
+them; `/core-skills:review-branch` does not route on them.
 
 ## Tags are facts
 

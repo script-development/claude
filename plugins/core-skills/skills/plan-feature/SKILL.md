@@ -21,7 +21,8 @@ entire conversation.
 
 This skill is project-agnostic: it never assumes a specific issue tracker, tracker project id, or
 issue-key format. It reads `issue_tracker_skill` / `issue_tracker_project_id` (Phase 0, 1a, 4a)
-and `plan_root` (Phase 4b, 4c) from `.claude/project-context.md` — see this plugin's README for
+`references.hazards` (Phase 1.6), `references.site_docs_sync` (the plan's Site Documentation
+Sync table) and `plan_root` (Phase 4b, 4c) from `.claude/project-context.md` — see this plugin's README for
 how that file and its notation work.
 
 ## Phase 0: Parse arguments
@@ -236,7 +237,7 @@ Output the table verbatim to the developer with marks and citations filled in. I
 
 Produce a `## Security & Cost Surface` section in PLAN.md with **seven prose paragraphs**, each answering the questions for one row and ending with its Proof line — or `N/A — <one-line reason>` when no question on the row applies. **You may not proceed past Phase 1.6 with any unanswered question on a populated row.**
 
-The canonical questions and worked examples live at [`references/surface-questions.md`](references/surface-questions.md) — load it now. It is the single source of truth shared with the `surface-reviewer` agent at Phase 5. The rows are deliberately question-shaped, not field-shaped, so they generalise to feature shapes not seen yet.
+The canonical questions and worked examples live at [`references/surface-questions.md`](references/surface-questions.md) — load it now. It is the single source of truth shared with the `surface-reviewer` agent at Phase 5. The rows are deliberately question-shaped, not field-shaped, so they generalise to feature shapes not seen yet. When `.claude/project-context.md` sets `references.hazards`, read that file too: it lists the defect shapes that reached review in this repo after a plan, each with the seam or gate that ends it and the row that asks about it. A row whose shape is listed there needs an answer that names that seam, not a generic one.
 
 Architecture tests do not cover this. They cover *code shape* — not the flow of untrusted bytes, billing dollars, audit fidelity, partial-failure state space, silent UX degradation, or enforcement of conventions the feature introduces. [`references/quality-gates.md`](references/quality-gates.md) carries the rationale and the sycophancy guards (paraphrasing the questions back is THIN, not OK; an LLM-touching feature cannot mark Row 1 N/A).
 
@@ -370,7 +371,7 @@ Use the format and rules in [`references/decisions-template.md`](references/deci
 
 Save the plan to `<plan-root>/<slug>/PLAN.md` using the structure in
 [`references/plan-template.md`](references/plan-template.md). The template is the contract —
-downstream agents (`plan-reviewer`, `surface-reviewer`, `/wireframe`, `/task-writer`,
+downstream agents (`plan-reviewer`, `surface-reviewer`, `/wireframe`, `/core-skills:task-writer`,
 `precedent-reviewer`) parse the section names, so don't rename or omit them.
 
 ### 4d. Template completeness check (mandatory, fail-closed)
@@ -423,10 +424,10 @@ Then present the plan + both reviewer reports to the developer and ask: "Does th
 
 Plan is approved. Stop here — the next step is a separate skill, owned by the developer (or by Claude in continuation):
 
-- **Frontend in scope** — invoke `/wireframe`. It owns generating `WIREFRAMES.md` and self-gates with `wireframe-reviewer`. Then `/task-writer` (or `/implement-plan` for small plans).
-- **Backend-only** — go straight to `/task-writer` or `/implement-plan`.
+- **Frontend in scope** — invoke `/wireframe`. It owns generating `WIREFRAMES.md` and self-gates with `wireframe-reviewer`. Then `/core-skills:task-writer` (or `/core-skills:implement-plan` for small plans).
+- **Backend-only** — go straight to `/core-skills:task-writer` or `/core-skills:implement-plan`.
 
-Do not invoke `/wireframe`, `/task-writer`, or their reviewers from inside this skill. Each downstream skill owns its own quality gate; chaining them here would recreate the mega-skill we just trimmed away.
+Do not invoke `/wireframe`, `/core-skills:task-writer`, or their reviewers from inside this skill. Each downstream skill owns its own quality gate; chaining them here would recreate the mega-skill we just trimmed away.
 
 ## Anti-patterns to avoid
 

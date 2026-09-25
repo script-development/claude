@@ -2,7 +2,7 @@
 
 Save the breakdown as `TASKS.md` in the plan directory (see this skill's own Output section for
 how that's derived) — e.g. `docs/plans/KD-0072-short-description/TASKS.md` with `plan_root` unset. Use this exact
-structure — `/next` parses it. Renaming or omitting sections breaks downstream agents silently.
+structure — `/core-skills:next` parses it. Renaming or omitting sections breaks downstream agents silently.
 
 ## Task format
 
