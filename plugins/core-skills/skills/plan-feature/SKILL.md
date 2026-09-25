@@ -193,7 +193,7 @@ Collect every path and symbol you're about to cite, one per line, and run them t
 
 ```bash
 printf '%s\n' 'app/Helpers/Slug.php' 'CreateWidgetAction' \
-  | <skill dir>/scripts/verify-citations.sh
+  | bash <skill dir>/scripts/verify-citations.sh
 ```
 
 It resolves paths against the repo root plus `backend/` and `frontend/`, greps bare symbols and namespaces across the source trees, and tolerates a trailing line reference (`api.php:233-234`). It reports on every citation before exiting — one pass gives you the whole list, not the first failure. Repos with a different layout set `CITATION_PATH_PREFIXES` / `CITATION_SEARCH_ROOTS` (documented in the script header). **A `MISSING` line is a fabricated citation — fix it or drop the claim. You may not proceed past Phase 1.4 with a non-zero exit.**

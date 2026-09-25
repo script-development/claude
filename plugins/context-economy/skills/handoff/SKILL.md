@@ -199,13 +199,13 @@ slug=$(printf '%s' "$ref" | tr '/' '-')
 # never dangle this the way a version-embedding path would. Sorted with sort -V, not the
 # glob's own order: that is lexical, and ranks 0.3.0 above 0.22.0.
 gate=$(for g in "$HOME"/.claude/plugins/cache/*/context-economy/*/lib/verify-handoff.sh; do
-    [ -x "$g" ] && printf '%s\n' "$g"
+    [ -f "$g" ] && printf '%s\n' "$g"
 done | sort -V | tail -n 1)
 if [ -z "$gate" ]; then
     for g in "$here/lib/verify-handoff.sh" \
              "$HOME/.claude/lib/verify-handoff.sh" \
              "$PWD/plugins/context-economy/lib/verify-handoff.sh"; do
-        [ -x "$g" ] && gate=$g && break
+        [ -f "$g" ] && gate=$g && break
     done
 fi
 store=$(for s in "$HOME"/.claude/plugins/cache/*/context-economy/*/lib/handoff-store.sh; do

@@ -357,11 +357,13 @@ if [ "$handoff_present" = true ]; then
     gate="${VERIFY_HANDOFF_GATE:-}"
     if [ -z "$gate" ]; then
         for g in "$hook_dir/../lib/verify-handoff.sh" "$here/plugins/context-economy/lib/verify-handoff.sh"; do
-            [ -x "$g" ] && gate=$g && break
+            [ -f "$g" ] && gate=$g && break
         done
     fi
 
-    if [ -n "$gate" ] && [ -x "$gate" ]; then
+    # -f, not -x: the gate always runs through `bash`, so an exec bit lost in git must not
+    # make every handoff read as unverified.
+    if [ -n "$gate" ] && [ -f "$gate" ]; then
         # Both arguments, always -- even though the gate would now read `checkout:` itself. The
         # hook has already resolved which tree it believes the verdicts describe, and passing
         # that explicitly means the two cannot silently disagree about it.

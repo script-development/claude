@@ -29,7 +29,7 @@
 #
 # Exit codes:
 #   0  the PR reached a terminal state (MERGED or CLOSED) — the watch is done
-#   3  setup failure, said on stdout: no PR, gh failed, bash older than 4, missing dependency, bad flag value — or `--source bus`
+#   3  setup failure, said on stdout: no PR, gh failed, missing dependency, bad flag value — or `--source bus`
 #      with no town-crier row for this PR after 20 ticks
 #
 # The token is read from $TOWN_CRIER_TOKEN, else from the env file named by
@@ -42,10 +42,6 @@ set -uo pipefail
 # stderr-only exit here would look like an armed, quiet watch.
 die() { ended=setup; echo "[end] setup failed: $1 — watch never started"; exit 3; }
 
-# The change detection below keeps its state in associative arrays, which bash 3.2 (stock
-# macOS /bin/bash) parses as indexed ones: every key folds to index 0 and no change is ever
-# seen. A watch that cannot see changes must refuse to start, not arm and stay quiet.
-(( BASH_VERSINFO[0] >= 4 )) || die "bash 4+ required, this is ${BASH_VERSION} (macOS: brew install bash, then put it first on PATH)"
 command -v gh   >/dev/null || die "gh CLI required"
 command -v jq   >/dev/null || die "jq required"
 
@@ -276,15 +272,30 @@ bus_snapshot() {
 
 # ------------------------------------------------------------------ change lines
 
-declare -A prev=()
-declare -A cur=()
+# Snapshot fields live in plain indexed arrays, one fixed slot per field, so the watch runs
+# on bash 3.2 — the /bin/bash every stock macOS ships, and the one `#!/usr/bin/env bash`
+# finds there. It used `declare -A`, which 3.2 rejects: the arrays came out indexed, the
+# first string subscript was evaluated as an unset variable, and under `set -u` the watch
+# died on its first tick as "[end] … stopped (signal or timeout)" — armed, then gone.
+# `cur[K_head]` reads slot $K_head: a subscript of an indexed array is arithmetic, and a
+# name in arithmetic reads that variable. A field missing from FIELDS is dropped at load,
+# never guessed at; the test suite pins that every field the snapshots emit is listed.
+FIELDS=(pr_state head decision reviews comments ci_fail ci_pending ci_pass ci_attn
+        runs_active ci_missing ci_state
+        bus_status gate trial conflict reviewer bus_reviews bus_head findings lock)
+for i in "${!FIELDS[@]}"; do printf -v "K_${FIELDS[i]}" '%d' "$i"; done
+prev=()
+cur=()
 bus_live=0   # 1 when THIS tick read the bus row; a missing read is not a change
 
 load_into_cur() {
-  local json="$1" k v n=0
+  local json="$1" k v slot n=0
   while IFS=$'\t' read -r k v; do
     v=${v%$'\r'}
-    cur["$k"]="$v"
+    [[ "$k" =~ ^[a-z_]+$ ]] || continue
+    slot="K_$k"
+    [[ -n "${!slot-}" ]] || continue
+    cur[${!slot}]="$v"
     n=$((n + 1))
   done < <(jq -r 'to_entries[] | [.key, (.value | tostring)] | @tsv' <<<"$json" 2>/dev/null)
   # A jq that produced nothing must not read as "every field cleared" — the
@@ -293,31 +304,31 @@ load_into_cur() {
   [[ $n -gt 0 ]]
 }
 
-changed() { [[ "${prev[$1]-}" != "${cur[$1]-}" ]]; }
-was()     { echo "${prev[$1]-—}"; }
-now()     { echo "${cur[$1]-—}"; }
+changed() { [[ "${prev[K_$1]-}" != "${cur[K_$1]-}" ]]; }
+was()     { echo "${prev[K_$1]-—}"; }
+now()     { echo "${cur[K_$1]-—}"; }
 
 emit_changes() {
   local head_note=""
   # A verdict at a SHA that is no longer the PR head is a result about code that
   # has been replaced. /shepard must not read it as a result about the diff now.
-  if [[ -n "${cur[bus_head]-}" && -n "${cur[head]-}" && "${cur[bus_head]}" != "${cur[head]}" ]]; then
-    head_note=" (STALE — bus read ${cur[bus_head]}, PR head ${cur[head]})"
+  if [[ -n "${cur[K_bus_head]-}" && -n "${cur[K_head]-}" && "${cur[K_bus_head]}" != "${cur[K_head]}" ]]; then
+    head_note=" (STALE — bus read ${cur[K_bus_head]}, PR head ${cur[K_head]})"
   fi
 
   # An unreadable bus row contributes no keys this tick. Comparing the remembered row
   # against nothing would print every bus field as "-> —" on every outage tick; the
   # [warn] line in the loop is the one announcement an outage gets.
   if [[ $bus_live -eq 1 ]]; then
-    if changed bus_reviews && [[ "${cur[bus_reviews]-0}" -gt "${prev[bus_reviews]-0}" ]]; then
-      echo "[bus] review $(now bus_reviews) by ${cur[reviewer]:-?} — findings $(now findings) · gate $(now gate)$head_note"
+    if changed bus_reviews && [[ "${cur[K_bus_reviews]-0}" -gt "${prev[K_bus_reviews]-0}" ]]; then
+      echo "[bus] review $(now bus_reviews) by ${cur[K_reviewer]:-?} — findings $(now findings) · gate $(now gate)$head_note"
     elif changed findings; then
       echo "[bus] findings $(was findings) -> $(now findings)$head_note"
     fi
     changed gate       && echo "[bus] gate $(was gate) -> $(now gate)$head_note"
     changed trial      && echo "[bus] trial (ci-passed) $(was trial) -> $(now trial)"
     changed bus_status && echo "[bus] request status $(was bus_status) -> $(now bus_status)"
-    changed conflict   && [[ "${cur[conflict]-}" != "clean" ]] && echo "[bus] merge conflict: $(now conflict)"
+    changed conflict   && [[ "${cur[K_conflict]-}" != "clean" ]] && echo "[bus] merge conflict: $(now conflict)"
   fi
 
   # One line per CI state change, not per job: a red set that changes, a red job sent
@@ -325,32 +336,32 @@ emit_changes() {
   # PENDING say nothing. Bucketing an in-flight check as PENDING empties ci_fail while the
   # job is still red, so an emptied ci_fail alone must never print "cleared".
   if changed ci_fail || changed ci_attn || changed ci_missing || changed ci_state; then
-    case "${cur[ci_state]-}" in
-      RED)     echo "[ci]  FAILING: ${cur[ci_fail]}  (pass ${cur[ci_pass]-?} · pending ${cur[ci_pending]-?})" ;;
-      PENDING) [[ -n "${prev[ci_fail]-}" ]] && echo "[ci]  red checks re-running, not green yet (pass ${cur[ci_pass]-?} · pending ${cur[ci_pending]-?})" ;;
-      MISSING) echo "[ci]  required check(s) never reported: ${cur[ci_missing]} — the base requires them and no run on this head is left to produce them  (pass ${cur[ci_pass]-?})" ;;
+    case "${cur[K_ci_state]-}" in
+      RED)     echo "[ci]  FAILING: ${cur[K_ci_fail]}  (pass ${cur[K_ci_pass]-?} · pending ${cur[K_ci_pending]-?})" ;;
+      PENDING) [[ -n "${prev[K_ci_fail]-}" ]] && echo "[ci]  red checks re-running, not green yet (pass ${cur[K_ci_pass]-?} · pending ${cur[K_ci_pending]-?})" ;;
+      MISSING) echo "[ci]  required check(s) never reported: ${cur[K_ci_missing]} — the base requires them and no run on this head is left to produce them  (pass ${cur[K_ci_pass]-?})" ;;
       # Never green while a lane is neutral or stale — a stale required check does
       # not satisfy branch protection even with every sibling passing, and a neutral
       # lane never reached a verdict at all.
-      ATTN)    echo "[ci]  needs attention (neutral/stale): ${cur[ci_attn]}  (pass ${cur[ci_pass]-?})" ;;
-      GREEN)   echo "[ci]  all checks green (pass ${cur[ci_pass]-?})" ;;
+      ATTN)    echo "[ci]  needs attention (neutral/stale): ${cur[K_ci_attn]}  (pass ${cur[K_ci_pass]-?})" ;;
+      GREEN)   echo "[ci]  all checks green (pass ${cur[K_ci_pass]-?})" ;;
       NONE)    echo "[ci]  no checks reported yet" ;;
     esac
   fi
   # The PR head is GitHub's alone and always reported: `bus_head` is the head the reviewer
   # READ, and the STALE note above is the comparison of the two.
-  changed head     && [[ -n "${prev[head]-}" ]] && echo "[pr]  head moved $(was head) -> $(now head)"
+  changed head     && [[ -n "${prev[K_head]-}" ]] && echo "[pr]  head moved $(was head) -> $(now head)"
 
   # GitHub's review lines fire whether or not a bus row is attached. They used to be
   # gated on BUS_ID, and a reviewer that posted on GitHub while its bus row stayed at
   # 0 reviews left the watch blind for an hour (emmie #1297); an unreadable row did the
   # same. One duplicate line per round is the price of never being blind.
   changed decision && echo "[pr]  review decision $(was decision) -> $(now decision)"
-  if changed reviews && [[ "${cur[reviews]-0}" -gt "${prev[reviews]-0}" ]]; then
-    echo "[pr]  +$(( ${cur[reviews]-0} - ${prev[reviews]-0} )) GitHub review(s)"
+  if changed reviews && [[ "${cur[K_reviews]-0}" -gt "${prev[K_reviews]-0}" ]]; then
+    echo "[pr]  +$(( ${cur[K_reviews]-0} - ${prev[K_reviews]-0} )) GitHub review(s)"
   fi
-  if changed comments && [[ "${cur[comments]-0}" -gt "${prev[comments]-0}" ]]; then
-    echo "[pr]  +$(( ${cur[comments]-0} - ${prev[comments]-0} )) comment(s)"
+  if changed comments && [[ "${cur[K_comments]-0}" -gt "${prev[K_comments]-0}" ]]; then
+    echo "[pr]  +$(( ${cur[K_comments]-0} - ${prev[K_comments]-0} )) comment(s)"
   fi
 }
 
@@ -481,22 +492,22 @@ while true; do
   if [[ ${#prev[@]} -gt 0 ]]; then
     emit_changes
   else
-    now_ci="${cur[ci_state]-?}"
+    now_ci="${cur[K_ci_state]-?}"
     case "$now_ci" in
-      RED)     now_ci+=": ${cur[ci_fail]-}" ;;
-      MISSING) now_ci+=": ${cur[ci_missing]-} never reported" ;;
-      ATTN)    now_ci+=": ${cur[ci_attn]-}" ;;
+      RED)     now_ci+=": ${cur[K_ci_fail]-}" ;;
+      MISSING) now_ci+=": ${cur[K_ci_missing]-} never reported" ;;
+      ATTN)    now_ci+=": ${cur[K_ci_attn]-}" ;;
     esac
-    echo "[watch] now: ci ${now_ci} (pass ${cur[ci_pass]-?} · pending ${cur[ci_pending]-?}) · head ${cur[head]-?} · review ${cur[decision]-?}"
+    echo "[watch] now: ci ${now_ci} (pass ${cur[K_ci_pass]-?} · pending ${cur[K_ci_pending]-?}) · head ${cur[K_head]-?} · review ${cur[K_decision]-?}"
   fi
 
-  case "${cur[pr_state]-}" in
+  case "${cur[K_pr_state]-}" in
     MERGED) echo "[end] PR #${PR_NUMBER} MERGED — watch ends"; ended=terminal; exit 0 ;;
     CLOSED) echo "[end] PR #${PR_NUMBER} CLOSED — watch ends"; ended=terminal; exit 0 ;;
   esac
 
   if [[ "$HEARTBEAT_MIN" -gt 0 && $((SECONDS - last_heartbeat)) -ge $((HEARTBEAT_MIN * 60)) ]]; then
-    echo "[hb]  alive · ci fail:'${cur[ci_fail]-}' pending:${cur[ci_pending]-?} · gate:${cur[gate]-n/a} findings:${cur[findings]-n/a}"
+    echo "[hb]  alive · ci fail:'${cur[K_ci_fail]-}' pending:${cur[K_ci_pending]-?} · gate:${cur[K_gate]-n/a} findings:${cur[K_findings]-n/a}"
     last_heartbeat=$SECONDS
   fi
 

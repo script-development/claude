@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Sync secondary git worktrees with the primary one.
 # See ../SKILL.md for the design rationale and safety contract.
 
@@ -20,8 +20,9 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-# Primary worktree is always the first entry in git worktree list
-PRIMARY=$(git worktree list --porcelain 2>/dev/null | awk '/^worktree / {print $2; exit}')
+# Primary worktree is always the first entry in git worktree list. The path is everything
+# after "worktree ", not awk's $2: a path with a space in it (common on macOS) was cut short.
+PRIMARY=$(git worktree list --porcelain 2>/dev/null | awk '/^worktree / {sub(/^worktree /, ""); print; exit}')
 if [ -z "$PRIMARY" ]; then
   echo "Error: could not locate primary worktree. Run this from inside a git repo." >&2
   exit 1
@@ -64,8 +65,13 @@ find_manifests() { # $1 = worktree, $2 = manifest name
     -not -path '*/.git/*' -not -path '*/node_modules/*' -not -path '*/vendor/*' | sort
 }
 
-# Collect secondary worktrees (everything except the primary)
-mapfile -t SECONDARIES < <(git -C "$PRIMARY" worktree list --porcelain | awk '/^worktree / {print $2}' | tail -n +2)
+# Collect secondary worktrees (everything except the primary). A read loop, not mapfile:
+# mapfile is bash 4, and on the bash 3.2 of stock macOS it failed, left this list empty and
+# reported "No secondary worktrees to sync." — a sync that did nothing and said all was well.
+SECONDARIES=()
+while IFS= read -r wt; do
+  SECONDARIES+=("$wt")
+done < <(git -C "$PRIMARY" worktree list --porcelain | awk '/^worktree / {sub(/^worktree /, ""); print}' | tail -n +2)
 
 if [ ${#SECONDARIES[@]} -eq 0 ]; then
   echo "No secondary worktrees to sync."

@@ -496,6 +496,31 @@ else
         'a missing thresholds file drops the size report and nothing else' "$nothresh"
 fi
 
+# A plugin install is a clone, and the Windows checkout that authored this bundle has
+# core.filemode=false: its scripts reached git as 100644, so on macOS and Linux they arrive
+# without an exec bit. The gate used to insist on one for its verifier (`[ -x ]`, then ran it
+# directly) and exited 2 on every handoff. A verifier with no exec bit must still be used. It
+# also loses its shebang here, because Git Bash reports any file with one as executable.
+# Arrange
+noexec="$fixture/noexec-lib"
+mkdir -p "$noexec"
+cp "$script_dir"/*.sh "$noexec"/
+tail -n +2 "$script_dir/verify-citations.sh" > "$noexec/verify-citations.sh"
+chmod -x "$noexec/verify-citations.sh"
+# Act
+noexec_out=$( (cd "$fixture" && bash "$noexec/verify-handoff.sh" "$good" "$fixture" 2>&1); echo "exit=$?" )
+# Assert
+if [ -x "$noexec/verify-citations.sh" ]; then
+    passed=$((passed + 1))
+    printf '  ok    %s\n' 'a verifier with no exec bit is still used (skipped: this filesystem reports it executable)'
+elif grep -q 'exit=0' <<< "$noexec_out" && ! grep -q 'not found at' <<< "$noexec_out"; then
+    passed=$((passed + 1))
+    printf '  ok    %s\n' 'a verifier with no exec bit is still used'
+else
+    failed=$((failed + 1))
+    printf '  FAIL  %s\n%s\n' 'a verifier with no exec bit is still used' "$noexec_out"
+fi
+
 # --- Platform --------------------------------------------------------------
 #
 # CRLF is not cosmetic here. verify-citations.sh survives it by accident, since
