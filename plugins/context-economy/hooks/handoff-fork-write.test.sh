@@ -144,7 +144,10 @@ skeleton_path="$store/$(store_name "$main_git" main)"
 # Snapshotted before firing, not read as "newest by mtime" afterward: several earlier cases in
 # this file (the dedup-lock quartet) also pass every guard and each leave their own scratch dir
 # behind, so a diff is the unambiguous way to name the ONE this specific firing created.
-scratch_before=$(ls -d /tmp/handoff-fork.* 2>/dev/null)
+# Where the hook's own `mktemp -d "${TMPDIR:-/tmp}/handoff-fork.XXXXXX"` lands: /tmp on
+# Linux, /var/folders/... on macOS, whose TMPDIR also ends in a slash.
+tmp_root=${TMPDIR:-/tmp}; tmp_root=${tmp_root%/}
+scratch_before=$(ls -d "$tmp_root"/handoff-fork.* 2>/dev/null)
 
 # Act — passes every guard (real session_id, real transcript, real repo) and reaches the
 # skeleton write. CTX_FORK_TIMEOUT_SECONDS=1 still bounds whatever real detached turn follows to
@@ -196,7 +199,7 @@ fi
 # Checked against the async runner script itself (written synchronously, before its own nohup
 # spawn -- no race to wait out) rather than the real detached turn's own behaviour, which
 # docs/measured.md's own probes already cover directly.
-new_scratch=$(comm -13 <(printf '%s\n' "$scratch_before" | sort) <(ls -d /tmp/handoff-fork.* 2>/dev/null | sort))
+new_scratch=$(comm -13 <(printf '%s\n' "$scratch_before" | sort) <(ls -d "$tmp_root"/handoff-fork.* 2>/dev/null | sort))
 recorded_id=$(grep -m1 '^write_session: ' "$skeleton_path" 2>/dev/null | sed 's/^write_session: //')
 if [ -n "$recorded_id" ] && [ -n "$new_scratch" ] && [ -r "$new_scratch/run.sh" ]; then
     case "$(cat "$new_scratch/run.sh")" in
@@ -236,14 +239,14 @@ printf '#!/usr/bin/env bash\necho 3F2504E0-4F89-11D3-9A0C-0305E82C3301\n' > "$st
 chmod +x "$stubs/claude" "$stubs/uuidgen"
 new_runner() {  # new_runner <before-snapshot> — the run.sh of the one firing since the snapshot
     local d
-    d=$(comm -13 <(printf '%s\n' "$1" | sort) <(ls -d /tmp/handoff-fork.* 2>/dev/null | sort) | tail -n 1)
+    d=$(comm -13 <(printf '%s\n' "$1" | sort) <(ls -d "$tmp_root"/handoff-fork.* 2>/dev/null | sort) | tail -n 1)
     [ -n "$d" ] && printf '%s/run.sh' "$d"
 }
 
 # macOS's uuidgen prints uppercase. The id is recorded in the skeleton and later matched against
 # the transcript's filename, so it must reach both places lowercased and identical.
 # Act
-before=$(ls -d /tmp/handoff-fork.* 2>/dev/null)
+before=$(ls -d "$tmp_root"/handoff-fork.* 2>/dev/null)
 run "$(payload "upper-$$" "$transcript" "$repo")" PATH="$stubs:$PATH" CTX_FORK_TIMEOUT_SECONDS=1 HANDOFF_STORE_DIR="$store" >/dev/null
 runner=$(new_runner "$before")
 recorded=$(grep -m1 '^write_session: ' "$skeleton_path" 2>/dev/null | sed 's/^write_session: //')
@@ -276,7 +279,7 @@ else
     }
     export -f command
     # Act
-    before=$(ls -d /tmp/handoff-fork.* 2>/dev/null)
+    before=$(ls -d "$tmp_root"/handoff-fork.* 2>/dev/null)
     run "$(payload "notimeout-$$" "$transcript" "$repo")" PATH="$stubs:$PATH" CTX_FORK_TIMEOUT_SECONDS=1 HANDOFF_STORE_DIR="$store" >/dev/null
     unset -f command
     runner=$(new_runner "$before")
@@ -308,7 +311,7 @@ fi
 # fictional handoff-fork artifacts lying around -- matching lib/handoff-store.test.sh's own probe
 # cleanup discipline, not left to the OS temp dir's own GC.
 sleep 2
-rm -rf /tmp/handoff-fork.* 2>/dev/null
+rm -rf "$tmp_root"/handoff-fork.* 2>/dev/null
 
 echo
 if [ "$failed" -gt 0 ]; then

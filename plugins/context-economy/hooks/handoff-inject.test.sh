@@ -634,7 +634,8 @@ write_cross_marker() {  # write_cross_marker <handoff_mtime> <ended_epoch>
           resident_tokens:300000, handoff:{present:true,path:"x",mtime:$hm}, write_attempted:true}' \
         > "$state/$driving_key-driving.json"
 }
-h_mtime=$(stat -c %Y "$store/$(store_name "$other_main" other-work)")
+h_mtime=$(stat -c %Y "$store/$(store_name "$other_main" other-work)" 2>/dev/null \
+    || stat -f %m "$store/$(store_name "$other_main" other-work)")
 write_cross_marker "$h_mtime" "$((h_mtime + 60))"
 
 # Act & Assert — same consumption rule as above: write_cross_marker re-runs before each case.
@@ -736,7 +737,7 @@ EOF
     } > "$path"
     if [ "$age" -ne 0 ]; then
         touch -d "@$(( $(date +%s) - age ))" "$path" 2>/dev/null \
-            || touch -t "$(date -d "@$(( $(date +%s) - age ))" +%Y%m%d%H%M.%S)" "$path"
+            || touch -t "$(date -d "@$(( $(date +%s) - age ))" +%Y%m%d%H%M.%S 2>/dev/null || date -r "$(( $(date +%s) - age ))" +%Y%m%d%H%M.%S)" "$path"
     fi
     printf '%s' "$path"
 }
@@ -780,7 +781,7 @@ write_transcript_fixture() {
     printf '{"type":"assistant","message":{"content":[{"type":"text","text":"still going"}]}}\n' > "$path"
     if [ "$age" -ne 0 ]; then
         touch -d "@$(( $(date +%s) - age ))" "$path" 2>/dev/null \
-            || touch -t "$(date -d "@$(( $(date +%s) - age ))" +%Y%m%d%H%M.%S)" "$path"
+            || touch -t "$(date -d "@$(( $(date +%s) - age ))" +%Y%m%d%H%M.%S 2>/dev/null || date -r "$(( $(date +%s) - age ))" +%Y%m%d%H%M.%S)" "$path"
     fi
     printf '%s' "$path"
 }

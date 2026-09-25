@@ -59,7 +59,7 @@ put() {
         "$branch" "$checkout" > "$path"
     if [ "$offset" -ne 0 ]; then
         touch -d "@$(( $(date +%s) - offset ))" "$path" 2>/dev/null \
-            || touch -t "$(date -d "@$(( $(date +%s) - offset ))" +%Y%m%d%H%M.%S)" "$path"
+            || touch -t "$(date -d "@$(( $(date +%s) - offset ))" +%Y%m%d%H%M.%S 2>/dev/null || date -r "$(( $(date +%s) - offset ))" +%Y%m%d%H%M.%S)" "$path"
     fi
     printf '%s' "$path"
 }
@@ -90,7 +90,7 @@ mtime_fixture="$fixture/mtime-probe"
 : > "$mtime_fixture"
 known_epoch=$(( $(date +%s) - 12345 ))
 touch -d "@$known_epoch" "$mtime_fixture" 2>/dev/null \
-    || touch -t "$(date -d "@$known_epoch" +%Y%m%d%H%M.%S)" "$mtime_fixture"
+    || touch -t "$(date -d "@$known_epoch" +%Y%m%d%H%M.%S 2>/dev/null || date -r "$known_epoch" +%Y%m%d%H%M.%S)" "$mtime_fixture"
 # Act & Assert
 assert_eq 'handoff_store_mtime reads back a known mtime' "$known_epoch" "$(handoff_store_mtime "$mtime_fixture")"
 assert_eq 'handoff_store_mtime is empty, not fabricated, for a missing file' \
