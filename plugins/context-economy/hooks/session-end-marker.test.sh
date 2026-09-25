@@ -177,7 +177,7 @@ assert_field 'an absent handoff has a null mtime, not a zero one' "$(marker_for 
 # Arrange
 exact="$store/$(store_name "$main_git" main)"
 printf 'a handoff\n' > "$exact"
-expected_mtime=$(stat -c %Y "$exact")
+expected_mtime=$(stat -c %Y "$exact" 2>/dev/null || stat -f %m "$exact")
 reset_state
 # Act
 run "$(payload clear)" >/dev/null

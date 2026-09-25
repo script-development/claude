@@ -123,12 +123,18 @@ export PATH="$bin:$PATH"
 
 # --------------------------------------------------------------- fixture makers
 
+empties() {  # empties <n> — n comma-separated `{}`. Not `seq 1 <n>`: BSD's counts down for n=0.
+  local i=0 s=""
+  while [[ $i -lt "$1" ]]; do s+="${s:+,}{}"; i=$((i + 1)); done
+  printf '%s' "$s"
+}
+
 gh_tick() {  # gh_tick <n> <state> <head> <reviews> <comments> <ci_fail_name>
   local checks='[{"name":"ci-passed","conclusion":"SUCCESS"}]'
   [[ -n "${6:-}" ]] && checks="[{\"name\":\"$6\",\"conclusion\":\"FAILURE\"},{\"name\":\"other\",\"conclusion\":\"SUCCESS\"}]"
   local reviews comments
-  reviews=$(seq 1 "$4" 2>/dev/null | sed 's/.*/{}/' | paste -sd, -)
-  comments=$(seq 1 "$5" 2>/dev/null | sed 's/.*/{}/' | paste -sd, -)
+  reviews=$(empties "$4")
+  comments=$(empties "$5")
   cat > "$state/gh_$1.json" <<EOF
 {"state":"$2","headRefOid":"$3","baseRefName":"main","statusCheckRollup":$checks,
  "reviews":[${reviews}],"comments":[${comments}],"reviewDecision":""}
@@ -191,9 +197,8 @@ gh_tick 3 MERGED aaaaaaaa 0 0
 out=$(run); rc=$?
 check "no change emits no line" 0 "$out" $rc "[watch] PR #42" "[end] PR #42 MERGED" "!->"
 
-# The signal /shepard exists for: a review landed. Once a bus row is attached it owns the
-# review surface, so the GitHub review count must NOT be reported as well — that would be
-# the same review announced twice, every round.
+# The signal /shepard exists for: a review landed. GitHub's review count is reported even
+# with a bus row attached — a reviewer can post on GitHub while its row stays at 0 reviews.
 reset; bus_listed
 gh_tick 1 OPEN aaaaaaaa 0 0; bus_tick 1 clear 0 0 aaaaaaaa
 gh_tick 2 OPEN aaaaaaaa 1 0; bus_tick 2 blocked 1 2 aaaaaaaa
