@@ -99,7 +99,8 @@ store_name() {  # store_name <target-main> <slug>
 # was built to test while still producing a plausible-looking document.
 write_handoff() {  # write_handoff <slug> [target-main] [checkout] [branch]
     local slug=$1 target=${2:-$main_git} checkout=${3:-$repo_top} branch=${4:-main}
-    local path="$store/$(store_name "$target" "$slug")"
+    local path
+    path="$store/$(store_name "$target" "$slug")"
     {
     printf '# Handoff — a hostile document\n\n'
     printf 'branch: %s\ncheckout: %s\nstatus: fixture\n' "$branch" "$checkout"
@@ -704,7 +705,8 @@ rm -f "$store/$(store_name "$other_main" other-work)" "$state"/*.json
 # write_progress_handoff <slug> <progress> [age-seconds] [target-main] [checkout] [branch] [write-session-id]
 write_progress_handoff() {
     local slug=$1 progress=$2 age=${3:-0} target=${4:-$main_git} checkout=${5:-$repo_top} branch=${6:-main} wsid=${7:-}
-    local path="$store/$(store_name "$target" "$slug")"
+    local path
+    path="$store/$(store_name "$target" "$slug")"
     {
         printf '# Handoff — progress fixture\n'
         printf 'branch: %s\ncheckout: %s\nstatus: fixture\nprogress: %s\n' \

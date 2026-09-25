@@ -40,6 +40,17 @@
 - If the description changed, update the `README.md` catalog too
 - If the skill references specific APIs or libraries, verify they're still current
 
+## Shell scripts and CI
+
+CI (`.github/workflows/plugin-scripts.yml`) runs on every push to `main` and on every PR:
+
+- **shellcheck** over every `*.sh` under `plugins/`. Warnings and errors fail the build. Silence a
+  deliberate pattern with a targeted `# shellcheck disable=SCxxxx` and a reason, never file-wide.
+- **Every `*.test.sh` suite** under `plugins/`, on ubuntu-latest and on macos-latest. The macOS
+  job runs them under the stock `/bin/bash` (3.2). Suites are found by name, so a new
+  `X.test.sh` beside its `X.sh` gets picked up without touching CI. Run them all locally with
+  `bash .github/scripts/run-plugin-suites.sh`.
+
 ## Naming conventions
 
 - **Skills**: lowercase, hyphen-separated folder names (`review-pr`, `run-tests`, `deploy-staging`)

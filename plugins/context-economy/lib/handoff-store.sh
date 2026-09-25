@@ -283,6 +283,7 @@ handoff_store_set_progress() {
 # rest back in HANDOFF_OTHERS for the caller to display. That is the one thing a pointer file
 # could not do: a pointer resolves the ambiguity by silently overwriting, which loses the
 # other candidate without ever admitting there was one.
+# shellcheck disable=SC2034  # the HANDOFF_* globals above are this function's output, read by callers
 handoff_store_resolve() {
     local session_main=$1 session_slug=$2
     # Two variables for one fact, deliberately. `best_key` is the comparison key and treats an

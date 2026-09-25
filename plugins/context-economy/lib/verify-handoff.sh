@@ -91,6 +91,7 @@ content=$(tr -d '\r' < "$handoff")
 # so a handoff that wrote `~/checkouts/emmie` would otherwise be handed to git as
 # a literal directory named `~`.
 declared_checkout=$(grep -m1 -E '^checkout:' <<< "$content" | sed -E 's/^checkout:[[:space:]]*//' | sed -E 's/[[:space:]]+$//')
+# shellcheck disable=SC2088  # the quoted "~/" pattern matches a literal tilde on purpose; see above
 case "$declared_checkout" in
     "~") declared_checkout=$HOME ;;
     "~/"*) declared_checkout=$HOME/${declared_checkout#\~/} ;;

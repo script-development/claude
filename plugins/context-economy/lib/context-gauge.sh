@@ -87,6 +87,7 @@ context_gauge() {
   # It cannot mask a real rendering, because every branch below prints a non-empty string.
   local rendered
   rendered=$(
+    # shellcheck source=context-economy/context-thresholds.sh  # the default; CTX_THRESHOLDS_FILE may override
     . "$thresholds" 2>/dev/null || true
 
     # Note the -n guards rather than ${CTX_*:-0}: a :-0 default would make every session

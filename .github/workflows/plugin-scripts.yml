@@ -1,0 +1,82 @@
+# Checks for the shell scripts the plugins ship: shellcheck over every *.sh, and every *.test.sh
+# suite, on Linux and on macOS under the stock bash 3.2.
+name: Plugin scripts
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shellcheck:
+    name: shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: shellcheck version
+        run: shellcheck --version
+
+      # Every shipped script and its tests, plus this workflow's own helper. Warnings and errors
+      # fail the job; info/style notes do not, because the scripts use single-quoted `$`/backtick
+      # text and `A && B || C` on purpose, all over. -x with SCRIPTDIR follows `source` relative to
+      # each script, so the variables a sourced lib sets count as set.
+      - name: shellcheck plugins/**/*.sh
+        run: |
+          find plugins .github -name '*.sh' -type f -print0 \
+            | sort -z \
+            | xargs -0 shellcheck --external-sources --source-path=SCRIPTDIR --severity=warning
+
+  suites:
+    name: test suites (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # context-economy's handoff-fork-write hook exits early when no `claude` is on PATH, and its
+      # suite then fails on purpose. The suite checks the lock and the skeleton the hook writes,
+      # not what the detached turn does, so a no-op stub is enough. It also means CI never starts
+      # a real Claude turn.
+      - name: Stub the claude CLI
+        run: |
+          stub="$RUNNER_TEMP/stub-bin"
+          mkdir -p "$stub"
+          printf '#!/bin/sh\nexit 0\n' > "$stub/claude"
+          chmod +x "$stub/claude"
+          echo "$stub" >> "$GITHUB_PATH"
+
+      # The scripts are written to run on bash 3.2, the /bin/bash of stock macOS. The runner
+      # image puts a newer Homebrew bash first on PATH, so put /bin/bash ahead of it. Then the
+      # suites, and every `bash <subject>` they start, run on 3.2.
+      - name: Use the stock /bin/bash on macOS
+        if: runner.os == 'macOS'
+        run: |
+          shim="$RUNNER_TEMP/stock-bash"
+          mkdir -p "$shim"
+          ln -s /bin/bash "$shim/bash"
+          echo "$shim" >> "$GITHUB_PATH"
+
+      - name: Tool versions
+        run: |
+          echo "bash: $(command -v bash) $(bash -c 'echo "$BASH_VERSION"')"
+          jq --version
+          git --version
+
+      # Structure checks for context-economy's suites (discovery, subjects, AAA labels, a final
+      # tally). The next step runs the suites, so no --run here.
+      - name: context-economy suite gate
+        run: bash plugins/context-economy/tests/gate.sh
+
+      - name: Run every plugins/**/*.test.sh
+        run: bash .github/scripts/run-plugin-suites.sh
