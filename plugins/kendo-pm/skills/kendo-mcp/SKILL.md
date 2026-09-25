@@ -92,7 +92,7 @@ Use this ID for all `project_id` parameters and resource URIs below.
 | `mcp__kendo__list-reports-tool` | List reports (bug reports, feedback) for a project with triage status |
 | `mcp__kendo__create-report-tool` | Create a new report (bug report, feature request, feedback) |
 | `mcp__kendo__promote-reports-tool` | Promote/convert one or more reports into a single issue (core triage action) |
-| `mcp__kendo__dismiss-report-tool` | Dismiss a report as not actionable (soft-archive) |
+| `mcp__kendo__dismiss-report-tool` | Dismiss a report as not actionable (soft-archive). Current releases take a reason `category` (`not-planned` / `invalid` / `duplicate` / `already-shipped`) + optional `note`, stored on the report; older ones take `report_id` only |
 | `mcp__kendo__delete-report-tool` | Delete a report permanently (destructive) |
 
 ### Attachments
@@ -257,3 +257,4 @@ search-issues-tool  project_id: <your-project-id>, sprint_ids: [<active>], assig
 |------|---------|
 | [setup.md](references/setup.md) | MCP server setup instructions |
 | [issue-templates.md](references/issue-templates.md) | Issue templates (feature user story + bug report + task) — single source of truth, referenced by `/newbranch`, `/triage-reports`, `/plan-feature`, `/task-writer`, `/kendo-cli` |
+| [agent-ready.md](references/agent-ready.md) | The five criteria for the `Ready for Agent` label (an agent finishes it in one session from plan to PR: no product decision, one bounded PR, not a full feature, CI-verifiable, no hands outside the repo) and its `Needs Decision` companion — applied by `/triage-reports`; a project's own `.claude/references/agent-ready.md` overrides it |

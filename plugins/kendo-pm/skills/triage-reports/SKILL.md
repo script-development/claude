@@ -31,6 +31,11 @@ the evidence and recommends.
   file is the single source of truth for Feature (user story), Bug (cause-known / repro-first), and
   **Task** formats. This skill does **not** carry its own copies — always write promoted issues
   against the canonical templates so they match every other issue in the backlog.
+- The **`Ready for Agent`** criteria: `.claude/references/agent-ready.md` in the repo when it has
+  one (a project's own calibration wins), else `kendo-mcp`'s
+  [`references/agent-ready.md`](../kendo-mcp/references/agent-ready.md). Every Promote verdict is
+  scored against them (Step 4.8) and the label is applied at promotion (Step 5). The criteria
+  live there, not here.
 - A **product-context source** is the fit oracle for the "do we want this?" decision — see
   Step 0. If the repo ships a product-context skill (company docs, positioning, personas) or a
   product docs folder, that is the oracle. If it ships neither, the user is the oracle.
@@ -39,19 +44,22 @@ the evidence and recommends.
   consumers: a promoted report becomes a *new* issue with a fresh `PROJ-XXXX` key,
   not a relabel. Use the canonical terms in any issue you promote, and flag a term back to the user
   if their phrasing conflicts.
-- Read `docs/triage/decisions.md` — the **dismissal log**. The path is a repo convention shared
-  by every consumer of this skill; keep it so the log is found in the same place everywhere. Every
-  Dismiss records a reason there, and its **Declined patterns** section lists reusable "we don't
-  do this" rules to match new reports against (Step 1). If the file does not exist yet, create it
-  from [`references/decisions-log-template.md`](references/decisions-log-template.md) on the first
-  Dismiss.
+- Read `docs/triage/decisions.md` for its **Declined patterns** section — reusable "we don't do
+  this" rules to match new reports against (Step 1). The path is a repo convention shared by every
+  consumer of this skill; keep it so the rules are found in the same place everywhere.
+- Check `mcp__kendo__dismiss-report-tool`'s parameters once. When it takes `category` (+ `note`),
+  every Dismiss records its reason **on the report itself** and `docs/triage/decisions.md` holds
+  only the Declined patterns. A Kendo release without those parameters takes only `report_id`:
+  then the reason goes in that file's dismissal-log table instead, created from
+  [`references/decisions-log-template.md`](references/decisions-log-template.md) on the first
+  Dismiss. Either way a Dismiss is never silent.
 
 ## Why This Exists
 
 Reports are raw user signal — bug reports, feature requests, confusion, praise. **Most signal is
 not a new issue.** Some describes a real defect (→ issue). Some is a good idea aligned with where
-the product is going (→ issue). But plenty is a valid request that is off-strategy, premature, a
-support question, a duplicate, or noise.
+the product is going (→ issue). But plenty is a valid request that isn't planned, a duplicate,
+already shipped, or not a real, actionable report at all.
 
 The job of this skill is to decide the *right response* to each one — and to make that decision
 defensible against the product's direction, not just convert everything into board clutter. The
@@ -65,16 +73,17 @@ report into an issue. This flow is a judgment process.
 | **Promote** | Real signal, we want it, now | `promote-reports` (correctly typed, canonical template) |
 | **Combine / Epic** | Duplicate → one issue; thematic cluster (≥3) → epic | `promote-reports` batch, or `create-epic` + promote into it (`epic_id`) |
 | **Park** | Not deciding now — leave it alone | **No backend call, no record.** Report stays Pending and resurfaces next run. The deliberate "decide later" bucket (a better mechanism is a future call). |
-| **Dismiss (+ reason)** | Not becoming work: off-strategy / noise / duplicate / already-shipped / not-a-product-change | `dismiss-report` — **always record the reason** in the dismissal log |
+| **Dismiss (+ reason)** | Not becoming work: not-planned / invalid / duplicate / already-shipped | `dismiss-report` with `category` (+ optional `note`) — **always pass a reason**, recorded on the report |
 
-> **There is no separate "Decline".** A valid-but-unwanted request (off-strategy) is just a
-> **Dismiss** whose *reason* is "off-strategy" — the verdict is the same archive action, the
-> nuance lives in the recorded reason. "Off-strategy", "noise", "already-shipped", and
-> "not-a-product-change" are reason values, not distinct verdicts.
+> **There is no separate "Decline".** A valid-but-unwanted request (not-planned) is just a
+> **Dismiss** whose *reason* is "not-planned" — the verdict is the same archive action, the
+> nuance lives in the recorded reason. "Not-planned", "invalid", "duplicate" and
+> "already-shipped" are reason values, not distinct verdicts.
 >
-> **Every Dismiss records a reason.** The Kendo report queue stores no dismissal reason today, so
-> `docs/triage/decisions.md` is the interim home. If the product grows a `triage_reason` field on
-> the report itself, the ledger is retired in favour of it. A Dismiss is never a silent black hole.
+> **Every Dismiss records a reason.** `dismiss-report-tool` takes a `category` (+ optional
+> `note`), stored as `dismiss_reason` / `dismiss_reason_note` on the report. On a Kendo release
+> whose tool has no `category`, the dismissal log in `docs/triage/decisions.md` holds the reason
+> instead (see Prerequisites). A Dismiss is never a silent black hole.
 
 ## Step 0: Load product context (the fit oracle)
 
@@ -166,23 +175,24 @@ or overrides it. The recommendation logic:
 
 - wanted + cheap → recommend **Promote** now (easy win)
 - wanted + expensive → recommend **Park**, or an **epic** / `/plan-feature` pass
-- not wanted, or already-shipped / noise / not-a-product-change → recommend **Dismiss** (with the
-  reason); no need to size work you'd advise against
+- not wanted, or already-shipped / invalid → recommend **Dismiss** (with the reason); no need to
+  size work you'd advise against
 - genuinely unsure / "decide later" → recommend **Park** (leave it Pending)
 
 For each report, in order:
 
 1. **Read it.** What is the user actually *experiencing*? (Not yet: what did they ask for.)
 
-2. **Matches a declined pattern?** If the report matches a rule in the dismissal log's **Declined
-   patterns** (e.g. "mobile login without 2FA"), recommend **Dismiss** with that reason and a
+2. **Matches a declined pattern?** If the report matches a rule in `docs/triage/decisions.md`'s
+   **Declined patterns** (e.g. "mobile login without 2FA"), recommend **Dismiss** with that reason and a
    pointer to the pattern — no need to re-run the fit gate.
 
 3. **Classify** — this is the Bug / Feature / Task differentiation, made explicit. Reports carry
    no type (`source` is only Manual vs Api — provenance, not category), so type is *your*
    judgment:
-   - **Not a product change?** Support question, user error, docs gap, "how do I…" → it is not an
-     issue. Answer / redirect the user, then **Dismiss** with reason `not-a-product-change`.
+   - **Not a real product issue?** Support question, user error, docs gap, "how do I…" (answer /
+     redirect the user first), or spam / a test submission with nothing to act on → it is not an
+     issue. **Dismiss** with reason `invalid`.
    - **Bug** (`type: 1`) — existing behaviour is wrong or broken.
    - **Feature** (`type: 0`) — new user-facing capability.
    - **Task** (`type: 2`) — work with no direct user-facing surface: refactor, infra, perf,
@@ -200,7 +210,7 @@ For each report, in order:
      no product-context source, put the fit question to the user here, in one sentence.
    Form a *recommendation* — promote / park / dismiss — **in product terms**, not "low priority".
    This step is cheap, so form it **before** sizing: if your recommendation is **Dismiss** on fit
-   alone (off-strategy), skip the sizing pass (Step 4.6) — there's no point estimating work you're
+   alone (not-planned), skip the sizing pass (Step 4.6) — there's no point estimating work you're
    advising against. You still present it (Step 4.8) and the user makes the call; if they push back
    ("no, I want this"), *then* size it and re-present. Skipping sizing skips Grep calls, never the
    user.
@@ -237,16 +247,24 @@ For each report, in order:
    > **Effort:** **Small** — board already has multi-select (the selection store); add one
    > bulk-action + endpoint (~2 files + test)
    > **Overlap:** none open or shipped
+   > **Agent:** ready — precedent: the selection store's existing bulk-action; no siblings in flight
    > → Recommended: **Promote**, Medium
 
    - Recommendation **first**, marked "Recommended".
+   - **Agent line on every Promote/Combine card**, scored against the `Ready for Agent` criteria
+     (Prerequisites): `ready` plus the brief hints (in-tree precedent, blockers, coupled
+     siblings), or `not ready — <the failing criterion>`. When the only failing criterion is
+     **one open product decision**, put that decision to the user on the same card (as a verdict
+     variant or a second question) — a ruling now is what turns the issue ready, and it goes into
+     the issue body, not the label. Large effort is never labelled: recommend the epic split
+     instead.
    - **2–4 verdicts tailored to this report** (AskUserQuestion caps at 4 options + auto-"Other").
      Don't show verdicts that don't apply — e.g. *Combine* only when there is an overlap
      candidate; *Park* when it's genuinely a "decide later"; *Dismiss* (always state the reason)
-     for off-strategy / noise / duplicate / already-shipped / not-a-product-change.
+     for not-planned / invalid / duplicate / already-shipped.
    - When the user picks **Promote**, the effort band can seed `estimated_minutes` if they want it.
    - If sizing was skipped (a Dismiss-on-fit recommendation), the **Effort** line reads
-     *"not sized — recommending Dismiss (off-strategy)"*. If the user overrides toward
+     *"not sized — recommending Dismiss (not-planned)"*. If the user overrides toward
      Promote/Park, size it then and re-present the card.
    - Every **Dismiss** option must carry a one-line reason — that reason is what gets recorded.
 
@@ -296,8 +314,17 @@ Triage-specific deltas to apply on top of the templates:
   - `blocked_by_ids` / `blocks_ids` — when the report depends on or unblocks known issues.
 - **Labels**: `promote-reports-tool` does not accept `label_ids`. To attach labels, call
   `mcp__kendo__sync-issue-labels-tool` immediately after promotion using the new issue's `id`
-  and the label IDs resolved from `labels` in the Step 1 project-context response. Only do
-  this when the user explicitly requests a label.
+  and the label IDs resolved from `labels` in the Step 1 project-context response. Two cases:
+  - **`Ready for Agent`** — applied to every promoted issue whose card scored `ready`
+    (Step 4.8), resolved by name from the `labels` array. The user ratified the score with the
+    verdict, so no second confirmation. If the label is missing from the project, say so and
+    skip it; do not create labels from triage.
+  - **`Needs Decision`** — applied instead when the card scored `not ready` on the open
+    product decision alone and the user chose not to rule on the fork during triage. The ruling
+    later flips the label. Same by-name resolution, same skip when it's missing.
+  - Any other label only when the user explicitly asks for it.
+  `sync-issue-labels` replaces the whole set, so pass every label the issue should carry in one
+  call.
 - **Combine**: pass multiple `report_ids` in one call — the extra reports are dismissed
   automatically as part of the batch. For a thematic cluster, prefer `create-epic` then promote
   each into it via `epic_id`.
@@ -312,13 +339,17 @@ Fold any design decision the user made during triage into the issue **Context** 
 
 ### Dismiss (always with a reason)
 
-Run `mcp__kendo__dismiss-report-tool` with the `report_id`, **then record the reason** in
-`docs/triage/decisions.md` — never a silent dismiss. Append a row to the dismissal-log table
-(newest on top): report id, title, reason category (`off-strategy` / `noise` / `duplicate` /
-`already-shipped` / `not-a-product-change`), a one-line note, and `YYYY-MM-DD · <decider>`.
+Run `mcp__kendo__dismiss-report-tool` with the `report_id`, `category` (`not-planned` /
+`invalid` / `duplicate` / `already-shipped`), and an optional `note` — the reason is recorded
+directly on the report as `dismiss_reason` / `dismiss_reason_note`. No ledger entry to write.
+
+On a Kendo release whose tool takes only `report_id` (Prerequisites), dismiss with that, **then
+record the reason** in `docs/triage/decisions.md`: a row in the dismissal-log table (newest on
+top) with report id, title, the same reason category, a one-line note, and
+`YYYY-MM-DD · <decider>`.
 
 If the report is an instance of a recurring ask (especially from external users), also add or
-update a rule in the **Declined patterns** section so future matches can be dismissed on sight.
+update a rule in `docs/triage/decisions.md`'s **Declined patterns** section so future matches can be dismissed on sight.
 
 No confirmation needed — the user already confirmed the verdict via AskUserQuestion.
 
@@ -334,23 +365,24 @@ After all reports are processed, show:
 
 ```markdown
 ### Promoted (N)
-| Issue | Report | Type | Priority | Assignee |
-|-------|--------|------|----------|----------|
-| PROJ-XXXX | #XX | Feature/Bug/Task | Highest…Lowest | name or — |
+| Issue | Report | Type | Priority | Agent | Assignee |
+|-------|--------|------|----------|-------|----------|
+| PROJ-XXXX | #XX | Feature/Bug/Task | Highest…Lowest | ready / — (criterion) | name or — |
 
 ### Parked (N) — left Pending, no record
 | Report | Why deferred |
 |--------|--------------|
 | #XX | … |
 
-### Dismissed (N) — reason recorded in the dismissal log
+### Dismissed (N) — reason recorded on the report
 | Report | Reason | Note |
 |--------|--------|------|
-| #XX | off-strategy / already-shipped / … | … |
+| #XX | not-planned / already-shipped / … | … |
 ```
 
-If any reports were dismissed, remind the user the dismissal log was updated (and any new
-Declined pattern added).
+If any reports were dismissed, remind the user where each reason was recorded — on the report, or
+in the dismissal log on a release without `category` — and mention any new Declined pattern added
+to `docs/triage/decisions.md`.
 
 ## Edge cases
 
@@ -359,8 +391,9 @@ Declined pattern added).
   (`mcp__kendo__fetch-attachment-tool`) before deciding.
 - **Vague / terse reports**: present as-is; don't auto-dismiss for lack of detail — the user often
   knows what a terse report means.
-- **Recurring dismiss pattern**: if several reports request the same off-strategy thing, capture it
-  once as a **Declined pattern** in the dismissal log so the next instance is a one-glance Dismiss.
+- **Recurring dismiss pattern**: if several reports request the same not-planned thing, capture it
+  once as a **Declined pattern** in `docs/triage/decisions.md` so the next instance is a
+  one-glance Dismiss.
 - **Thematic cluster**: ≥3 reports on one theme → offer an epic (`create-epic` + `epic_id`) rather
   than N separate issues or a lossy Combine.
 - **User provides context not in the report**: fold their knowledge into the promoted issue.
