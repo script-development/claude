@@ -42,6 +42,7 @@ visible() {
 gauge() {
   local tokens="$1" thresholds="${2-$REAL_THRESHOLDS}"
   ( CTX_THRESHOLDS_FILE="$thresholds"
+    # shellcheck source=context-gauge.sh
     . "$GAUGE"
     context_gauge "$tokens" ) | visible
 }
@@ -51,6 +52,7 @@ gauge() {
 
 # Confirm the file under test really is the 200k/300k pair, so a threshold change breaks a
 # test rather than silently rewriting what these cases mean.
+# shellcheck source=context-economy/context-thresholds.sh
 ( . "$REAL_THRESHOLDS"
   [ "$CTX_NOTICE_TOKENS" = "200000" ] || { echo "FAIL: CTX_NOTICE_TOKENS is $CTX_NOTICE_TOKENS, tests assume 200000"; exit 1; }
   [ "$CTX_URGE_TOKENS" = "300000" ]   || { echo "FAIL: CTX_URGE_TOKENS is $CTX_URGE_TOKENS, tests assume 300000"; exit 1; }
@@ -184,6 +186,7 @@ leakage="$(
   RED='CONSUMER-RED'
   CTX_URGE_TOKENS='CONSUMER-URGE'
   CTX_THRESHOLDS_FILE="$REAL_THRESHOLDS"
+  # shellcheck source=context-gauge.sh
   . "$GAUGE"
   context_gauge 881000 >/dev/null
   printf '%s|%s' "$RED" "$CTX_URGE_TOKENS"
@@ -197,12 +200,14 @@ assert_eq "sourcing and calling clobbers neither colours nor thresholds" \
 # BASH_SOURCE-relative path. This is the case a foreign consumer actually hits, and the one a
 # "simplify it to $HOME/.claude/lib" change would silently break in the repo.
 # Act & Assert
+# shellcheck source=context-gauge.sh
 assert_eq "default resolution finds the nested thresholds unaided" \
   "<BOLD><RED>ctx:881k/300k handoff?<RESET>" \
   "$( ( unset CTX_THRESHOLDS_FILE; . "$GAUGE"; context_gauge 881000 ) | visible )"
 
 # It emits no trailing newline, so a consumer can interpolate it mid-line.
 # Act
+# shellcheck source=context-gauge.sh
 raw_len=$( ( unset CTX_THRESHOLDS_FILE; . "$GAUGE"; context_gauge 72346 ) | wc -c | tr -d ' ')
 # Assert
 assert_eq "no trailing newline" "7" "$raw_len"
