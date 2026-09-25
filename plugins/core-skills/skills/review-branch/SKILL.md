@@ -73,9 +73,11 @@ install, then a user-level install. Keep the first match:
 skill_dir=
 [ -d .claude/skills/review-branch ] && skill_dir=$(cd .claude/skills/review-branch && pwd)
 if [ -z "$skill_dir" ]; then
-  for d in "$HOME"/.claude/plugins/cache/*/core-skills/*/skills/review-branch; do
-    [ -d "$d" ] && skill_dir=$d
-  done
+  # Highest cached version wins: sort -V, not the glob's lexical order (0.3.0 > 0.22.0).
+  skill_dir=$(for d in "$HOME"/.claude/plugins/cache/*/core-skills/*/skills/review-branch; do
+    [ -d "$d" ] && printf '%s
+' "$d"
+  done | sort -V | tail -n 1)
 fi
 [ -z "$skill_dir" ] && [ -d "$HOME/.claude/skills/review-branch" ] && skill_dir="$HOME/.claude/skills/review-branch"
 echo "skill_dir=$skill_dir"
