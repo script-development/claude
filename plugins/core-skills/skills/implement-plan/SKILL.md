@@ -81,9 +81,11 @@ waiting for an explicit "yes" — the user can interrupt.
 
 ## Step 4: Load the right testing skill — mandatory if one exists
 
-**Before writing or modifying any test code**, invoke the project's testing skill if one exists.
-These skills typically carry the project's mock organization, AAA conventions, coverage
-requirements, and test file structure — none of which are obvious from existing tests.
+**Before writing or modifying any test code**, invoke the project's testing skill. Read
+`.claude/project-context.md`'s **Worktrees › House rules** for which one covers which side of the
+codebase; a testing skill the project ships but House rules don't name counts too. These skills
+carry the project's mock organization, AAA conventions, coverage requirements, and test file
+structure — none of which are in the plan or obvious from existing tests.
 
 If the plan touches multiple layers, load the testing skill for each layer.
 
@@ -112,17 +114,20 @@ variants, layout structure all live there.
 
 Once the implementation is in place, run the verification gauntlet in order of cost:
 
-1. Domain-narrow tests for the area you touched (use the project's single-run / pipeline
-   variant, not watch mode)
+1. Domain-narrow tests for the area you touched. The commands come from
+   `.claude/project-context.md`'s **Worktrees › Gates** table, narrowed to that area where a
+   narrowed variant exists; never a script Gates marks as hanging. No Gates section: the
+   project's own single-run / pipeline test variant, not watch mode.
 2. Anything the plan calls out under a "Verify" or "Acceptance Criteria" section that you can
    run yourself
 
 Don't run the full CI suite locally — CI runs that on the PR. Local runs are for the
 narrow domain you changed.
 
-Lint and type checks belong to the repo's gates — git hooks on commit and push, or CI. Run the
-repo's gates rather than a hand-picked lint command. If a hook fails, fix the underlying issue
-and re-commit/re-push.
+Lint and type checks belong to the repo's gates — git hooks on commit and push, or CI. When House
+rules say a hook or an on-edit formatter already runs a check, don't invoke it yourself; otherwise
+run the Gates rows rather than a hand-picked lint command. If a hook fails, fix the underlying
+issue and re-commit/re-push.
 
 For frontend changes, also drive the feature in a real browser — a browser-driving skill or the
 Playwright MCP — before declaring done. Code that compiles and tests-green can still be visually

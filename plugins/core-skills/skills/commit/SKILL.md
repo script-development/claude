@@ -4,8 +4,9 @@ description: >
   Create small, focused commits with proper messages and push to remote. Matches this project's
   own commit-message convention rather than imposing one, and reads .claude/project-context.md
   for this project's integration branch so the protected-branch check doesn't miss a
-  non-default name. Use whenever the user wants to commit, save progress, push changes, or says
-  "commit", "push", or "save my work".
+  non-default name. Keeps the branch's plan in step with the code it commits, follows the
+  project's hook rules, and refreshes an open PR's Summary after pushing. Use whenever the user
+  wants to commit, save progress, push changes, or says "commit", "push", or "save my work".
 ---
 
 # Commit
@@ -42,6 +43,18 @@ Group related changes into small, focused commits. Each commit should be a singl
 - **Config/CI** separate from **code changes**
 - **Lint/formatting** separate from **logic changes**
 
+Read `.claude/project-context.md`'s **Worktrees › House rules** once, if it has them: hooks that
+run on commit or push, formatters that run on edit, and any commit rule the project records
+there all apply to every commit below.
+
+**Keep the plan in step.** Resolve the branch's plan directory with the canonical algorithm in
+[`references/plan-directory.md`](../../references/plan-directory.md) (shipped with this plugin),
+under `plan_root` (default `docs/plans`). When one exists and a commit's diff changes behaviour
+that `PLAN.md`'s Approach or Scope, or a `DECISIONS.md` entry, describes, patch those files **in
+that same commit** — before `git commit`, not after the push. Lint fixes, tests and renames leave
+the plan alone. A plan that no longer matches its diff is what `precedent-reviewer` flags at
+`/review-branch`, and a stale plan misleads every later session that resumes from it.
+
 ### 4. For each commit
 
 a. Stage only the files for this logical change with `git add <specific files>`
@@ -69,6 +82,9 @@ EOF
 
 c. Repeat for each logical group of changes.
 
+A hook that fails is the gate working: fix the underlying issue and commit again. Never bypass it
+with `--no-verify`.
+
 ### 5. Push to remote
 
 ```bash
@@ -80,4 +96,11 @@ git push
   `origin/main`, or this project's `integration_branch`), fix it with `git push -u origin HEAD`
   before pushing.
 
-### 6. Report the commit hashes and confirm the push was successful.
+### 6. Refresh the PR Summary when a PR is open
+
+After a successful push, if `gh pr list --head "$(git branch --show-current)"` returns an open PR,
+splice its `## Summary` so it describes the branch as it now stands, using the recipe in
+[`pr/SKILL.md`](../pr/SKILL.md) § Refreshing an existing PR body. Summary only: never pass a
+partial body, and never add or rewrite any other section. No `gh`, or no PR: skip this step.
+
+### 7. Report the commit hashes and confirm the push was successful.

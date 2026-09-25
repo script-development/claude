@@ -1,10 +1,13 @@
 # `<repo-name>` — repo reference
 
-**This is a template, not a dependency.** Copy it to `<repo-name>.md` beside this file, where
-`<repo-name>` is what `/shepard` resolves from `git remote get-url origin` (last path segment,
-`.git` stripped). If no file matches the repo you are standing in, `/shepard` runs on its
-defaults and says so — that is a supported outcome, not a gap. You never need a file here to
-use the skill.
+**This is a template, not a dependency.** Copy it into the repo as
+`.claude/references/shepard-<repo-name>.md` when the repo runs `/shepard` from the plugin, or to
+`<repo-name>.md` beside this file for a checked-in or user-level copy of the skill. `<repo-name>`
+is what `/shepard` resolves from `git remote get-url origin` (last path segment, `.git`
+stripped). Gates and house rules the repo already records in `.claude/project-context.md` need
+not be repeated here: `/shepard` reads that file too. If no notes match the repo you are standing
+in, `/shepard` runs on its defaults and says so — that is a supported outcome, not a gap. You
+never need this file to use the skill.
 
 This file holds the repo. The reviewer's contract is not repeated here: it lives once in
 `../reviewers/crit.md`, and only what is specific to this repo about the reviewer goes below.

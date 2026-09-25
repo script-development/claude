@@ -75,12 +75,14 @@ Always execute [RED] items before [GREEN] items.
 
 ### Load testing skills before any test work
 
-If the project provides a domain-specific testing skill, invoke it **before** writing or modifying
-test code. These skills typically carry the project's mock organization, AAA conventions, coverage
-requirements, and test file structure — none of which are obvious from existing tests.
+Read `.claude/project-context.md`'s **Worktrees › House rules**. When it names a testing skill for
+the side of the codebase this task's tests touch, invoke that skill **before** reading or writing
+any test code, every task, not "when needed". These skills carry the project's mock organization,
+AAA conventions, coverage requirements and test file structure — none of which are obvious from
+existing tests. A testing skill the project ships but House rules don't name counts too.
 
-If the project doesn't have a testing skill, fall back to reading 1-2 existing tests in the area
-you're touching and matching their conventions.
+If the project has no testing skill, fall back to reading 1-2 existing tests in the area you're
+touching and matching their conventions.
 
 ### Use task scope as guardrails
 
@@ -94,10 +96,15 @@ After implementation, check if the task has a **"Verify before complete"** secti
 remind the user about the verification checks and run the ones you can (CI commands, test
 suites, type checkers). Don't block on manual verification steps — flag them for the user.
 
-Common verification patterns:
-- `/ci --quick` (or equivalent lint + types check)
-- Narrowed/pipeline test commands for the area you touched (avoid full-suite watch mode)
-- Coverage check if the project enforces a threshold
+Which commands to run come from `.claude/project-context.md`'s **Worktrees › Gates** table: run
+the rows for the sides of the codebase this task touched, narrowed to the area where a narrowed
+variant exists. A script Gates marks as hanging (a watch-mode test runner) is never run. No Gates
+section: use the project's own narrowed test command for the area you touched (never full-suite
+watch mode), plus the type checker, and a coverage check if the project enforces a threshold.
+
+Checks that House rules say a git hook already runs (lint at commit, types at push) are left to
+that hook — don't pre-emptively rerun them here. When a hook fails, fix the underlying issue and
+re-commit or re-push; never bypass it.
 
 **Verification is the per-task gate.** Reviewer agents no longer run per task — the three
 finders run once against the full branch via `/review-branch` before `/pr`.
