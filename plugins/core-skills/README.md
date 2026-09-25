@@ -44,8 +44,8 @@ back to, not re-explain the degrade-not-fail contract itself.
 | [install](skills/install/) | Create or top up `.claude/project-context.md` for the plugins installed here: detect values, confirm via AskUserQuestion, never overwrite; re-run after adding a plugin |
 | [catchup](skills/catchup/) | Load branch context, show progress, sync with base branch |
 | [worktree](skills/worktree/) | Cut a fresh git worktree: branch, deps, env files, project house rules, then hand back the path |
-| [commit](skills/commit/) | Small, focused commits matching this project's own message convention, + push |
-| [fix-bug](skills/fix-bug/) | End-to-end bug-fix workflow: reproduce, diagnose, propose, implement, gate on the bundled bug-fix-verifier agent, and hand off to `/pr` |
+| [commit](skills/commit/) | Small, focused commits matching this project's own message convention, plan kept in step, + push and PR Summary refresh |
+| [fix-bug](skills/fix-bug/) | End-to-end bug-fix workflow: reproduce, diagnose, propose, implement, gate on the bundled bug-fix-verifier agent (plus runtime-integrity-reviewer when `bug_runtime_review` is on), and hand off to `/pr` |
 | [implement-plan](skills/implement-plan/) | Execute a feature plan end-to-end without TASKS.md; runs `/review-branch` and acts on its findings before capturing learnings |
 | [newbranch](skills/newbranch/) | Create a new branch from this project's integration branch; if an issue tracker is configured, resolve/create the issue and start work on it |
 | [next](skills/next/) | Continue through TASKS.md — find next task, execute with TDD flow, mark done |
@@ -53,7 +53,7 @@ back to, not re-explain the degrade-not-fail contract itself.
 | [pr](skills/pr/) | Create a pull request with automatic issue feedback; offers `/review-branch` when this session has none for HEAD, and gates bug branches on `bug-fix-verifier`'s BUG.md verdict |
 | [review-branch](skills/review-branch/) | Full-branch review vs the integration branch: three finders (runtime-integrity, correctness, precedent) in parallel against a shared hunting corpus; reports tagged findings in chat |
 | [review-mcp-descriptions](skills/review-mcp-descriptions/) | Improve MCP tool/resource descriptions for Tool Search discoverability |
-| [shepard](skills/shepard/) | Drive one PR to green and answered: fix red CI, dispose every review finding, push once per cycle, arm a live watch |
+| [shepard](skills/shepard/) | Drive one PR to green and answered: fix red CI, dispose every review finding, push once per cycle, arm a live watch; reads the repo's notes from `.claude/references/shepard-<repo>.md` |
 | [sync-worktrees](skills/sync-worktrees/) | Sync every secondary git worktree with the primary: env files, dependencies, optional fast-forward |
 | [task-writer](skills/task-writer/) | Break down an approved PLAN.md into phased TASKS.md with a self-administered coverage checklist |
 
@@ -68,7 +68,7 @@ root, auto-discovered, no `plugin.json` entry needed.
 | [correctness-reviewer](agents/correctness-reviewer.md) | Find code that computes the wrong thing on paths the tests never take, and obligations the change created but did not meet — including user-facing text that promises what the code does not do; spawned always by `/review-branch` |
 | [plan-reviewer](agents/plan-reviewer.md) | Re-apply the module-shape lens independently and check a plan against codebase conventions (enums, auth, arch tests); spawned by `/plan-feature` Phase 5 in parallel with surface-reviewer |
 | [precedent-reviewer](agents/precedent-reviewer.md) | Check a branch against the repo's standing rules, sibling implementations, its own plan prose, and the CI config that decides what green means; spawned always by `/review-branch` |
-| [runtime-integrity-reviewer](agents/runtime-integrity-reviewer.md) | Find failures that vanish and guards that got weaker — swallowed errors, partial completion, unchecked boundaries, entry points missing a guard; spawned always by `/review-branch` |
+| [runtime-integrity-reviewer](agents/runtime-integrity-reviewer.md) | Find failures that vanish and guards that got weaker — swallowed errors, partial completion, unchecked boundaries, entry points missing a guard; spawned always by `/review-branch`, and by `/fix-bug` on bug branches that opt in |
 | [surface-reviewer](agents/surface-reviewer.md) | Audit a plan's Security & Cost Surface prose against the seven canonical row questions and the repo's standing rules; spawned by `/plan-feature` Phase 5 in parallel with plan-reviewer |
 
 ## Design record
