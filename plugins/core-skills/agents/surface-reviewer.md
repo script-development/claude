@@ -131,7 +131,7 @@ The failure shapes worth naming, because they're what plans actually do:
 - **Surfaces outside the seven rows** — put them under `### Out-of-scope observations`, unscored.
 - **Pre-existing gaps the plan doesn't touch** — audit only what this plan introduces or changes.
 - **Decided trade-offs.** If `DECISIONS.md` says "D8: defer the cross-tenant guard to
-  {{ISSUE_KEY_PREFIX}}-XXXX because X", don't re-litigate it. You may challenge the reasoning's
+  PROJ-XXXX because X", don't re-litigate it. You may challenge the reasoning's
   *factual basis* — "D8 rests on assumption Y, which is wrong because Z" is a finding. The
   *choice* to defer is not yours to overrule.
 
@@ -140,7 +140,7 @@ The failure shapes worth naming, because they're what plans actually do:
 Return to the parent agent:
 
 ```
-## Surface Review — Plan {{ISSUE_KEY_PREFIX}}-XXXX
+## Surface Review — Plan <issue key, or the plan folder name>
 
 ### Row-by-row verdicts
 
