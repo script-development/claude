@@ -53,7 +53,9 @@
 # own compaction event rather than predicting one from these thresholds -- a fixed absolute value
 # was never going to be the right automatic point on a window that can be anywhere from 100k to
 # 1M, which is exactly why nothing here arms anything.
+# shellcheck disable=SC2034  # read by the scripts that source this file, not here
 CTX_NOTICE_TOKENS=200000
+# shellcheck disable=SC2034  # read by the scripts that source this file, not here
 CTX_URGE_TOKENS=300000
 
 # ── Handoff budget ─────────────────────────────────────────────────────────
@@ -77,6 +79,7 @@ CTX_URGE_TOKENS=300000
 # g = 2.07k/turn is finding #6's measured pre-compaction growth rate in the
 # largest context in the corpus. Post-compaction it measured 1.38k/turn, which
 # would make the budget *more* generous; the stricter figure is used deliberately.
+# shellcheck disable=SC2034  # read by the scripts that source this file, not here
 CTX_GROWTH_TOKENS_PER_TURN=2070
 
 # Finding #6's simulation assumed a 25k handoff — ~12 turns of work per reset, and
@@ -84,7 +87,9 @@ CTX_GROWTH_TOKENS_PER_TURN=2070
 # says so loudly. Both are ADVISORY and never fail the gate: a size gate would
 # push an author to cut the non-citable half to fit, which is exactly the
 # inversion D6 exists to prevent. Cut Pointers instead — they re-derive.
+# shellcheck disable=SC2034  # read by the scripts that source this file, not here
 HANDOFF_TARGET_TOKENS=4000
+# shellcheck disable=SC2034  # read by the scripts that source this file, not here
 HANDOFF_CEILING_TOKENS=8000
 
 # The 4-chars-per-token rule is too generous for code, JSON and diffs; the report
@@ -92,6 +97,7 @@ HANDOFF_CEILING_TOKENS=8000
 # 2.68. Kept as an integer x100 so the tool needs no floating point. A handoff is
 # more prose than code, so this UNDER-states its token count slightly — the
 # conservative direction for a budget.
+# shellcheck disable=SC2034  # read by the scripts that source this file, not here
 CTX_CHARS_PER_TOKEN_X100=268
 
 # ── The compact read leg's coverage check ──────────────────────────────────
@@ -119,6 +125,7 @@ CTX_CHARS_PER_TOKEN_X100=268
 # choosing their own moment would. The current automatic path (`PreCompact` ->
 # `hooks/handoff-fork-write.sh`) writes no such sidecar, so `handoff-inject.sh`'s fallback to this
 # constant is now the only path taken, for every handoff regardless of how it was triggered.
+# shellcheck disable=SC2034  # read by the scripts that source this file, not here
 CTX_HANDOFF_ACCEPTABLE_GAP_TOKENS=10350
 
 # ── The fork write's timeout, and the read leg's abandoned-write threshold (D23) ──────────

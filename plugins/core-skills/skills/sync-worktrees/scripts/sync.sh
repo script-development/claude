@@ -150,6 +150,8 @@ for wt in "${SECONDARIES[@]}"; do
     found=1
     dir=$(dirname "$manifest")
     label=${dir#"$wt"}; label=${label#/}; label=${label:-.}
+    # The order is deliberate: stderr joins the report on stdout, only npm's stdout is dropped.
+    # shellcheck disable=SC2069
     if (cd "$dir" && npm install --silent 2>&1 >/dev/null); then
       echo "  npm:      $label ok"
     else
