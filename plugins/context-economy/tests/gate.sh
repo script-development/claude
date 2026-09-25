@@ -39,6 +39,11 @@
 #       nothing, which is unreadable in a passing run and useless in a failing one.
 #   g7  Every suite prints a FINAL TALLY. The anti-silence rule turned on the suites themselves: a
 #       run that emits no summary cannot be told apart from a run that did nothing.
+#   g8  No SKILL.md carries a DOLLAR-DIGIT token. Claude Code replaces `$0`, `$1`, ... in a skill
+#       body with the matching skill argument before the model reads it, code fences included, and
+#       only when that argument exists. So `awk '{print $1}'` survives every test run with no
+#       arguments and turns into `awk '{print session}'` the day an orchestrator passes two. Not a
+#       test-suite rule, but the same silent class: the snippet still runs, on the wrong value.
 #
 # Run it as:
 #
@@ -171,6 +176,21 @@ while IFS= read -r rel; do
         bad "g7 final tally    $rel" "no summary line; a silent run cannot be told from a run that did nothing"
     fi
 done <<< "$suites"
+
+# --- g8 -- skill bodies survive argument substitution ------------------------
+skills=$(find "$root" -name SKILL.md -type f | sed "s|^$root/||" | sort)
+if [ -z "$skills" ]; then
+    skip "g8 skill tokens" "no SKILL.md under $root"
+else
+    while IFS= read -r rel; do
+        hits=$(grep -nE '\$[0-9]' "$root/$rel" | cut -d: -f1 | paste -sd, -)
+        if [ -z "$hits" ]; then
+            ok "g8 skill tokens   $rel"
+        else
+            bad "g8 skill tokens   $rel" "dollar-digit token on line(s) $hits; skill arguments will replace it"
+        fi
+    done <<< "$skills"
+fi
 
 # --- Optional: actually run them -------------------------------------------
 #

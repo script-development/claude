@@ -189,7 +189,9 @@ worktree. Get this wrong and everything below is keyed to the wrong repository.
 ```bash
 TARGET=<absolute path of the checkout the work is in>   # cwd only if that is genuinely where it is
 
-main=$(git -C "$TARGET" worktree list | head -1 | awk '{print $1}')
+# cut, not awk: Claude Code substitutes a dollar-digit token in a skill body with the matching
+# skill argument, fences included. The string must stay byte-identical to what the hooks hash.
+main=$(git -C "$TARGET" worktree list | head -1 | cut -d' ' -f1)
 here=$(git -C "$TARGET" rev-parse --show-toplevel)
 ref=$(git -C "$TARGET" rev-parse --abbrev-ref HEAD)
 [ "$ref" = HEAD ] && ref=$(git -C "$TARGET" rev-parse --short HEAD)
