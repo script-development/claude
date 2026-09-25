@@ -113,9 +113,13 @@ kendo issue list --lane "To Do"       # Filter by lane name or ID
 kendo issue list --sprint active      # Filter by sprint ID or "active"
 kendo issue list --type bug           # Filter by type
 kendo issue list --priority high      # Filter by priority
+kendo issue list --label bug          # Filter by label name or ID
+kendo issue list --assignee "Jane Doe"  # Filter by user ID or full name
+kendo issue list --epic 9             # Filter by epic ID or title
 kendo issue view <REF>                # View issue by key (e.g. PROJ-0255) or ID (e.g. 390)
 kendo issue my                        # List issues assigned to current user
-kendo issue search <QUERY>            # Search issues by text (title, description, key)
+kendo issue search <QUERY>            # Search issues by text (title, description, key); takes the same filter flags
+kendo issue count --group-by lane     # Count issues per group, plus the total; takes the same filter flags
 kendo issue create --title "Title"    # Create issue (see flags below)
 kendo issue update <REF> [flags]      # Update issue fields
 kendo issue move <REF> <LANE_ID>      # Move issue to a lane
@@ -130,6 +134,26 @@ kendo issue list --sprint active --lane "In Progress"       # What's being worke
 kendo issue list --sprint active --type bug --priority high  # Urgent bugs in current sprint
 kendo issue list --sprint active --lane "In Review"          # What's waiting for review
 ```
+
+Every filter flag is repeatable (any of the values matches) and has an `--exclude-*` twin:
+```bash
+kendo issue list --lane "To Do" --lane "In Progress"         # Issues in either lane
+kendo issue list --exclude-lane Done --exclude-type task     # Everything except done issues and tasks
+kendo issue list --sprint active --assignee none             # Unassigned work in the current sprint
+kendo issue count --group-by assignee --sprint active --exclude-lane Done  # Open sprint work per person
+kendo issue count --group-by label --json                    # { total, groups: [{ key, label, count }] }
+```
+
+- `none` is a value for `--assignee`, `--epic`, `--sprint` and their `--exclude-*` forms:
+  unassigned, no epic, backlog.
+- Excluding a person, epic or sprint keeps the issues that have none, unless `none` is excluded
+  too. A value both included and excluded is excluded.
+- A name that matches nothing, or that two members or two epics share, fails before any issue is
+  fetched.
+- `--group-by` is required: `lane`, `assignee`, `sprint`, `epic`, `priority`, `type` or `label`.
+  Grouped by label, the rows can sum above the total.
+- `issue list` filters client-side over the full issue walk. `issue search` and `issue count`
+  filter on the server (search is capped at `--limit`, max 500).
 
 **Issue create flags:**
 
@@ -160,14 +184,17 @@ kendo issue list --sprint active --lane "In Review"          # What's waiting fo
 ```bash
 kendo search <QUERY>                  # Search across all projects
 kendo search <QUERY> --project-id 1   # Filter by project
-kendo search <QUERY> --type bug       # Filter by type
+kendo search <QUERY> --type bug       # Filter by type (feature, bug, task)
 kendo search <QUERY> --priority high  # Filter by priority
-kendo search <QUERY> --lane 2         # Filter by lane
-kendo search <QUERY> --sprint 12      # Filter by sprint
-kendo search <QUERY> --epic 9         # Filter by epic
-kendo search <QUERY> --assignee 1     # Filter by assignee
-kendo search <QUERY> --limit 50       # Max results (1-100, default 25)
+kendo search <QUERY> --lane 2         # Filter by lane ID
+kendo search <QUERY> --sprint 12      # Filter by sprint ID
+kendo search <QUERY> --epic 9         # Filter by epic ID
+kendo search <QUERY> --assignee 1     # Filter by user ID
+kendo search <QUERY> --limit 50       # Max results (1-500, default 25)
 ```
+
+`kendo search` takes one ID per flag and has no `--exclude-*` forms or `none`. For several values,
+exclusions or counts, select the project and use `kendo issue search` / `kendo issue count`.
 
 ### Board
 

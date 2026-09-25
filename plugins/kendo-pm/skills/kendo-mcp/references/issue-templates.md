@@ -1,7 +1,7 @@
 # Issue Templates
 
 Single source of truth for how issues are written in this project. Used by `/newbranch`,
-`/triage-reports`, `/plan-feature`, `/task-writer`, and `/kendo-cli` — any skill that creates
+`/kendo-pm:triage-reports`, `/plan-feature`, `/task-writer`, and `/kendo-pm:kendo-cli` — any skill that creates
 or promotes issues.
 
 ## Contents
@@ -196,4 +196,4 @@ Acceptance Criteria should describe what 'done' looks like at the level appropri
 
 ## Examples
 
-Filled-in examples are stack-specific (Vue/Laravel/Pest/etc.) and stay consumer-side. Each consumer maintains its own examples file alongside this one if useful — the catalog version intentionally ships templates only.
+Filled-in examples are stack-specific (Vue/Laravel/Pest/etc.) and stay consumer-side: a project keeps its own examples file in the repo and names it as `references.issue_examples` in `.claude/project-context.md`, and every skill that writes an issue reads it beside this file. This file intentionally ships templates only.
