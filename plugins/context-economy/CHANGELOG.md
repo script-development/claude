@@ -26,9 +26,16 @@ convention in `RELEASING.md`.
   recorded and passed to `--session-id`, matching the lowercase `openssl` fallback.
 - **`hooks/handoff-fork-write.sh` still picked the lexically last cached version** for its gate
   and skill lookups (the gap 1.0.1 left open). Both now sort with `sort -V`, as Step 1 does.
+- **`/handoff` given two or more arguments in write mode could file the handoff where nothing
+  reads it.** Claude Code replaces `$1` in a skill body with the second skill argument, code
+  fences included, so Step 1's `awk '{print $1}'` arrived as `awk '{print session}'` when an
+  orchestrator passed free text. That computes the wrong main checkout, which keys the store
+  path. Step 1 uses `cut -d' ' -f1` now, which gives the same string the hooks hash. The
+  PreCompact fork was never affected: it reads the skill file instead of invoking the skill.
 
 ### Tests
 
+- `tests/gate.sh` gains g8: no `SKILL.md` may carry a dollar-digit token.
 - Every suite passes under bash 3.2.57 (the `bash:3.2` image) as well as bash 5. Where 3.2
   behaves differently the suite says so instead of failing: a `set -e` inside a sourced
   thresholds file still fires in an OR-list there, and the no-`timeout` case skips because an
