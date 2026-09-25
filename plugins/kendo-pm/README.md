@@ -11,7 +11,7 @@ Kendo tenant, so a consumer without one has no reason to install it.
 
 ## Dependency on `core-skills`
 
-`prepare-issue` invokes `/newbranch`, a `core-skills` skill, once it confirms no branch already
+`prepare-issue` invokes `/core-skills:newbranch`, a `core-skills` skill, once it confirms no branch already
 exists for the issue being prepared — a repo-state-gated call, not an optional one. This plugin's
 manifest (`.claude-plugin/plugin.json`) declares `core-skills` as a `dependencies` entry, so
 installing `kendo-pm` installs and enables `core-skills` automatically; see the [Claude Code docs
@@ -39,8 +39,10 @@ project id discoverable. There's no
 `kendo-pm` install skill of its own: the `core-skills` dependency above guarantees that one is
 always present.
 
-`kendo-mcp` and `kendo-cli` read nothing from the file — both discover their project id at
-runtime instead. `triage-reports` and `prepare-issue` read `issue_tracker_project_id`. Add a
+`kendo-mcp` and `kendo-cli` discover their project id at runtime instead; `kendo-mcp` reads only
+`references.issue_examples`, the project's filled-in issue examples. `triage-reports` and
+`prepare-issue` read `issue_tracker_project_id`, and `triage-reports` also reads
+`references.agent_ready`, a project's own `Ready for Agent` calibration. Add a
 project-context mechanism of this plugin's own only if a future skill needs a fact `core-skills`'
 template can't already cover.
 
@@ -50,7 +52,7 @@ template can't already cover.
 |-------|-------------|
 | [kendo-cli](skills/kendo-cli/) | Kendo CLI for issues, sprints, epics, time tracking — from the terminal, no MCP server required |
 | [kendo-mcp](skills/kendo-mcp/) | Kendo MCP server integration for issue management: issues, sprints, epics, time tracking, reports, attachments |
-| [prepare-issue](skills/prepare-issue/) | Prepare a kendo issue: assign, branch (via `core-skills`' `/newbranch`), link, move to In Progress, optionally check out in a worktree |
+| [prepare-issue](skills/prepare-issue/) | Prepare a kendo issue: assign, branch (via `/core-skills:newbranch`), link, move to In Progress, optionally check out in a worktree |
 | [triage-reports](skills/triage-reports/) | Walk pending Kendo reports one-by-one; promote, combine, park, or dismiss with a reason recorded on the report; score promotions for `Ready for Agent` |
 
 ## Design record

@@ -1,14 +1,15 @@
 # Ready for Agent
 
 When an issue earns the `Ready for Agent` label, and what the label promises. Read by
-`/triage-reports` (which applies it at promotion), by whoever picks work for an agent (a
+`/kendo-pm:triage-reports` (which applies it at promotion), by whoever picks work for an agent (a
 developer's own session, an orchestrator, a queue view on the board), and by any skill that
 writes issues. Resolve the label id by name from `prepare-project-context`'s `labels` array;
 never hardcode it.
 
 These are the generic criteria. A project that calibrates its own — named precedents, the
-provider consoles it depends on, its own epic history — keeps that copy at
-`.claude/references/agent-ready.md`, and `/triage-reports` reads it instead of this file.
+provider consoles it depends on, its own epic history — keeps that copy in the repo and names it
+as `references.agent_ready` in `.claude/project-context.md`; `/kendo-pm:triage-reports` reads it
+instead of this file.
 
 ## What the label means
 

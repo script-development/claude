@@ -3,7 +3,7 @@ name: prepare-issue
 description: >
   Prepare a kendo issue for development: assign to current user, create a feature branch,
   link it, move to In Progress, and optionally check out in a worktree with full setup.
-  Usage: /prepare-issue <issue_key_or_id_or_url> [N]. Use whenever the user wants to start working
+  Usage: /kendo-pm:prepare-issue <issue_key_or_id_or_url> [N]. Use whenever the user wants to start working
   on an issue, prepare an issue, pick up an issue, or says "prepare issue", "start issue",
   "work on issue". Also trigger when combining issue assignment with branch creation, or when
   the user wants to set up a worktree for an issue.
@@ -19,7 +19,7 @@ Task preparation assistant. Arguments: `$issue` (required), `$worktree` (optiona
 - Reads `issue_tracker_project_id` from `.claude/project-context.md` (see this plugin's own
   [README](../../README.md)) for the project to prepare issues in. If unset, discover it via
   `kendo-mcp`'s own `kendo://projects` resource and ask the user which project to use.
-- Step 6 invokes `/newbranch`, a `core-skills` skill — declared as a dependency in this plugin's
+- Step 6 invokes `/core-skills:newbranch`, a `core-skills` skill — declared as a dependency in this plugin's
   manifest, so installing `kendo-pm` installs `core-skills` automatically; no separate setup step
   needed.
 - Step 7 Option C optionally invokes the consumer's own `/startup` skill to set up a new
@@ -97,7 +97,7 @@ user). Confirm: "Assigning to **{current_user.name}** — correct?"
 
 If they want to assign to someone else, use `members[]` from the project context bundle to let
 them pick. Capture the resulting `assignee_id` — the actual write happens later, in Step 6 (via
-`/newbranch`) or Step 5A (existing-branch path), wrapped into the single `start-work-on-issue-tool`
+`/core-skills:newbranch`) or Step 5A (existing-branch path), wrapped into the single `start-work-on-issue-tool`
 call. **Do not** make a separate `update-issue-tool` call here — that doubles up with the work
 done at the end.
 
@@ -141,7 +141,7 @@ Also check if the **current branch** might be related to the issue. Three outcom
 
 ### A. Clear match — branch contains the issue number (e.g. `PROJ-0147`, `PROJ-147`)
 
-Skip `/newbranch` entirely. Check out the existing branch (if not already on it), then run a
+Skip `/core-skills:newbranch` entirely. Check out the existing branch (if not already on it), then run a
 single idempotent `start-work-on-issue-tool` call to align the issue state with the branch:
 
 ```
@@ -171,27 +171,27 @@ If the user picks "Use this branch", treat it as case A. Otherwise, proceed to S
 
 ### C. No match — no local branch contains the issue number and the current branch is unrelated
 
-Proceed to create a new branch via `/newbranch` (Step 6).
+Proceed to create a new branch via `/core-skills:newbranch` (Step 6).
 
-## Step 6: Create branch via /newbranch (skip if branch exists)
+## Step 6: Create branch via /core-skills:newbranch (skip if branch exists)
 
-Invoke the `/newbranch` skill with the issue key (e.g. `PROJ-0244`) as argument.
+Invoke the `/core-skills:newbranch` skill with the issue key (e.g. `PROJ-0244`) as argument.
 Pass through the `assignee_id` you confirmed in Step 2 if it differs from `current_user`
-(otherwise `/newbranch` defaults to its own bundle of `current_user`).
+(otherwise `/core-skills:newbranch` defaults to its own bundle of `current_user`).
 
-`/newbranch` handles:
+`/core-skills:newbranch` handles:
 - Fetching latest from origin
 - Creating the branch (`PROJ-XXXX-slug` from the project's integration branch)
 - Calling `start-work-on-issue-tool` to assign, move to In Progress, add to the active sprint,
   and link the branch — all in one idempotent MCP call
 
-After `/newbranch` completes, note the **branch name** it created.
+After `/core-skills:newbranch` completes, note the **branch name** it created.
 
 ## Step 7: Handle worktree choice
 
 ### Option A: Primary worktree
 
-Nothing else to do — `/newbranch` already checked out the branch here.
+Nothing else to do — `/core-skills:newbranch` already checked out the branch here.
 
 ### Option B: Existing worktree
 
@@ -237,7 +237,7 @@ If the issue's `type` is `1` (Bug), append one extra line suggesting the bug
 workflow — this skill doesn't run it, it just surfaces the next step:
 
 ```
-  → Bug report detected. Next: /fix-bug {key}
+  → Bug report detected. Next: /core-skills:fix-bug {key}
 ```
 
 For Feature (`type: 0`) or Task (`type: 2`) issues, skip the hint. The

@@ -31,8 +31,8 @@ the evidence and recommends.
   file is the single source of truth for Feature (user story), Bug (cause-known / repro-first), and
   **Task** formats. This skill does **not** carry its own copies — always write promoted issues
   against the canonical templates so they match every other issue in the backlog.
-- The **`Ready for Agent`** criteria: `.claude/references/agent-ready.md` in the repo when it has
-  one (a project's own calibration wins), else `kendo-mcp`'s
+- The **`Ready for Agent`** criteria: the file `references.agent_ready` names in
+  `.claude/project-context.md` when set (a project's own calibration wins), else `kendo-mcp`'s
   [`references/agent-ready.md`](../kendo-mcp/references/agent-ready.md). Every Promote verdict is
   scored against them (Step 4.8) and the label is applied at promotion (Step 5). The criteria
   live there, not here.
@@ -46,13 +46,14 @@ the evidence and recommends.
   if their phrasing conflicts.
 - Read `docs/triage/decisions.md` for its **Declined patterns** section — reusable "we don't do
   this" rules to match new reports against (Step 1). The path is a repo convention shared by every
-  consumer of this skill; keep it so the rules are found in the same place everywhere.
+  consumer of this skill; keep it so the rules are found in the same place everywhere. Create the
+  file on first need with a `# Triage decisions` heading and a `## Declined patterns` list, one
+  bullet per rule: the ask, the persona or principle it conflicts with, the date first declined.
 - Check `mcp__kendo__dismiss-report-tool`'s parameters once. When it takes `category` (+ `note`),
   every Dismiss records its reason **on the report itself** and `docs/triage/decisions.md` holds
   only the Declined patterns. A Kendo release without those parameters takes only `report_id`:
-  then the reason goes in that file's dismissal-log table instead, created from
-  [`references/decisions-log-template.md`](references/decisions-log-template.md) on the first
-  Dismiss. Either way a Dismiss is never silent.
+  then the reason goes in a `## Dismissal log` table in that file instead (see Step 5, Dismiss).
+  Either way a Dismiss is never silent.
 
 ## Why This Exists
 
@@ -174,7 +175,7 @@ You never decide a verdict yourself — every report is presented in Step 4.8 an
 or overrides it. The recommendation logic:
 
 - wanted + cheap → recommend **Promote** now (easy win)
-- wanted + expensive → recommend **Park**, or an **epic** / `/plan-feature` pass
+- wanted + expensive → recommend **Park**, or an **epic** / `/core-skills:plan-feature` pass
 - not wanted, or already-shipped / invalid → recommend **Dismiss** (with the reason); no need to
   size work you'd advise against
 - genuinely unsure / "decide later" → recommend **Park** (leave it Pending)
@@ -225,7 +226,7 @@ For each report, in order:
    - **Small** — one component or handler + its test; under half a day.
    - **Medium** — a few files across layers (UI + backend + maybe a migration); ~1–2 days.
    - **Large** — new subsystem, multi-layer, or a migration with backfill. Doesn't fit one
-     issue → recommend an **epic** or a `/plan-feature` pass, not a flat promote.
+     issue → recommend an **epic** or a `/core-skills:plan-feature` pass, not a flat promote.
 
    *"Small — board already has multi-select via the selection store; add one bulk-action +
    endpoint"* beats *"~4h"*. For **bugs**, sizing is lighter (one-line fix or a rabbit hole?) and
@@ -284,7 +285,7 @@ The user may:
 
 The sizing pass (Step 4.6) is an **estimate, not a spec**. A few Grep/Glob calls to confirm
 whether the hook already exists and gauge how many layers it touches — then pick a band and move
-on. The point is a verdict, not a plan; precision is what `/plan-feature` is for *after* the
+on. The point is a verdict, not a plan; precision is what `/core-skills:plan-feature` is for *after* the
 report is promoted. Go deeper (an Explore agent) only when the user asks, or when the estimate
 straddles a band boundary that changes the verdict (e.g. "Small → just promote" vs "Large → epic").
 
@@ -344,9 +345,16 @@ Run `mcp__kendo__dismiss-report-tool` with the `report_id`, `category` (`not-pla
 directly on the report as `dismiss_reason` / `dismiss_reason_note`. No ledger entry to write.
 
 On a Kendo release whose tool takes only `report_id` (Prerequisites), dismiss with that, **then
-record the reason** in `docs/triage/decisions.md`: a row in the dismissal-log table (newest on
-top) with report id, title, the same reason category, a one-line note, and
-`YYYY-MM-DD · <decider>`.
+record the reason** in `docs/triage/decisions.md`: a row in its `## Dismissal log` table (add the
+section above Declined patterns if it is missing), newest on top:
+
+```markdown
+| Report ID | Title | Reason | Note | Dismissed |
+|-----------|-------|--------|------|-----------|
+| 42 | "add velocity charts" | not-planned | Matches the metrics-dashboards declined pattern. | 2026-01-01 · <decider> |
+```
+
+Once the tenant's release accepts `category`, stop adding rows; the report is the record.
 
 If the report is an instance of a recurring ask (especially from external users), also add or
 update a rule in `docs/triage/decisions.md`'s **Declined patterns** section so future matches can be dismissed on sight.
