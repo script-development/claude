@@ -61,7 +61,7 @@ product; the severity does not.
 
 | Disposition | When it applies | What it produces |
 |---|---|---|
-| **FIX** | The reviewer is right (or the job is genuinely broken by this branch), the code is in this diff, and the fix has one defensible shape | An edit here in chat → checks → push |
+| **FIX** | The reviewer is right (or the job is genuinely broken by this branch), the code is in this diff, the failure can happen in production, and the fix has one defensible shape | An edit here in chat → checks → push |
 | **DESIGN CALL** | Real, but more than one fix shape is defensible, or the fix moves a boundary | A grounded `AskUserQuestion` round (step 5), then a fix |
 | **FOLLOW-UP** | Real, but the code predates this PR — fixing it widens the diff the reviewer is judging | An issue or report on the board that owns the code (step 6 says which), and a reply that defers to it by name |
 | **ACCEPTED** | Real, but the failure needs conditions that will not occur here — including a CI job already red on the integration branch | A reply that names the behaviour and declines the work, plus a durable record |
@@ -219,11 +219,18 @@ One table for both surfaces. Present, in this order:
 - **In the contract** — a finding that contradicts the issue's explicit intent is a DESIGN CALL.
   Never silently side with the reviewer or with the issue.
 
-Three bars for the dispositions that are easy to hand out cheaply:
+Four bars for the dispositions that are easy to hand out cheaply:
 
 - **ACCEPTED needs the conditions named, not a feeling.** Say what has to be true for the failure to
   occur and why it cannot be true here. "Unlikely in practice" is not a condition. If you cannot
   name them, it is a FIX or a FOLLOW-UP.
+- **FIX needs a failure that can happen.** Before FIX, name the input or state that triggers it,
+  and check that production can reach it: real tenants, real data, the configuration production
+  runs. A failure that needs a hostile file, an input size production never sees, or a
+  configuration production does not use is ACCEPTED, even when the fix is one line. Every fix is
+  code the next round reviews. crit's `confidence: confirmed` says the mechanism holds, not that
+  its conditions occur. On crit #375 round 2 (2026-09-27), four confirmed findings were fixed and
+  none was app-breaking. The developer ruled: "push back on edge cases instead of fixing".
 - **FOLLOW-UP needs the code to predate the diff.** Check it: `git log -1 --format=%h -- <file>`
   against the PR's own commits, or read `git diff <integration>...HEAD -- <file>`. A finding inside
   the diff you would rather not fix is an ACCEPTED or a DESIGN CALL — ticketing it is how a real
