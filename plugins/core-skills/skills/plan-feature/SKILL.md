@@ -21,7 +21,7 @@ entire conversation.
 
 This skill is project-agnostic: it never assumes a specific issue tracker, tracker project id, or
 issue-key format. It reads `issue_tracker_skill` / `issue_tracker_project_id` (Phase 0, 1a, 4a)
-`references.hazards` (Phase 1.6), `references.site_docs_sync` (the plan's Site Documentation
+`references.hazards` and the Review › Accepted failures section (Phase 1.6), `references.site_docs_sync` (the plan's Site Documentation
 Sync table) and `plan_root` (Phase 4b, 4c) from `.claude/project-context.md` — see this plugin's README for
 how that file and its notation work.
 
@@ -237,7 +237,7 @@ Output the table verbatim to the developer with marks and citations filled in. I
 
 Produce a `## Security & Cost Surface` section in PLAN.md with **seven prose paragraphs**, each answering the questions for one row and ending with its Proof line — or `N/A — <one-line reason>` when no question on the row applies. **You may not proceed past Phase 1.6 with any unanswered question on a populated row.**
 
-The canonical questions and worked examples live at [`references/surface-questions.md`](references/surface-questions.md) — load it now. It is the single source of truth shared with the `surface-reviewer` agent at Phase 5. The rows are deliberately question-shaped, not field-shaped, so they generalise to feature shapes not seen yet. When `.claude/project-context.md` sets `references.hazards`, read that file too: it lists the defect shapes that reached review in this repo after a plan, each with the seam or gate that ends it and the row that asks about it. A row whose shape is listed there needs an answer that names that seam, not a generic one.
+The canonical questions and worked examples live at [`references/surface-questions.md`](references/surface-questions.md) — load it now. It is the single source of truth shared with the `surface-reviewer` agent at Phase 5. The rows are deliberately question-shaped, not field-shaped, so they generalise to feature shapes not seen yet. When `.claude/project-context.md` sets `references.hazards`, read that file too: it lists the defect shapes that reached review in this repo after a plan, each with the seam or gate that ends it and the row that asks about it. A row whose shape is listed there needs an answer that names that seam, not a generic one. When the same file has a `## Review › ### Accepted failures` section, read it as well: a failure whose only producer it lists as not defended needs no guard in the plan, and the row's answer says so by naming the class; a class it lists as still guarded is answered with the guard it names.
 
 Architecture tests do not cover this. They cover *code shape* — not the flow of untrusted bytes, billing dollars, audit fidelity, partial-failure state space, silent UX degradation, or enforcement of conventions the feature introduces. [`references/quality-gates.md`](references/quality-gates.md) carries the rationale and the sycophancy guards (paraphrasing the questions back is THIN, not OK; an LLM-touching feature cannot mark Row 1 N/A).
 

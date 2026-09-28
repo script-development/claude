@@ -134,15 +134,40 @@ Put the evidence in each option's description (*"PRs #41–#60 all merged into `
 user is confirming a fact, not guessing. If AskUserQuestion is unavailable (a headless run), take
 every `(Recommended)` option and list the choices in the summary for review.
 
-**Prose sections** (`## Worktrees` → Setup, Gates, House rules): these hold only knowledge
-verified in this project, with its *why*. Don't invent it. Write each applicable subsection's
-heading only if it gets confirmed content; an empty subsection is left out, not stubbed. Offer —
-once, as a single question — to draft Gates from the project's own scripts (`package.json`
-scripts, `composer.json` scripts, `Makefile` targets). If the user accepts, check that each
-script exists, then ask a second question whose option carries the **exact text** to be written
-as an AskUserQuestion `preview` (the table plus any notes, such as a watch-mode script that never
-exits). Write that confirmed text verbatim; a line the user never saw doesn't go in. A guess
-recorded here is followed by every skill as if it were verified.
+**Prose sections** (`## Review` → Accepted failures; `## Worktrees` → Setup, Gates, House
+rules): these hold only knowledge verified in this project, with its *why*. Don't invent it.
+Write each applicable subsection's heading only if it gets confirmed content; an empty subsection
+is left out, not stubbed. Offer — once, as a single question — to draft Gates from the project's
+own scripts (`package.json` scripts, `composer.json` scripts, `Makefile` targets). If the user
+accepts, check that each script exists, then ask a second question whose option carries the
+**exact text** to be written as an AskUserQuestion `preview` (the table plus any notes, such as a
+watch-mode script that never exits). Write that confirmed text verbatim; a line the user never saw
+doesn't go in. A guess recorded here is followed by every skill as if it were verified.
+
+**Accepted failures** is a ruling, not a fact the repo can show, so the user makes every line of
+it. Two paths, in this order:
+
+1. **Migrate a ruling the project already has.** Grep the instruction files (`CLAUDE.md`,
+   `AGENTS.md`, nested ones included) and plan `DECISIONS.md` files for a section that names
+   failures the project will not guard against: *"does not defend against"*, *"assumes its own
+   stack works"*, *"do not add a try/catch"*, *"accepted risk"*. Found → map each of its entries
+   onto the template's catalogue classes, keeping the project's own wording and its reasons.
+   Then ask one question whose `preview` is the exact section to be written, and whose
+   description names the source lines. An entry that says how to answer a reviewer is left
+   behind: shepard owns that. On a yes, write the section and replace the source section with
+   one pointer line (*"What this project does not defend against: `.claude/project-context.md`
+   § Accepted failures."*), so sessions writing new code still find it. The source file is the
+   user's; say in the summary which lines moved.
+2. **Otherwise, walk the catalogue.** Ask first whether to set it up at all (`Skip — shepard
+   uses its generic bars (Recommended)` when the project has no reviewer history, `Set it up`).
+   On yes, ask one multiSelect call over the template's catalogue, the classes split across
+   questions of at most four options: *"Which of these does this project NOT defend against?"*.
+   Put what the repo shows in each option's description (a `try`/`catch` around the logger, a
+   retry on a first-party call, a pending-submit helper), so the user sees what a yes would
+   decline. The unchecked classes are candidates for Still guarded: grep for the guard that
+   handles each, and name it where the code shows one. Then ask for the owner and date the
+   ruling carries, and confirm the whole section as one `preview`. A class the user did not
+   check and no guard handles is left off both lists.
 
 ## Step 5: Write
 
@@ -172,9 +197,9 @@ worktree_dir: ../kendo-{slug}
   Omit the line when every applicable field has a value.
 - **Fields**: only those with a value, in template order, with no comments. The reason for each
   value is in the Step 6 summary.
-- **Body**: only `## Worktrees` and those of its `###` subsections (Setup, Gates, House rules)
-  that got confirmed content. No guidance text and no explanatory sections. No confirmed prose →
-  no body at all.
+- **Body**: only `## Review` and `## Worktrees`, in that order, and those of their `###`
+  subsections (Accepted failures; Setup, Gates, House rules) that got confirmed content. No
+  guidance text and no explanatory sections. No confirmed prose → no body at all.
 
 **Update mode** — read the existing file first and change it only additively:
 
@@ -189,8 +214,8 @@ worktree_dir: ../kendo-{slug}
   comments and explanatory sections) → leave its comments and sections alone. Treat an empty field
   as listed at its default. Mention in the summary that re-creating the file (delete it, re-run)
   gives the smaller, data-only shape.
-- A confirmed `### Worktrees` subsection missing from the body → append it in template order. An
-  existing section is never rewritten.
+- A confirmed `## Review` or `## Worktrees` subsection missing from the body → add it in
+  template order. An existing section is never rewritten.
 - A field or section in the file that the template doesn't know (renamed, removed, or
   project-invented) → keep it and mention it in the summary. Don't delete.
 - In particular `plan_dir` (an older `{issue_key}`-substitution field): no skill reads it any
@@ -212,6 +237,7 @@ plugins. Don't commit — the file belongs to the project; leave it for the user
 **Skipped (no reader installed):** <section or field>
 **Kept for a checked-in copy:** <field> — read once <plugin> replaces `.claude/skills/<name>/`
 **Left alone:** <existing fields/sections, including unknown ones>
+**Moved:** <source file:lines> → § Accepted failures, pointer line left behind
 **Replaced by plugin:** `.claude/skills/<name>/`, `.claude/agents/<name>.md` — now also shipped as `<plugin>:<name>`
 
 Re-run /core-skills:install after installing another plugin from this marketplace.
@@ -227,7 +253,8 @@ line when nothing matches.
 ## What this skill never does
 
 - Never overwrites or deletes a value, field, or section already in the file.
-- Never writes a prose rule (Setup, Gates, House rules) the user hasn't confirmed.
+- Never writes a prose rule (Accepted failures, Setup, Gates, House rules) the user hasn't
+  confirmed, and never moves a ruling out of an instruction file without the user's yes.
 - Never pins a field to a value that equals its own default.
 - Never deletes a checked-in skill or agent, even one a plugin now replaces.
 - Never commits.

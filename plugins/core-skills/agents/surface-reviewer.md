@@ -72,6 +72,10 @@ You never restate another reviewer's findings.
    that reached review in this repo after a plan, with the row that asks about each. Worked
    examples of what a THIN answer let through: a row whose listed shape the Approach repeats
    without naming its seam is PARTIAL at best.
+7. The `## Review › ### Accepted failures` section of `.claude/project-context.md`, if present —
+   the failure classes the project has ruled it will not guard against, and the ones it still
+   guards. A row that answers a not-defended class by naming it needs no guard and is not THIN
+   for lacking one; a still-guarded class answered without the guard the section names is.
 
 If the repo has no written standards at all, report `No written standards` and score 0 — that's
 a structural precondition, same as a missing Surface section.

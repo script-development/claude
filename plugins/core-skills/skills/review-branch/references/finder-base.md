@@ -19,6 +19,12 @@ Never modify files, create commits, or open PRs. Never install, update, or modif
 4. The project hazards file, when your spawn prompt names one: the defect shapes that reached
    review in this repo more than once, each with the seam or gate that ends it. Hunt the shapes
    that fall in your lane; a listed shape the diff repeats is a finding that cites the row.
+5. The project's accepted failures, when your spawn prompt names them: the failure classes this
+   project has ruled it will not guard against, and the ones it still guards. A missing or
+   removed guard whose only producer is a class listed as not defended is not a defect here: do
+   not file it, and list the site under `## Checked` with the class. A second, unlisted producer
+   still files. A class listed as still guarded, left unguarded by the diff, is a finding that
+   cites the guard the section names.
 
 If a file is not in this worktree, it is not here — stay `unconfirmed`. Do not invent facts you
 cannot point at.
