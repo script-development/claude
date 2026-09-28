@@ -10,7 +10,7 @@
 # named for the concern (not the skill), so unrelated skills can share a section.
 # Don't add a field speculatively; add it when a skill is converted that reads it.
 # The comments and explanatory sections below are the one place each field is documented.
-# core-skills' `install` copies only field values and confirmed Worktrees content into a
+# core-skills' `install` copies only field values and confirmed Review and Worktrees content into a
 # project's file, and links back here. A hand copy may carry the text, so it must make sense
 # there too: don't cite catalog plan decisions (D8, D19, ...) or catalog-only paths below —
 # say the reason itself instead.
@@ -59,7 +59,8 @@ worktree_dir:          # e.g. .claude/worktrees/{slug} — override the default 
                        # Used by: worktree.
 
 # --- Review (used by: fix-bug, shepard, plan-feature, surface-reviewer, review-branch) ---
-# The field below is read by fix-bug; the body's Review > Accepted failures section by the rest.
+# The field below is read by fix-bug; the body's Review > Accepted failures section by every
+# skill listed.
 bug_runtime_review:    # true — /core-skills:fix-bug also spawns runtime-integrity-reviewer beside
                        # bug-fix-verifier on a bug branch, and /core-skills:pr points at its report. Off by
                        # default: a bug branch is gated by the verifier alone, and the pre-PR

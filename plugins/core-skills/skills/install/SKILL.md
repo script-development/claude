@@ -153,8 +153,8 @@ it. Two paths, in this order:
    stack works"*, *"do not add a try/catch"*, *"accepted risk"*. Found → map each of its entries
    onto the template's catalogue classes, keeping the project's own wording and its reasons.
    Then ask one question whose `preview` is the exact section to be written, and whose
-   description names the source lines. An entry that says how to answer a reviewer is left
-   behind: shepard owns that. On a yes, write the section and replace the source section with
+   description names the source lines. An entry that says how to answer a reviewer is not
+   carried over: shepard owns that. On a yes, write the section and replace the source section with
    one pointer line (*"What this project does not defend against: `.claude/project-context.md`
    § Accepted failures."*), so sessions writing new code still find it. The source file is the
    user's; say in the summary which lines moved.
