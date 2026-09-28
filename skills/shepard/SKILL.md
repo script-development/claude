@@ -224,13 +224,13 @@ Four bars for the dispositions that are easy to hand out cheaply:
 - **ACCEPTED needs the conditions named, not a feeling.** Say what has to be true for the failure to
   occur and why it cannot be true here. "Unlikely in practice" is not a condition. If you cannot
   name them, it is a FIX or a FOLLOW-UP.
-- **FIX needs a failure that can happen.** Before FIX, name the input or state that triggers it,
-  and check that production can reach it: real tenants, real data, the configuration production
-  runs. A failure that needs a hostile file, an input size production never sees, or a
-  configuration production does not use is ACCEPTED, even when the fix is one line. Every fix is
-  code the next round reviews. crit's `confidence: confirmed` says the mechanism holds, not that
-  its conditions occur. On crit #375 round 2 (2026-09-27), four confirmed findings were fixed and
-  none was app-breaking. The developer ruled: "push back on edge cases instead of fixing".
+- **FIX needs a failure that can happen.** Before FIX, name the input or state that triggers it, and
+  check that production can reach it: real tenants, real data, the configuration production runs. A
+  failure that needs a hostile file no production input path accepts, an input size production never
+  sees, or a configuration production does not use is ACCEPTED, even when the fix is one line. Every
+  fix is code the next round reviews. crit's `confidence: confirmed` says the mechanism holds, not
+  that its conditions occur. On crit #375 round 2 (2026-09-27), four confirmed findings were fixed
+  and none was app-breaking. The developer ruled: "push back on edge cases instead of fixing".
 - **FOLLOW-UP needs the code to predate the diff.** Check it: `git log -1 --format=%h -- <file>`
   against the PR's own commits, or read `git diff <integration>...HEAD -- <file>`. A finding inside
   the diff you would rather not fix is an ACCEPTED or a DESIGN CALL — ticketing it is how a real
