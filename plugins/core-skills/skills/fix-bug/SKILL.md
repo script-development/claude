@@ -20,7 +20,8 @@ interrogation, wireframes, task breakdown, or acceptance criteria — just a
 confirmed reproduction, a root cause, an approved fix, and proof the fix held.
 
 This skill reads `issue_tracker_skill` (Phase 1), `integration_branch` (Phase 2), `bug_root`
-(Phase 5), and `bug_runtime_review` and `references.hazards` (Phase 8) from
+(Phase 5), and `bug_runtime_review`, `references.hazards` and the Review › Accepted failures
+section (Phase 8) from
 `.claude/project-context.md` — see this plugin's README for how that file and its notation work.
 
 If a bug touches multiple domains with non-trivial design work (e.g. a race
@@ -241,6 +242,7 @@ Skill dir: <review-branch skill dir>
 Plan directory: <bug-root>/<slug>/
 Diff base: origin/<base>
 Project hazards: <references.hazards from .claude/project-context.md, or "none">
+Accepted failures: <.claude/project-context.md § Review › Accepted failures, or "none">
 
 FIRST: read <skill dir>/references/finder-base.md, then your three corpus sections under
 <skill dir>/references/corpus/. Return ## Findings and ## Checked only, in the finder shape.

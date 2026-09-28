@@ -10,7 +10,7 @@
 # named for the concern (not the skill), so unrelated skills can share a section.
 # Don't add a field speculatively; add it when a skill is converted that reads it.
 # The comments and explanatory sections below are the one place each field is documented.
-# core-skills' `install` copies only field values and confirmed Worktrees content into a
+# core-skills' `install` copies only field values and confirmed Review and Worktrees content into a
 # project's file, and links back here. A hand copy may carry the text, so it must make sense
 # there too: don't cite catalog plan decisions (D8, D19, ...) or catalog-only paths below —
 # say the reason itself instead.
@@ -58,7 +58,9 @@ worktree_dir:          # e.g. .claude/worktrees/{slug} — override the default 
                        # below instead, so worktree can skip its own ignore-list write.
                        # Used by: worktree.
 
-# --- Review (used by: fix-bug) ---
+# --- Review (used by: fix-bug, shepard, plan-feature, surface-reviewer, review-branch) ---
+# The field below is read by fix-bug; the body's Review > Accepted failures section by every
+# skill listed.
 bug_runtime_review:    # true — /core-skills:fix-bug also spawns runtime-integrity-reviewer beside
                        # bug-fix-verifier on a bug branch, and /core-skills:pr points at its report. Off by
                        # default: a bug branch is gated by the verifier alone, and the pre-PR
@@ -144,6 +146,59 @@ here, not a new `##` heading, the next time a skill hardcodes a directory conven
   Phase 8 spawns `runtime-integrity-reviewer` alongside `bug-fix-verifier`, appends its report to
   BUG.md's `## Verification` below the verifier's verdict, and `/core-skills:pr` points at it from the PR
   body. The findings inform; the verifier's verdict stays the only gate.
+
+### Accepted failures
+
+Used by: shepard, fix-bug, plan-feature, surface-reviewer, review-branch. The failures this project
+has decided not to guard against, and the neighbouring ones it still guards. A reviewer that
+reports every failure case it can construct files these one PR at a time, and each guard added to
+close one is new code the next round reviews. This section is the standing answer: shepard
+declines a finding whose only producer is listed as not defended, instead of re-deciding it per
+finding, and a plan or a finder stops asking for that guard in the first place. How a reply
+closes a reviewer's thread is not written here; shepard owns that for every project.
+
+Write only a ruling the project's owner actually made, with the date or issue that records it. A
+ruling written here is followed as if it were verified. Two lists, each entry one failure class
+from the catalogue below, in the project's own words:
+
+- **Not defended** — the producer, the reason, and what happens instead (*"our own database
+  down: an outage is an incident, monitoring reports it"*). Name it so a finding can be matched
+  against it: the component, not a feeling.
+- **Still guarded** — the classes that do happen on a working system, each with the guard that
+  handles it (*"a double submit: the pending guard on every form"*). Without this half, the first
+  list reads as permission to drop guards that are needed.
+
+A class on neither list gets shepard's generic bars. If sessions writing new code must follow the
+ruling too, the project's own instruction file (`CLAUDE.md`, `AGENTS.md`) points here; it does not
+keep a second copy.
+
+**The catalogue.** The classes `/core-skills:install` asks about, so every project answers the same
+questions. Each is a *producer* of a failure, not a place in the code:
+
+| Class | The failure it produces |
+|---|---|
+| Own infrastructure | The project's own database, cache, queue, log channel, websocket server or notification dispatch fails |
+| Own backend answering badly | A first-party endpoint returns an empty body, the wrong shape, or a 5xx |
+| A guard failing | The logger, error reporter or toast that handles a failure itself throws |
+| Session ending under a page | Logout or expiry while a mounted page still holds state or has a request in flight |
+| A re-fired request | The same user re-issues a read (typing, a filter, a pager) before the previous answer lands |
+| A double submit | The same write is sent twice before the first answer lands |
+| Concurrent writers | Two writers change the same rows at once |
+| Third parties | An external service the project does not run fails or answers badly (payments, AI, storage, mail, a code host) |
+| User errors | Validation, permission, a row someone else deleted, a conflict |
+| A deploy mid-session | A stale frontend build, or cached data from an older release |
+
+```
+### Accepted failures
+
+Ruled by <owner>, <date> (<issue>).
+
+**Not defended**
+- <class>: <reason>; <what happens instead>.
+
+**Still guarded**
+- <class>: <guard>.
+```
 
 ## References
 

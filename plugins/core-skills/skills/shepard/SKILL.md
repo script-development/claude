@@ -76,6 +76,9 @@ reinstall the skill or plugin."* Otherwise, read the repo's notes and the review
   Then read `.claude/project-context.md`, if it exists: `integration_branch`, and the
   **Worktrees › Gates** and **House rules** sections. They fill whatever the notes leave out
   (the notes win where both speak), and with no notes file they are the repo's whole record.
+  Read its **Review › Accepted failures** section too, when it has one: the failures the project
+  has ruled it will not guard against, and the ones it still guards. Step 3 matches every
+  finding against it.
   The catalog ships only `repos/_template.md`, so having neither is the normal case for a
   repo that hasn't written one: run on the defaults and say so in the hand-back. Never refuse a
   repo for lacking one.
@@ -92,7 +95,7 @@ product; the severity does not.
 | **FIX** | The reviewer is right (or the job is genuinely broken by this branch), the code is in this diff, the failure can happen in production, and the fix has one defensible shape | An edit here in chat → checks → push |
 | **DESIGN CALL** | Real, but more than one fix shape is defensible, or the fix moves a boundary | A grounded `AskUserQuestion` round (step 5), then a fix |
 | **FOLLOW-UP** | Real, but the code predates this PR — fixing it widens the diff the reviewer is judging | An issue or report on the board that owns the code (step 6 says which), and a reply that defers to it by name |
-| **ACCEPTED** | Real, but the failure needs conditions that will not occur here — including a CI job already red on the integration branch | A reply that names the behaviour and declines the work, plus a durable record |
+| **ACCEPTED** | Real, but the failure needs conditions that will not occur here — including a CI job already red on the integration branch, and a failure the project's Accepted failures rules out | A reply that names the behaviour and declines the work, plus a durable record |
 | **WRONG** | Out of diff, wrong provenance, contradicts a ruling the reviewer cannot see, or a flake that fails differently each run | A reply refuting it with `file:line`, no code change |
 
 Two of these are the ones this skill exists to make easy. **FOLLOW-UP is not a dodge** — a fix
@@ -255,6 +258,19 @@ One table for both surfaces. Present, in this order:
 - **In the contract** — a finding that contradicts the issue's explicit intent is a DESIGN CALL.
   Never silently side with the reviewer or with the issue.
 
+**The project's ruling comes first.** When project-context has an Accepted failures section,
+match each finding's *producer* against it before any bar below — what has to fail for the
+defect to happen, not the file it sits in:
+
+- **Only producer listed under Not defended** → ACCEPTED, even when the guard it asks for is one
+  line. The project has already named the conditions and ruled them out; re-deciding it per
+  finding is how the guards it declined came back.
+- **A second producer that is not listed** → judge the finding on that one, with the bars below.
+  A finding about a request the user can re-fire is not declined because it also mentions the
+  database.
+- **Producer listed under Still guarded** → never ACCEPTED on the ruling's account. The guard the
+  section names is the fix shape to mirror.
+
 Four bars for the dispositions that are easy to hand out cheaply:
 
 - **ACCEPTED needs the conditions named, not a feeling.** Say what has to be true for the failure to
@@ -392,7 +408,9 @@ reply that names the behaviour and hands the fix to a named issue or report is a
 "we'll fix this later" keeps the thread open and blocking. `references/reviewers/crit.md` § 2 and
 § 3 give the exact wording that lands.
 
-A permanent ACCEPTED tradeoff also gets a durable record — an ADR if the repo keeps them, otherwise
+An ACCEPTED on the project's Accepted failures already has its durable record: the ruling. Write
+no second one; the reply names the class. Every other permanent ACCEPTED tradeoff gets a durable
+record — an ADR if the repo keeps them, otherwise
 the branch's own `DECISIONS.md` in its plan directory (resolved per
 [`plan-directory.md`](../../references/plan-directory.md) under `plan_root`, default `docs/plans`). crit waives a finding whose behaviour such a
 record accepts by name, but only for a finding that has no thread yet, and only when the record is
@@ -477,7 +495,7 @@ gh api repos/<owner>/<repo>/pulls/<n>/comments --method POST \
 | **FIX** | What changed and where — "fixed at `<sha10>`", the one-line mechanism, every site touched |
 | **DESIGN CALL** | The call the developer made and its grounds; the fix, if one landed |
 | **FOLLOW-UP** | The behaviour, and the issue key or report title that owns the fix, spelled in full |
-| **ACCEPTED** | The behaviour, the conditions the failure needs and why they cannot hold, the leftover risk accepted out loud |
+| **ACCEPTED** | The behaviour, the conditions the failure needs and why they cannot hold, the leftover risk accepted out loud. On the project's ruling: the behaviour, **declined** (the guard asked for) or **accepted** (the leftover risk), and the class from `.claude/project-context.md` § Accepted failures with its reason in your own words, since the reviewer may not read `.claude/` |
 | **WRONG** | The refutation with the `file:line` that carries it, as a checkable claim |
 
 `references/reviewers/crit.md` § 3 has the wording crit reads as fixed, passed and conceded, with

@@ -16,7 +16,7 @@ report in chat. `/core-skills:pr` may consume this session's report when its `Re
 matches HEAD.
 
 This skill reads `integration_branch` (Step 1), `plan_root` / `bug_root` (Step 2) and
-`references.hazards` (Step 3) from `.claude/project-context.md` — see this plugin's README for how that file and its notation work.
+`references.hazards` and the Review › Accepted failures section (Step 3) from `.claude/project-context.md` — see this plugin's README for how that file and its notation work.
 
 ## The lanes
 
@@ -117,6 +117,7 @@ Skill dir: <skill dir resolved in Step 1>
 Plan directory: <plan-root>/<slug>/   (or <bug-root>/<slug>/, or "none")
 Diff base: <the base resolved in Step 1 — origin/<integration-branch>, or <integration-branch> on fallback>
 Project hazards: <references.hazards from .claude/project-context.md, or "none">
+Accepted failures: <.claude/project-context.md § Review › Accepted failures, or "none">
 
 FIRST: read <skill dir>/references/finder-base.md, then your three corpus sections under
 <skill dir>/references/corpus/. Return ## Findings and ## Checked only, in the finder shape.
@@ -131,6 +132,7 @@ Skill dir: <skill dir resolved in Step 1>
 Plan directory: <plan-root>/<slug>/   (or <bug-root>/<slug>/, or "none")
 Diff base: <the base resolved in Step 1 — origin/<integration-branch>, or <integration-branch> on fallback>
 Project hazards: <references.hazards from .claude/project-context.md, or "none">
+Accepted failures: <.claude/project-context.md § Review › Accepted failures, or "none">
 
 FIRST: read <skill dir>/references/finder-base.md, then your three corpus sections under
 <skill dir>/references/corpus/. Return ## Findings and ## Checked only, in the finder shape.
@@ -145,6 +147,7 @@ Skill dir: <skill dir resolved in Step 1>
 Plan directory: <plan-root>/<slug>/   (or <bug-root>/<slug>/, or "none")
 Diff base: <the base resolved in Step 1 — origin/<integration-branch>, or <integration-branch> on fallback>
 Project hazards: <references.hazards from .claude/project-context.md, or "none">
+Accepted failures: <.claude/project-context.md § Review › Accepted failures, or "none">
 
 FIRST: read <skill dir>/references/finder-base.md, then your three corpus sections under
 <skill dir>/references/corpus/. Return ## Findings and ## Checked only, in the finder shape.

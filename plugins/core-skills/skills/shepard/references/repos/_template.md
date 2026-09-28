@@ -5,8 +5,8 @@ into the repo (conventionally `.claude/references/shepard-<repo-name>.md`) and n
 `references.shepard_notes` in `.claude/project-context.md`. For a checked-in or user-level copy of
 the skill, copy it to `<repo-name>.md` beside this file instead. `<repo-name>`
 is what `/core-skills:shepard` resolves from `git remote get-url origin` (last path segment, `.git`
-stripped). Gates and house rules the repo already records in `.claude/project-context.md` need
-not be repeated here: `/core-skills:shepard` reads that file too. If no notes match the repo you are standing
+stripped). Gates, house rules and accepted failures the repo already records in
+`.claude/project-context.md` need not be repeated here: `/core-skills:shepard` reads that file too. If no notes match the repo you are standing
 in, `/core-skills:shepard` runs on its defaults and says so — that is a supported outcome, not a gap. You
 never need this file to use the skill.
 
