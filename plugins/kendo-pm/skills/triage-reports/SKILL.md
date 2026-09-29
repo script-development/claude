@@ -4,7 +4,8 @@ description: |
   Triage incoming reports (bug reports, feedback, feature requests) from the Kendo report queue.
   Decides the *right response* to each piece of user signal — most of which is not a new issue.
   Fetches pending reports via MCP, loads the project's product context (personas, positioning,
-  decision principles) as a product-fit oracle, cross-references existing issues, then walks the
+  decision principles) as a product-fit oracle and its Accepted failures ruling (failures the
+  project will not guard against), cross-references existing issues, then walks the
   user through each report one-by-one with AskUserQuestion for a verdict: Promote, Combine/Epic,
   Park, or Dismiss (always with a recorded reason). Promoted reports become correctly-typed issues
   (Feature / Bug / Task) written against the canonical issue templates. Use whenever the user
@@ -49,6 +50,11 @@ the evidence and recommends.
   consumer of this skill; keep it so the rules are found in the same place everywhere. Create the
   file on first need with a `# Triage decisions` heading and a `## Declined patterns` list, one
   bullet per rule: the ask, the persona or principle it conflicts with, the date first declined.
+- Read `.claude/project-context.md`'s **Review › Accepted failures** section, when it has one:
+  the failure classes the project has ruled it will not guard against (**Not defended**) and the
+  ones it still guards (**Still guarded**). Step 4.2 matches every report against it, beside the
+  Declined patterns. Most guards a project later removes entered through this queue: a reviewer
+  files a failure case, triage promotes it, and an agent builds the guard.
 - Check `mcp__kendo__dismiss-report-tool`'s parameters once. When it takes `category` (+ `note`),
   every Dismiss records its reason **on the report itself** and `docs/triage/decisions.md` holds
   only the Declined patterns. A Kendo release without those parameters takes only `report_id`:
@@ -184,9 +190,26 @@ For each report, in order:
 
 1. **Read it.** What is the user actually *experiencing*? (Not yet: what did they ask for.)
 
-2. **Matches a declined pattern?** If the report matches a rule in `docs/triage/decisions.md`'s
-   **Declined patterns** (e.g. "mobile login without 2FA"), recommend **Dismiss** with that reason and a
-   pointer to the pattern — no need to re-run the fit gate.
+2. **Ruled out already?** Two sources, both checked before the fit gate:
+   - **Declined patterns.** If the report matches a rule in `docs/triage/decisions.md`'s
+     **Declined patterns** (e.g. "mobile login without 2FA"), recommend **Dismiss** with that
+     reason and a pointer to the pattern — no need to re-run the fit gate.
+   - **Accepted failures.** Name the report's *producer*: what has to fail or happen for the user
+     to see the problem, not the file the report names. Match it against the section from
+     Prerequisites:
+     - **Only producer listed under Not defended** → recommend **Dismiss** `not-planned`, even
+       when the fix it asks for is one line. The note names the class and its reason in plain
+       words ("only our own backend's 5xx can fail this load, and the central error toast already
+       reports it"). The project has already ruled on these conditions; re-deciding them per
+       report is how the guards it declined came back.
+     - **A second producer that is not listed** (a 403 the user can trigger, beside our own 5xx)
+       → carry on with the report on that producer alone. When you promote it, write the declined
+       half into the issue's Scope › Out with the class name, so the builder does not add that
+       guard back.
+     - **Producer listed under Still guarded** → never dismissed on the ruling's account. The
+       guard the section names is the fix shape the promoted issue cites.
+
+     No section, or no match → carry on to step 3.
 
 3. **Classify** — this is the Bug / Feature / Task differentiation, made explicit. Reports carry
    no type (`source` is only Manual vs Api — provenance, not category), so type is *your*
@@ -267,6 +290,9 @@ For each report, in order:
    - If sizing was skipped (a Dismiss-on-fit recommendation), the **Effort** line reads
      *"not sized — recommending Dismiss (not-planned)"*. If the user overrides toward
      Promote/Park, size it then and re-present the card.
+   - A Dismiss on the project's Accepted failures skips sizing the same way. Its card carries a
+     **Ruling:** line in place of **Fit:**, naming the producer and the class (*"only our own 5xx
+     fails this load — Not defended: own backend answering badly"*).
    - Every **Dismiss** option must carry a one-line reason — that reason is what gets recorded.
 
 ### Handling user input

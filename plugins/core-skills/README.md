@@ -46,7 +46,8 @@ in the template.
 
 **Accepted failures.** A project's ruling on which failures it will not guard against lives in
 the file itself, under `## Review › ### Accepted failures`, not in a reference file: shepard,
-plan-feature, surface-reviewer and the review-branch finders all read it, and a ruling kept in
+plan-feature, surface-reviewer, the review-branch finders, and kendo-pm's triage-reports and
+prepare-issue all read it, and a ruling kept in
 `CLAUDE.md` instead is invisible to the fixing agent's disposition step. `install` moves an
 existing ruling there, or walks the template's catalogue of failure classes to write one.
 
