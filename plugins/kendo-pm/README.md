@@ -42,7 +42,10 @@ always present.
 `kendo-mcp` and `kendo-cli` discover their project id at runtime instead; `kendo-mcp` reads only
 `references.issue_examples`, the project's filled-in issue examples. `triage-reports` and
 `prepare-issue` read `issue_tracker_project_id`, and `triage-reports` also reads
-`references.agent_ready`, a project's own `Ready for Agent` calibration. Add a
+`references.agent_ready`, a project's own `Ready for Agent` calibration. Both read the body's
+**Review › Accepted failures** section too, the project's ruling on failures it will not guard
+against: `triage-reports` recommends Dismiss for a report whose only producer is listed as not
+defended, and `prepare-issue` flags an acceptance criterion that still asks for such a guard. Add a
 project-context mechanism of this plugin's own only if a future skill needs a fact `core-skills`'
 template can't already cover.
 

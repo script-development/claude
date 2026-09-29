@@ -19,6 +19,8 @@ Task preparation assistant. Arguments: `$issue` (required), `$worktree` (optiona
 - Reads `issue_tracker_project_id` from `.claude/project-context.md` (see this plugin's own
   [README](../../README.md)) for the project to prepare issues in. If unset, discover it via
   `kendo-mcp`'s own `kendo://projects` resource and ask the user which project to use.
+- Reads `.claude/project-context.md`'s **Review › Accepted failures** section, when it has one,
+  for the check at the end of Step 1.
 - Step 6 invokes `/core-skills:newbranch`, a `core-skills` skill — declared as a dependency in this plugin's
   manifest, so installing `kendo-pm` installs `core-skills` automatically; no separate setup step
   needed.
@@ -81,6 +83,7 @@ from the responses:
 From `prepare-issue-context`:
 - `issue.id`, `issue.key`, `issue.title` — to confirm with the user and to drive branch naming
 - `issue.type` — `0` = Feature, `1` = Bug, `2` = Task. Used by Step 8's bug-workflow hint.
+- `issue.description` — for the Accepted failures check below
 
 From `prepare-project-context`:
 - `lanes[]` — find the entry where `title === "In Progress"` and remember its `id` for Step 6 / 5A
@@ -88,7 +91,21 @@ From `prepare-project-context`:
 - `current_user` — the authoritative MCP-auth'd developer
 - `members[]` — for the assignee fallback in Step 2
 
-Confirm the issue with the user: "Prepare **{key}** — *{title}*?"
+**Check the issue against the project's Accepted failures** (skip when project-context has no
+such section). An issue can predate the ruling that now declines what it asks for. Read the
+description's acceptance criteria and name what each one defends against. When an AC asks for a
+guard whose only producer is listed under **Not defended** (a retry or error state for the
+project's own backend failing, a reset for a failure the project accepts), and the description
+carries no later re-scope that already drops it, say so in the confirmation below, one line per
+AC: *"AC 3 asks for a retry when our own endpoint returns a 5xx — Not defended: own backend
+answering badly."* A light read, not an investigation: this skill prepares work, it does not
+judge it.
+
+Confirm the issue with the user: "Prepare **{key}** — *{title}*?" When the check found an AC,
+ask instead with `AskUserQuestion`: **Prepare, and drop those ACs** (recommended, when a
+remaining AC still carries the issue) · **Prepare as written** · **Stop** (re-scope or close it
+first). "Drop" is a note for the builder, not an edit: record it as a comment on the issue before
+Step 6, naming each AC and its class, so the plan and the PR build the smaller scope.
 
 ## Step 2: Confirm the assignee
 

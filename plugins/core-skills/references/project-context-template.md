@@ -58,9 +58,10 @@ worktree_dir:          # e.g. .claude/worktrees/{slug} — override the default 
                        # below instead, so worktree can skip its own ignore-list write.
                        # Used by: worktree.
 
-# --- Review (used by: fix-bug, shepard, plan-feature, surface-reviewer, review-branch) ---
+# --- Review (used by: fix-bug, shepard, plan-feature, surface-reviewer, review-branch,
+#     triage-reports, prepare-issue) ---
 # The field below is read by fix-bug; the body's Review > Accepted failures section by every
-# skill listed.
+# skill listed (the last two from the kendo-pm plugin).
 bug_runtime_review:    # true — /core-skills:fix-bug also spawns runtime-integrity-reviewer beside
                        # bug-fix-verifier on a bug branch, and /core-skills:pr points at its report. Off by
                        # default: a bug branch is gated by the verifier alone, and the pre-PR
@@ -149,12 +150,14 @@ here, not a new `##` heading, the next time a skill hardcodes a directory conven
 
 ### Accepted failures
 
-Used by: shepard, fix-bug, plan-feature, surface-reviewer, review-branch. The failures this project
-has decided not to guard against, and the neighbouring ones it still guards. A reviewer that
-reports every failure case it can construct files these one PR at a time, and each guard added to
-close one is new code the next round reviews. This section is the standing answer: shepard
-declines a finding whose only producer is listed as not defended, instead of re-deciding it per
-finding, and a plan or a finder stops asking for that guard in the first place. How a reply
+Used by: shepard, fix-bug, plan-feature, surface-reviewer, review-branch, and kendo-pm's
+triage-reports and prepare-issue. The failures this project has decided not to guard against, and
+the neighbouring ones it still guards. A reviewer that reports every failure case it can construct
+files these one PR at a time, and each guard added to close one is new code the next round
+reviews. This section is the standing answer: shepard declines a finding whose only producer is
+listed as not defended, instead of re-deciding it per finding; triage dismisses a report that asks
+for such a guard, and prepare-issue flags an older issue that still does; a plan or a finder
+stops asking for that guard in the first place. How a reply
 closes a reviewer's thread is not written here; shepard owns that for every project.
 
 Write only a ruling the project's owner actually made, with the date or issue that records it. A
