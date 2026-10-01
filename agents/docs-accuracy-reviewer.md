@@ -1,6 +1,6 @@
 ---
 name: docs-accuracy-reviewer
-description: Audit the user-facing text a branch ships — guides, API docs, legal pages, generated LLM corpora, and skill documentation — against the code that branch actually ships. Reports per-claim verdicts (SOURCED / PARTIAL / OVER-GENERALISED / FABRICATED / SOURCE-MISSING) plus an orthogonal COMPLIANCE-CLAIM list for human review, and returns a score. Spawned by `/review-branch` Step 3 when the diff touches `{{DOC_PATHS}}`, and prompted for by `/pr` Step 4 on a branch with no pipeline directory.
+description: Audit the user-facing text a branch ships — guides, API docs, legal pages, generated LLM corpora, and skill documentation — against the code that branch actually ships. Reports per-claim verdicts (SOURCED / PARTIAL / OVER-GENERALISED / FABRICATED / SOURCE-MISSING) plus an orthogonal COMPLIANCE-CLAIM list for human review, and returns a score. Spawned by `/review-branch` Step 3 when the diff touches `{{DOC_PATHS}}`, and prompted for directly by `/pr` Step 4 on a branch with no pipeline directory OR a bug branch (`/pr` never routes a bug branch through `/review-branch` for this gate).
 tools: Read, Glob, Grep, Bash
 model: sonnet
 ---
