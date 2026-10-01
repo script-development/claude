@@ -28,7 +28,8 @@
 #                            see `default_search_roots` below; falls back to
 #                            the whole repo minus prose and vendor trees)
 #
-# Exits 0 when every citation resolves, 1 when any is MISSING.
+# Exits 0 when every citation resolves, 1 when any is MISSING, 2 when the
+# input is unreadable or holds no citation at all.
 
 # -e is deliberately absent: every citation must be reported in one pass, so a
 # failed lookup has to fall through to the next line rather than kill the run.
@@ -102,6 +103,16 @@ is_path_shaped() {
 missing=0
 checked=0
 
+# A named argument that can't be read must fail loudly, not fall through to
+# the loop below with zero iterations. Without this, a typo'd path silently
+# reports "All 0 citations resolve." — a fail-closed gate reporting success
+# on a run that verified nothing.
+input="${1:-/dev/stdin}"
+if [ "$input" != "/dev/stdin" ] && [ ! -r "$input" ]; then
+    echo "verify-citations: cannot read '$input'" >&2
+    exit 2
+fi
+
 while IFS= read -r line || [ -n "$line" ]; do
     # Strip list markers, backticks, surrounding whitespace, wrapping
     # punctuation, and a trailing line reference.
@@ -148,9 +159,17 @@ while IFS= read -r line || [ -n "$line" ]; do
         printf 'MISSING  %-58s → symbol not found in source\n' "$citation"
         missing=$((missing + 1))
     fi
-done < "${1:-/dev/stdin}"
+done < "$input"
 
 echo
+if [ "$checked" -eq 0 ]; then
+    # Vacuous success is the failure mode this gate exists to prevent: an
+    # empty citation list means nothing was verified, not that everything
+    # passed. Fail it, as a MISSING citation would.
+    echo "0 citations were checked — nothing was verified." >&2
+    exit 2
+fi
+
 if [ "$missing" -gt 0 ]; then
     echo "$missing of $checked citations do not resolve."
     exit 1
