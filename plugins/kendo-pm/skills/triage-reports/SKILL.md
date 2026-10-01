@@ -164,9 +164,22 @@ match each report against this in-context set (no second round-trip per report).
 either search with `label_ids` (resolved from Step 1's `labels` array) when the user wants to
 focus on a specific label.
 
-> **Search caveat:** `search-issues` AND-matches multi-word queries, so `"comment submit shortcut"`
-> can return zero even when a match exists. Prefer **single-word or OR-style** queries, or rely on
-> the lane fetches above and match in-context.
+> **Search caveat:** `search-issues` matches a multi-word query as a **literal phrase**, not as
+> separate words, so `"comment submit shortcut"` can return zero even when a match exists. Prefer
+> **single-word** queries, or rely on the lane fetches above and match in-context.
+>
+> Measured against a live Kendo project, on one issue whose title holds both `consumer` and
+> `queue`, apart, and the contiguous phrase `report queue`:
+>
+> | query | hits | what it rules out |
+> |-|-|-|
+> | `consumer` | several, incl. that issue | nothing — the baseline that proves the issue is findable |
+> | `consumer queue` | **0** | a bag-of-words AND. Both words are in that title, not adjacent |
+> | `report queue` | **1**, that issue | "multi-word queries never match". This phrase *is* contiguous |
+>
+> Stricter than AND, not looser, so a multi-word query misses more often than an AND reading
+> predicts. There is no documented OR syntax, and a phrase match would search an OR-style string
+> verbatim.
 
 Done issues are context only — they tell you a report was already addressed ("shipped in
 `PROJ-XXXX`") so you can Dismiss it with that reason. **Never reopen, update, or
@@ -352,8 +365,8 @@ Triage-specific deltas to apply on top of the templates:
   - Any other label only when the user explicitly asks for it.
   `sync-issue-labels` replaces the whole set, so pass every label the issue should carry in one
   call.
-- **Combine**: pass multiple `report_ids` in one call — the extra reports are dismissed
-  automatically as part of the batch. For a thematic cluster, prefer `create-epic` then promote
+- **Combine**: pass multiple `report_ids` in one call — every report in the batch is promoted to
+  the one new issue, none is dismissed. For a thematic cluster, prefer `create-epic` then promote
   each into it via `epic_id`.
 - **Standard params**: `project_id: <project-id>`, `lane_id`: the To Do lane id from Step 1;
   `assignee_id` only if the user said who; `sprint_id` only if the user said to add it. If the
@@ -369,6 +382,10 @@ Fold any design decision the user made during triage into the issue **Context** 
 Run `mcp__kendo__dismiss-report-tool` with the `report_id`, `category` (`not-planned` /
 `invalid` / `duplicate` / `already-shipped`), and an optional `note` — the reason is recorded
 directly on the report as `dismiss_reason` / `dismiss_reason_note`. No ledger entry to write.
+
+**Settle the category and note before the call.** Kendo refuses to dismiss a report a second
+time ("This report has already been dismissed."), and the MCP server has no tool that edits a
+report, so a second call cannot correct either.
 
 On a Kendo release whose tool takes only `report_id` (Prerequisites), dismiss with that, **then
 record the reason** in `docs/triage/decisions.md`: a row in its `## Dismissal log` table (add the
