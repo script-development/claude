@@ -57,6 +57,14 @@ Slug: kebab-case, max ~5 words. With an issue key, keep the full key first (`ABC
 Ask only if `$ARGUMENTS` is empty or genuinely ambiguous between a new branch and an existing
 one. Otherwise pick and say what you picked.
 
+**A request for N parallel slots is its own shape, and the table above does not cover it.** "Set
+me up three worktrees so I can work in parallel", with no work named, is not free text to slug —
+slugging the sentence yields one branch named after the request. Cut N worktrees on placeholder
+branches (`wt1`, `wt2`, …), say plainly that the names are placeholders, and hand back the
+rename: `git -C <path> branch -m <REAL-BRANCH>`, or `git -C <path> switch -c <REAL-BRANCH> <base>`
+once the work has a name. Do not invent ticket keys to fill the slots, and do not ask which three
+tickets — the developer asked for capacity, not for an assignment.
+
 ## 2 · Cut it
 
 ```bash
@@ -134,6 +142,17 @@ Skip the installs when the lockfiles are unchanged from the primary and you are 
 
 Do not invent setup beyond this — no services, no databases, no port juggling. If a repo needs
 more (or explicitly less), that belongs in its reference file, not in guesswork.
+
+**One exception, and only when more than one worktree will be live at once: shared state OUTSIDE
+the checkout.** Everything above isolates what sits *inside* the directory — deps, env files — and
+that is all a single extra worktree needs. Two working worktrees also contend for whatever those
+env files point *at*: a development database, a dev-server port, a cache or queue namespace, an
+upload bucket. Left alone the second worktree does not fail — it quietly shares the first one's,
+and the symptom surfaces later as a migration nobody ran or a frontend talking to the wrong
+backend. So when the developer asks for parallel slots, say which shared resources this repo has
+and what the per-worktree arrangement is. **Do not derive it — the specifics are per repo and
+belong in `references/<repo-name>.md`.** With no reference file, name the collisions you can see
+in the env files and hand the decision back rather than provisioning a database on a hunch.
 
 ## 4 · Hand back and stop
 
