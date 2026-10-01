@@ -239,6 +239,26 @@ assert_output '2 of 3 citations do not resolve.' 'reports all failures in one pa
     'app/Support/Rank.php' 'backend/routes/api.php' 'ThisSymbolDoesNotExistAnywhere'
 
 echo
+echo "Empty and unreadable input"
+# A fail-closed gate that reports success on a run that checked nothing is
+# the exact failure this suite exists to catch elsewhere — it applies to the
+# script's own edge cases too.
+assert_exit 2 'empty stdin does not report success' ''
+assert_exit 2 'comments-and-blanks-only stdin does not report success' '# just a comment' ''
+
+nonexistent="$fixture/does-not-exist.txt"
+"$subject" "$nonexistent" >/dev/null 2>&1
+actual=$?
+if [ "$actual" = 2 ]; then
+    passed=$((passed + 1))
+    printf '  ok    %s\n' 'unreadable file argument does not report success'
+else
+    failed=$((failed + 1))
+    printf '  FAIL  %s\n        expected exit 2, got %s\n' \
+        'unreadable file argument does not report success' "$actual"
+fi
+
+echo
 if [ "$failed" -gt 0 ]; then
     echo "FAILED: $failed of $((passed + failed)) assertions"
     exit 1
