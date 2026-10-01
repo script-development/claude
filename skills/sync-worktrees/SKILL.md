@@ -7,7 +7,7 @@ description: Sync every secondary git worktree with the primary one. Copies ever
 
 Keeps every secondary git worktree aligned with the primary one. Works for any worktree layout — generic slots (`<repo>-wt1`, `<repo>-wt2`), feature-named clones (`<repo>-feat-xyz`), or whatever convention the user or team has picked.
 
-The script targets **all** secondary worktrees by design. Naming conventions vary across developers, so filtering to a specific pattern would silently skip legitimate worktrees for anyone not using that pattern. The safety net against unwanted changes to a worktree that's actively being worked on is the env-backup rule below, not a naming filter.
+The script targets **all** secondary worktrees by design. Naming conventions vary across developers, so filtering to a specific pattern would silently skip legitimate worktrees for anyone not using that pattern. The safety net against unwanted changes to a worktree that's actively being worked on is the refuse-on-divergence rule below, not a naming filter.
 
 The main risk this skill guards against: env files drift silently. You add a new `FOO_API_KEY=…` to an `.env` in the main repo, then a week later pick up an issue in `<repo>-wt2`, and nothing works because that worktree still has the old env. This skill makes catching up a one-shot command.
 
@@ -20,7 +20,7 @@ The main risk this skill guards against: env files drift silently. You add a new
 ## What it syncs
 
 1. **Env files** from the primary worktree → each secondary worktree:
-   - every gitignored `.env*` file found in the primary (any depth, skipping `node_modules/`, `vendor/` and earlier `.before-sync-*` backups)
+   - every gitignored `.env*` file found in the primary (any depth, skipping `node_modules/`, `vendor/`, every registered secondary worktree, and any `.before-sync-*` file left behind by the version of this script that made backups)
    - copied to the same relative path in each secondary worktree
    - tracked files such as `.env.example` are never copied — they come from git
 2. **Dependencies** in each worktree, discovered per manifest (depth ≤ 3, same skip list):
@@ -31,7 +31,7 @@ The main risk this skill guards against: env files drift silently. You add a new
    - Never when on a feature branch (would pull the integration branch *into* the feature branch, surprising)
    - Never with uncommitted changes (would risk mixing states)
 
-The integration branch is detected from `origin/HEAD`, falling back to `main`, then `master`. Pass `--base <branch>` when the repo integrates somewhere else (for example a `development` branch).
+The integration branch is detected from `origin/HEAD`, falling back to `main`, then `master`. Pass `--base <branch>` when the repo integrates somewhere else (for example a `development` branch). **`--base` is refused without a real branch name** — an omitted value used to fall through to detection, and `--base --pull` used to take the flag *as* the branch name and swallow it, both silently and both exiting 0. Naming a base and asking for one to be detected are two different requests.
 
 ## How to run
 
@@ -49,18 +49,21 @@ The script auto-detects the primary worktree (always the first entry in `git wor
 
 These exist because each one maps to a real way you can lose work:
 
-- **Diverged env = backup, don't clobber.** Before overwriting a worktree's env file, the script compares byte-for-byte with the primary. If they differ, the old one gets saved to `<file>.before-sync-<timestamp>` so you can recover any intentional local overrides. The sync still proceeds — the backup is your safety net, not a block.
+- **Diverged env = refuse, don't clobber.** Before writing a worktree's env file the script compares it byte-for-byte with the primary's. If they differ it copies nothing, names the file in its report, and moves on. A divergent env file is a deliberate local override far more often than it is drift, and only the developer knows which — so copy it over by hand when it was drift. This replaced a backup-then-overwrite rule, where a `.before-sync-<timestamp>` copy was what made the overwrite safe: that backup could fail, could be raced by a same-minute rerun, and left a second copy of the secret in the worktree for `git add -A` to stage. Refusing the write needs none of it.
+- **A write lands inside the worktree, on a real file, or not at all.** Three shapes are refused rather than reasoned about: a destination that is a symlink (following it writes wherever it resolves), a destination whose *resolved* parent sits outside the worktree (a symlinked parent stays traversable through `mkdir -p` and `cp`, so spelling alone does not keep the write inside), and a destination that exists and is not a regular file — a directory named `.env` would otherwise take `cp` *into* itself as `.env/.env`, and a symlink nested in that directory carries the secret out anyway.
+- **A failed step is a non-zero exit.** A refused symlink, an out-of-bounds destination, a failed copy, a composer/npm install failure and a failed fetch or fast-forward all set it. **Two cases deliberately do *not*, and they are one rule, not two exceptions**: a diverged env file, and a worktree that is registered but no longer on disk. Both are *reported skips* — named in a `⚠️` block with the fix beside them — because both are permanent conditions of that repo, so failing on either would make every later sync exit non-zero, which is how a caller learns to ignore the exit status. What a reported skip must never do is let the closing line speak for it: a missing worktree used to be skipped in silence while the report still said every worktree's env files matched primary.
+- **Only primary's own env files travel.** A secondary worktree nested inside primary at a gitignored path is not part of primary, so the scan leaves every registered secondary out, by literal path rather than by glob (a worktree name may contain `*`, `?` or `[`). A file git tracks under an ignored directory is not copied either: `check-ignore` answers about the path, not about tracking state.
 - **Feature branches are not auto-pulled.** If a worktree is on `{{ISSUE_KEY_PREFIX}}-0412-something`, the script does not pull the integration branch into it. That's a merge/rebase decision the user makes deliberately, not something a sync job should do implicitly.
 - **Uncommitted changes skip the pull step.** The env copy and dep install still run (they don't touch tracked files), but `git` operations are skipped to avoid entangling the sync with in-flight work.
 - **Only gitignored files are copied.** A `.env*` file that git tracks is left alone — copying it would create a spurious diff in the target worktree.
 
 ## Output format
 
-Report per-worktree, one block each. Surface any backups created so the user knows where to look if they had local overrides:
+Report per-worktree, one block each. Surface any env file left untouched, so the user knows which worktree still needs a hand:
 
 ```
 === <repo>-wt1 (detached HEAD f84f88258) ===
-  env:      4 files copied (1 backed up: backend/.env → backend/.env.before-sync-2026-04-18-1432)
+  env:      3 copied, 1 left untouched (differs: backend/.env)
   composer: backend ok
   npm:      frontend ok
   pull:     skipped (--pull not set)
@@ -80,7 +83,7 @@ Report per-worktree, one block each. Surface any backups created so the user kno
 
 A worktree with no `composer.json` or no `package.json` prints `skipped (no composer.json)` / `skipped (no package.json)` on that line instead.
 
-After running, if any backups were created, remind the user that those `.before-sync-*` files exist and will accumulate over time — they can safely delete them once they've confirmed no important overrides were lost.
+After running, if any env file was left untouched, tell the user which worktree and which file. That worktree is still on its own configuration: either the difference was a deliberate override and nothing needs doing, or it was drift and the file has to be copied over by hand. The script will not decide that for them.
 
 ## Why not just `npm ci` / why `npm install`?
 
