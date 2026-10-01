@@ -35,6 +35,7 @@ Run with: `<exact command>`
 - Stack trace / error log line: `<pasted trace>`
 - Or concrete file:line reference: `<path:line>`
 - Regression test that will ship with the fix: `<path/to/test.spec.ts::<test name>>`
+  Run with: `<exact command>`
 
 **— or —**
 
