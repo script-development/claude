@@ -155,6 +155,12 @@ printf '600\tCI\tcompleted\tsuccess\n' > "$fixtures/runs-600.tsv"
 printf '610\tCI\tcompleted\tfailure\n' > "$fixtures/runs-610.tsv"
 : > "$fixtures/jobs-610.unreadable"
 
+# gh failed on the job list of a run that is still in progress. The empty list
+# is honest only when the query SUCCEEDED; a failed query must be named and must
+# not read RUNNING, whatever the run's status (lokalekeuze LK-0598).
+printf '620\tCI\tin_progress\t\n' > "$fixtures/runs-620.tsv"
+: > "$fixtures/jobs-620.unreadable"
+
 # A timed-out job while another job still runs: the run has no conclusion yet
 # to fall back on, so the job itself must count as failed.
 printf '700\tCI\tin_progress\t\n' > "$fixtures/runs-700.tsv"
@@ -260,6 +266,11 @@ for mode in CRLF LF; do
 
     invoke "$crlf" 610
     expect_rc 1 "a failed run with an unreadable job list is still FAILING"
+
+    invoke "$crlf" 620
+    expect_rc 3 "a failed job query on a running run exits 3"
+    expect_contains "gh failed" "the failed query is named on a running run"
+    expect_absent "no job records yet" "a failed query is not an empty list"
 
     invoke "$crlf" 700
     expect_rc 1 "a timed-out job fails the run while another job still runs"

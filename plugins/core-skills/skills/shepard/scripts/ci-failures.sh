@@ -131,9 +131,18 @@ while IFS=$'\t' read -r run_id workflow status conclusion; do
   # that has not completed is the one honest case of an empty list: its job
   # records can lag the run by a few seconds, and it is already counted as
   # running above, so it stays RUNNING rather than UNKNOWN (lokalekeuze #273).
-  jobs=$(gh run view "$run_id" --json jobs --jq '.jobs') || jobs=""
-  [[ "$jobs" == "null" || "$jobs" == "[]" ]] && jobs=""
-  if [[ -z "$jobs" && "$status" == "completed" ]]; then
+  # A query that FAILED is a different state from a list that came back empty, and
+  # only the second is honest on a running run: a failed query on a run that has not
+  # completed used to land on "no job records yet" and exit RUNNING, so the failure
+  # was never named (lokalekeuze LK-0598). Its exit status is kept, not folded into
+  # the value, and it is unreadable whatever the run's status.
+  jobs_rc=0
+  jobs=$(gh run view "$run_id" --json jobs --jq '.jobs') || jobs_rc=$?
+  [[ $jobs_rc -ne 0 || "$jobs" == "null" || "$jobs" == "[]" ]] && jobs=""
+  if [[ $jobs_rc -ne 0 ]]; then
+    echo "  ???   job list unreadable — gh failed; cannot confirm which jobs ran"
+    any_unreadable=1
+  elif [[ -z "$jobs" && "$status" == "completed" ]]; then
     echo "  ???   job list unreadable — cannot confirm which jobs ran"
     any_unreadable=1
   elif [[ -z "$jobs" ]]; then
