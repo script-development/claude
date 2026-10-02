@@ -3497,8 +3497,9 @@ Code as `C:/Program Files/Git/compact`.
 **Bearing on D29/D30.** The mechanism holds live, here even on Haiku. **One real gap:** a process
 that resumes a session and compacts before its first model response gets core's summary, not a
 handoff. That happens when someone resumes a large session and runs `/compact` straight away, or
-when autocompaction fires on a resumed session's first request. Not yet measured: an autocompaction
-(`trigger: 'auto'`) answered by the module, and a `/clear` delivered live through `$.state`.
+when autocompaction fires on a resumed session's first request. An autocompaction (`trigger: 'auto'`)
+answered by the module was measured later (finding #44). Not yet measured: a `/clear` delivered live
+through `$.state`.
 
 ## Finding #43, 2026-10-02 — `$.process.run(['bash', …])` resolves `bash` from the host's PATH; launched from PowerShell on Windows that is the WSL launcher, so v2 fell back to core on every compaction and named the wrong cause
 
@@ -3540,5 +3541,49 @@ and the debug log read.
   run the scripts, and Git for Windows' bash running both scripts.
 
 **Bearing.** Any plugin that calls `$.process.run(['bash', …])` on Windows depends on how Claude Code
-was launched. Plugins should name their interpreter by path, or resolve it. Live retest after the
-fix: pending.
+was launched. Plugins should name their interpreter by path, or resolve it.
+
+**Live retest after the fix, 2026-10-02.** The retest ran in a PowerShell-launched session on cache
+1.0.3 with d508795. The first `/compact` came 27s after `--continue`, before the process had answered
+anything. It ran orientation under `C:/Program Files/Git/bin/bash.exe` (exit 0, 661ms). The fork then
+returned `nothing-to-fork`, and the toast gave that reason (finding #42's case). After one exchange, a
+second manual `/compact` (10:40:36) went down the whole path:
+- orient: exit 0, 656ms;
+- `$.model.fork`: 21.2s, 1 reply, 70,681 cache-read tokens, 2,226 output;
+- gate: exit 0, 4.3s;
+- handoff written (5,131 bytes), with the toast `Handoff written: …`;
+- log line: "context-economy answered session.compact without next() in 26193.9ms";
+- log line: "a hook's 1 messages stand …; core never ran".
+
+The resumed context opened with the handoff and `GATE: OK`. For comparison, core's summary of the same
+session took 44.6s at 112,106 cache-read tokens.
+
+## Finding #44, 2026-10-02 — an autocompaction (`trigger: 'auto'`) is answered by the module exactly like a manual one; the fork at ~180K depth takes no longer than at 70K
+
+**Question.** Every earlier run used `/compact`. Does v2 also answer the compaction Claude Code starts
+itself when the context crosses its threshold, and what does the fork cost at that depth?
+
+**Setup.** The same session as finding #43's retest, on cache 1.0.3 with d508795. After the second
+manual `/compact`, the context was filled on purpose by reading this bundle's own docs, until the
+threshold was crossed. The dev mod `handoff-probe@inline` was loaded to log the trigger.
+
+**Result.** The debug log, 10:42:45–10:43:18:
+- `autocompact: … level=warn effectiveWindow=180000` at 10:42:45, then `level=compact` at 10:42:54,
+  then "routing through reactive (thresholdSource=settings)". The threshold is 180K, not the 200K
+  window the user set.
+- orient: exit 0, 642ms, under `C:/Program Files/Git/bin/bash.exe`;
+- `$.model.fork`: 21.4s, 1 reply, 158,257 cache-read tokens, 61 cache-create, 2,181 output;
+- gate: exit 0, 2.6s;
+- handoff written (4,900 bytes), with the toast `Handoff written: …`;
+- log line: "context-economy (user) answered session.compact without next() in 24616.1ms";
+- log line: "session.compact (auto): a hook's 1 messages stand …; core never ran";
+- handoff-probe logged `compact.core {"trigger":"auto","messagesIn":53,…}`. No `reactive-compact` fork
+  ran: although autocompaction routes through reactive compaction, the hook answers before it.
+
+The resumed context opened with the handoff and `GATE: OK`, and work picked up from its first
+`## Next` step without re-reading anything.
+
+**Bearing.** The `auto` trigger needs no separate handling. The fork took 21.4s at 158K cache-read
+tokens and 21.2s at 70K (finding #43), so its latency is set by the output, not the depth it reads.
+That is one data point per depth, not a curve. The cache-create count (61 tokens) shows the fork
+reused the main thread's cache at full depth too.

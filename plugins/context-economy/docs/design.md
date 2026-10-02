@@ -2327,9 +2327,10 @@ start one today. This is recorded so a future feature doesn't rediscover it.
   `$.model.complete` over `e.messages`, which pays for the whole transcript uncached. Core's summary
   costs about the same and needs no new code, so the fallback stands until this case is shown to
   matter.
-- **Still unmeasured:** M2 against M3 at equal depth, fork latency at depth, an autocompaction
-  (`trigger: 'auto'`) answered by the hook (every run so far used `manual`), `$.state` surviving a
-  live `/clear`, and the `precompute` veto.
+- **Autocompaction is answered like `/compact`** (finding #44). A `trigger: 'auto'` compaction at the
+  180K threshold went down the same path: fork 21.4s at 158K cache-read tokens, core never ran.
+- **Still unmeasured:** M2 against M3 at equal depth, a fork latency curve over depth (two points so
+  far: 21.2s at 70K, 21.4s at 158K), `$.state` surviving a live `/clear`, and the `precompute` veto.
 
 ---
 
