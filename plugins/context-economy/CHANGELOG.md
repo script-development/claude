@@ -9,7 +9,7 @@ convention in `RELEASING.md`.
 
 The automatic path is rebuilt on Claude Code's function hooks ("mods"), which need a build that
 ships them (2.1.287 or later; the API is early access). Rationale: `docs/design.md`, D29–D33.
-Measurements: `docs/measured.md`, findings #37–#42.
+Measurements: `docs/measured.md`, findings #37–#43.
 
 ### Changed
 
@@ -24,6 +24,11 @@ Measurements: `docs/measured.md`, findings #37–#42.
   so, with the `claude --resume <id>` line.
 - **No trigger of the plugin's own.** `/autocompact` sets where compaction, and so the handoff,
   happens. `CTX_NOTICE_TOKENS` and `CTX_URGE_TOKENS` remain, for the statusline gauge only.
+
+- **Scripts run under a resolved bash.** On Windows the module runs `lib/` scripts with Git for
+  Windows' own `bash.exe`, not whatever `bash` PATH finds first. From PowerShell, PATH finds the WSL
+  launcher (finding #43). When orientation fails, the toast now names the actual reason instead of
+  always saying "not inside a git checkout".
 
 ### Removed (breaking)
 

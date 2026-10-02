@@ -43,6 +43,9 @@ type World = {
   files: Map<string, string>
   forks: string[]
   gateRuns: string[][]
+  // argv[0] of every script run: which bash ran it.
+  shells: string[]
+  toasts: string[]
   core: number
 }
 
@@ -52,19 +55,26 @@ type Options = {
   isCheckout?: boolean
   existing?: { mtime: number; doc: string }
   forkText?: string
+  // What `git --exec-path` prints; absent, git is not on PATH.
+  gitExecPath?: string
+  // An orient run that fails the way a non-bash fails, e.g. the WSL launcher.
+  orientFailure?: { exitCode: number; stderr: string }
 }
 
 const slashed = (path: string) => path.replace(/\\/g, '/')
 
 function world(on: On, opts: Options = {}): World {
-  const w: World = { files: new Map(), forks: [], gateRuns: [], core: 0 }
+  const w: World = { files: new Map(), forks: [], gateRuns: [], shells: [], toasts: [], core: 0 }
   if (opts.existing) w.files.set(HANDOFF, opts.existing.doc)
   const exits = opts.gate ?? [0]
 
   on('session.cwd', () => ({ value: CHECKOUT }))
   on('session.usage', () => ({ value: { startedAt: 1_000_000, context: {}, rateLimits: [] } }) as never)
   on('ui.status', () => ({ value: undefined }))
-  on('ui.toast', () => ({ value: undefined }))
+  on('ui.toast', (_$, e) => {
+    w.toasts.push(e.text)
+    return { value: undefined }
+  })
   // The engine hands paths over in the host's notation (backslashes on Windows); key on one form.
   on('fs.write', (_$, e) => {
     w.files.set(slashed(e.path), e.text)
@@ -76,8 +86,17 @@ function world(on: On, opts: Options = {}): World {
     return { value: { isAnswered: true as const, text: opts.forkText ?? DOC, usage: USAGE } }
   })
   on('process.run', (_$, e) => {
+    const ran = (exitCode: number, stdout: string, stderr = '') =>
+      ({ value: { exitCode, stdout, stderr, isStdoutTruncated: false, isStderrTruncated: false } })
+    if (e.argv[0] === 'git' && e.argv[1] === '--exec-path') {
+      return opts.gitExecPath === undefined ? ran(127, '', 'git: not found') : ran(0, `${opts.gitExecPath}\n`)
+    }
+    // The probe for a working bash: every candidate under test runs.
+    if (e.argv[1] === '-c') return ran(0, 'ok\n')
     const script = e.argv[1] ?? ''
+    w.shells.push(e.argv[0] ?? '')
     if (script.endsWith('handoff-orient.sh')) {
+      if (opts.orientFailure) return ran(opts.orientFailure.exitCode, '', opts.orientFailure.stderr)
       if (opts.isCheckout === false) return { value: { exitCode: 1, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
       const ex = opts.existing
       const stdout = [
@@ -195,6 +214,42 @@ describe('compaction', () => {
     // Assert
     expect(w.forks.length).toBe(0)
     expect(res.messages?.[0]?.text).toBe('core summary')
+  })
+
+  test('outside a git checkout, the toast says so', async ($, on) => {
+    // Arrange
+    const w = world(on, { isCheckout: false })
+
+    // Act
+    await $.session.compact({ trigger: 'auto', messages: TRANSCRIPT })
+
+    // Assert
+    expect(w.toasts).toEqual(['No handoff (not inside a git checkout); compacting the usual way.'])
+  })
+
+  test('a bash that cannot run the scripts is reported as such, not as a missing checkout', async ($, on) => {
+    // Arrange
+    const w = world(on, { orientFailure: { exitCode: 1, stderr: 'WSL ERROR: execvpe(/bin/bash) failed: No such file or directory\r\n' } })
+
+    // Act
+    const res = await $.session.compact({ trigger: 'auto', messages: TRANSCRIPT })
+
+    // Assert
+    expect(res.messages?.[0]?.text).toBe('core summary')
+    expect(w.toasts[0]).toContain('exit 1: WSL ERROR: execvpe(/bin/bash) failed')
+    expect(w.toasts[0]).not.toContain('not inside a git checkout')
+  })
+
+  test("with Git for Windows on PATH, its own bash runs the scripts, never PATH's bash", async ($, on) => {
+    // Arrange
+    const w = world(on, { gitExecPath: 'C:\\Program Files\\Git\\mingw64\\libexec\\git-core' })
+
+    // Act
+    await $.session.compact({ trigger: 'auto', messages: TRANSCRIPT })
+
+    // Assert
+    expect(w.shells.length).toBe(2)
+    expect(w.shells.every(sh => sh === 'C:/Program Files/Git/bin/bash.exe')).toBe(true)
   })
 
   test('a subagent compaction is left to core', async ($, on) => {

@@ -3499,3 +3499,46 @@ that resumes a session and compacts before its first model response gets core's 
 handoff. That happens when someone resumes a large session and runs `/compact` straight away, or
 when autocompaction fires on a resumed session's first request. Not yet measured: an autocompaction
 (`trigger: 'auto'`) answered by the module, and a `/clear` delivered live through `$.state`.
+
+## Finding #43, 2026-10-02 — `$.process.run(['bash', …])` resolves `bash` from the host's PATH; launched from PowerShell on Windows that is the WSL launcher, so v2 fell back to core on every compaction and named the wrong cause
+
+**Question.** The first live test inside a real session: after context-economy v2 was swapped into the
+active plugin cache, why did `/compact` still produce core's summary?
+
+**Method.** Build 2.1.287, Windows 11. Claude Code was started from PowerShell with `--debug`,
+resuming a session in this repo's checkout on `feat/context-economy-v2-mods`. Then `/compact` was run
+and the debug log read.
+
+**Result.**
+
+- **The module loaded and its hook ran.** The status line read "writing the handoff…", and the log shows
+  `$.process.run (context-economy): bash with 2 args in C:\Users\Bart\Documents\GitHub\claude`.
+  174 ms later came `bash exited 1 … 0 + 108 chars`, then the toast "No handoff (not inside a git
+  checkout); compacting the usual way."
+- **The cause:** `$.process.run` takes no shell, so `argv[0] = 'bash'` is whatever PATH finds first.
+  From PowerShell that is `C:\WINDOWS\system32\bash.exe`, the WSL launcher. With no Linux
+  distribution installed it prints `WSL … execvpe(/bin/bash) failed: No such file or directory`
+  (the 108 chars) and exits 1. Finding #42's run passed only because it was launched from Git Bash,
+  whose own `bash` comes first on PATH. `runGate` had the same bare `bash`.
+- **The cause was mislabelled.** `orient()` turned every failure into `undefined`, and
+  `writeHandoff` reported every `undefined` as "not inside a git checkout". So the toast pointed away
+  from the actual fault.
+- **`/reload-plugins` was not the problem.** Its "0 hooks" counts command hooks only. The restarted
+  process loaded the module with the rest, and it settled `session.compact` with `next()` included.
+- The same log shows `autocompact: … effectiveWindow=180000`.
+
+**Fix.**
+
+- **Resolve bash once per load.** If `git --exec-path` ends in `/(mingw64|mingw32|clangarm64)/libexec/git-core`,
+  it is Git for Windows, and its `<root>/bin/bash.exe` is used. On a Windows plugin root,
+  `C:/Program Files/Git/bin/bash.exe` comes next. Each candidate is probed with `-c 'echo ok'`, and
+  bare `bash` is used only when no candidate answers.
+- **`orient()` now returns its reason.** A run with exit 1 and nothing on stderr is "not inside a git
+  checkout", as `handoff-orient.sh` documents. Any other failure names the bash and the exit code,
+  with the first line of stderr.
+- **Three kit tests** cover the toast outside a checkout, the reported failure of a bash that cannot
+  run the scripts, and Git for Windows' bash running both scripts.
+
+**Bearing.** Any plugin that calls `$.process.run(['bash', …])` on Windows depends on how Claude Code
+was launched. Plugins should name their interpreter by path, or resolve it. Live retest after the
+fix: pending.

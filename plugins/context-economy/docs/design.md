@@ -2318,6 +2318,10 @@ start one today. This is recorded so a future feature doesn't rediscover it.
   progress rewrite, `CTX_FORK_*`, and the gap constant. Drafts are gated at `<path>.draft`, and only
   a document that passes the contract (exit 0 or 1) replaces the stored handoff. So a malformed
   draft never overwrites a good one.
+- **Bash is resolved, not taken from PATH** (finding #43). A bare `bash` in `$.process.run` found the
+  WSL launcher when Claude Code was started from PowerShell. So the module uses Git for Windows' own
+  bash where there is one, and `orient()` reports why it failed instead of always reporting "not
+  inside a git checkout".
 - **Open: compacting a resumed process before its first response** (finding #42). `$.model.fork` has
   no main-thread request to reuse, so v2 falls back to core's summary. The alternative is
   `$.model.complete` over `e.messages`, which pays for the whole transcript uncached. Core's summary
