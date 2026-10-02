@@ -5,6 +5,50 @@ incrementally — see `RELEASING.md` for why. Format follows [Keep a Changelog](
 versioning follows [Semantic Versioning](https://semver.org/), scoped to this plugin's own
 convention in `RELEASING.md`.
 
+## [2.0.0] - 2026-10-02
+
+The automatic path is rebuilt on Claude Code's function hooks ("mods"), which need a build that
+ships them (2.1.287 or later; the API is early access). Rationale: `docs/design.md`, D29–D33.
+Measurements: `docs/measured.md`, findings #37–#42.
+
+### Changed
+
+- **The compaction is the handoff.** `hooks/register.ts` answers `session.compact`: a
+  `$.model.fork` over the live session writes the handoff, which is mostly served from the
+  prompt cache. The gate checks it, and a failed draft gets one corrected retry. The gated
+  document then stands in place of core's summary. v1 wrote the handoff out of band, in a
+  detached `claude -p` turn next to the compaction, and the next session had to wait for it.
+- **`/clear` hands over in-band.** `session.end` (clear) leaves a marker in `$.state`. The first
+  prompt after the `/clear` then carries the handoff the cleared session wrote, once, and marks
+  it `progress: consumed`. If no handoff newer than that session exists, the prompt instead says
+  so, with the `claude --resume <id>` line.
+- **No trigger of the plugin's own.** `/autocompact` sets where compaction, and so the handoff,
+  happens. `CTX_NOTICE_TOKENS` and `CTX_URGE_TOKENS` remain, for the statusline gauge only.
+
+### Removed (breaking)
+
+- The command hooks `hooks/handoff-fork-write.sh`, `hooks/handoff-inject.sh` and
+  `hooks/session-end-marker.sh`, and their suites. With them go the skeleton, lock and liveness
+  machinery (D22, D23, D26, D28). A handoff is no longer seen in `progress: writing`.
+- `lib/handoff-store.sh` loses `handoff_store_find_transcript`, `handoff_store_write_skeleton`,
+  `handoff_store_set_progress` and `handoff_store_resolve`.
+- `lib/context-economy/context-thresholds.sh` loses `CTX_HANDOFF_ACCEPTABLE_GAP_TOKENS`,
+  `CTX_FORK_TIMEOUT_SECONDS` and `CTX_FORK_LIVENESS_WINDOW_SECONDS`.
+
+### Added
+
+- `lib/handoff-orient.sh`, which gives the module the checkout, branch, store path and gate from
+  the shell library's single copy.
+- `types/index.d.ts`, the `$.state` contract, and `tests/register.test.ts`, which runs under
+  `claude plugin test`.
+
+### Known gaps
+
+- If a resumed process compacts before its first response, `$.model.fork` has nothing to fork.
+  Core's summary is used for that compaction.
+- Not yet measured live: an autocompaction answered by the module, `$.state` surviving a real
+  `/clear`, and the `precompute` veto.
+
 ## [1.0.3] - 2026-09-25
 
 ### Fixed

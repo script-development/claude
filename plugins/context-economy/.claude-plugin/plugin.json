@@ -1,7 +1,7 @@
 {
   "name": "context-economy",
   "displayName": "Context Economy",
-  "version": "1.0.3",
+  "version": "2.0.0",
   "description": "Handoffs that survive a context reset: every compaction becomes a verified handoff written from the live session, a /clear hands the next conversation the handoff the cleared one wrote, and a /handoff skill writes and reads them by hand.",
   "types": "./types/index.d.ts",
   "keywords": [
