@@ -67,11 +67,10 @@ wrote the document to mission_control, keyed to *mission_control's* branch — s
 different tickets overwrote each other's handoff, and the gate defaulted to verifying citations
 against the wrong repository entirely.
 
-**Only a central store can be enumerated.** The read leg is a `SessionStart` hook, and a hook knows
-its cwd and nothing else. Putting the file in the *target* repo fixes the keying and makes the
-document undiscoverable: no path derived from cwd can reach a sibling checkout. Listing one known
-root can. That is the whole reason the store is centralised rather than distributed — see
-`lib/handoff-store.sh` for the resolution order.
+**Only a central store can be enumerated.** Putting the file in the *target* repo fixes the keying
+and makes the document undiscoverable: no path derived from one session's cwd can reach a sibling
+checkout. Listing one known root can. That is the whole reason the store is centralised rather than
+distributed, and why read mode below starts by listing it.
 
 **It must survive its own worktree.** An automated run works inside a throwaway worktree that its
 caller's Phase Omega deletes (`skills/prepare-agent-run/SKILL.md:99`). A handoff written there dies
@@ -114,19 +113,13 @@ branch: / checkout: / status: / progress:
 ## Unverifiable                     optional: real files the gate cannot resolve
 ```
 
-- `progress: writing | complete | consumed` says where THIS document is in its own write/read
-  cycle, not anything about the task (`docs/design.md` D23). It exists because the automated write
-  leg (`hooks/handoff-fork-write.sh`) authors out of band: it writes a bare placeholder with
-  `progress: writing` *before* the real content even starts being composed, so a `SessionStart`
-  read racing against that authoring turn finds an honest "not ready yet" instead of either
-  silence or a stale document from a previous cycle. A live write — this skill's own Step 2,
-  whether invoked by a human or the detached turn — never writes `writing`: by the time Step 2
-  runs, the document is composed in full in one `Write` call, so it goes straight to
-  `progress: complete`. The read leg then flips `complete` to `consumed` once it has actually
-  shown the document to a reader, so a later reset on the same branch, with nothing new written
-  since, can say so honestly rather than presenting the same content as if it were news. **Not
-  gate-required** — a handoff written before this field existed has none, and the gate and every
-  reader treat an absent `progress:` the same as `complete`, so nothing already on disk breaks.
+- `progress: complete | consumed` says where THIS document is in its own write/read cycle, not
+  anything about the task (`docs/design.md` D23, D32). Every write is `complete`. Whatever shows the
+  document to a reader flips it to `consumed` — this skill's read mode, or the plugin delivering it
+  after a `/clear` — so a later reset on the same branch, with nothing new written since, can say so
+  honestly rather than presenting the same content as if it were news. A `writing` value is a v1
+  leftover (v1's out-of-band writer used it as a placeholder); nothing writes it any more. **Not
+  gate-required** — the gate and every reader treat an absent `progress:` the same as `complete`.
 - **Decisions record what the decision beat**, not just what it was. A decision without its rejected
   alternative gets re-litigated by the next session, which is the expensive failure this document
   exists to prevent.
@@ -233,9 +226,9 @@ echo "gate=${gate:-NONE}"
 ```
 
 The filename is computed by `handoff_store_path`, never hand-built. It is a contract shared with
-two hooks that must find the same file — `handoff-inject.sh` to surface it and
-`session-end-marker.sh` to measure whether it covered the discarded session — and a hand-assembled
-name that differs by one character is not a broken filename, it is a handoff nothing will ever read.
+the plugin's hooks module, which finds the same file through `lib/handoff-orient.sh` to write it on
+every compaction and to deliver it after a `/clear` — and a hand-assembled name that differs by one
+character is not a broken filename, it is a handoff nothing will ever read.
 
 `checkout=` goes verbatim into the `checkout:` header. `here` rather than `TARGET` because git
 normalises the path (and on Windows returns a different notation than the shell does); the gate
@@ -267,10 +260,7 @@ One `Write` call, to the path Step 1 printed. Author in section order, which is 
 order: do Decisions, Dead ends and Traps *first* and best, while there is still budget for them.
 `## Next` and `## Pointers` are the cheap half, and the half that survives without you.
 
-Write `progress: complete`. This step composes the whole document in one call, so it is never
-`writing` — that value belongs only to the placeholder `hooks/handoff-fork-write.sh` writes
-*before* this step runs, as its own separate, earlier act (`docs/design.md` D23). By the time
-Step 2 runs at all, whatever this call produces supersedes that placeholder outright.
+Write `progress: complete`.
 
 Recall the one rule — if a sentence needs a file open to write, it is a Pointer.
 
@@ -316,12 +306,9 @@ Print `>> STEP: handoff — 4 (write)` before doing anything else in this step.
 
 No tool call. Report the path, the exit status, and any warning worth acting on. What happens next is
 decided by **why this write is happening, not by who is watching** — and the automatic path never
-reaches this step at all: it runs as a detached, headless spawn on `PreCompact`
-(`hooks/handoff-fork-write.sh`), and that spawn's own prompt explicitly overrides this step with "there
-is no human to hand back to and no Step 4 report to give" before ever getting here. (A predecessor
-mechanism ran this skill in-band, inside the live session's own turn, on a `Stop` hook — superseded
-2026-09-17, `docs/design.md` D22 — and Step 4 used to carry a case for it. Removed along with that
-mechanism: nothing registers `Stop` on this skill any more, so that case could never fire.)
+runs this skill at all: every compaction writes its own handoff through the plugin's hooks module
+(`hooks/register.ts`, `docs/design.md` D29), from a fork of the live session, with no Step 4 to reach.
+So this step only ever serves the manual path, ahead of a `/clear`.
 
 **Invoked directly** — a human asked for one, or an orchestrator watching this session's growth from
 outside sent the instruction. Either way, someone chose the manual path *because* they want the pause,
@@ -331,7 +318,11 @@ and which one depends on who is there to receive it:
 
 - **A human is attending:**
 
-  > Handoff written to `<path>` (gate: OK). Run `/clear`, then `/handoff --read` in the fresh session.
+  > Handoff written to `<path>` (gate: OK). Run `/clear`; your next prompt there carries this handoff.
+
+  The plugin delivers it with the first prompt after the `/clear` (`docs/design.md` D32), so no
+  `/handoff --read` is needed. (A `/compact` would not use this file: it writes a fresh handoff of
+  its own from the conversation.)
 
 - **Nobody is attending** (the ask came from an orchestrator, a driver script, anything that is not a
   live human at the keyboard): there is no one to instruct and no self-reset tool either, so say only
@@ -363,9 +354,9 @@ ls -t "${XDG_DATA_HOME:-$HOME/.local/share}/context-economy/handoffs/"*.md 2>/de
     done
 ```
 
-Newest first. Pick by the branch and checkout, not by position: several may be live at once, and if
-the SessionStart hook already surfaced one it says in its own output whether that was an exact match
-or a guess made on recency.
+Newest first. Pick by the branch and checkout, not by position: several may be live at once. If the
+plugin already delivered one with this session's first prompt (after a `/clear`), that is this
+branch's own, matched exactly — use it rather than re-reading.
 
 **Check `progress:` before verifying anything** (`docs/design.md` D23):
 
@@ -374,28 +365,9 @@ grep -m1 '^progress:' "$handoff"
 ```
 
 - **Absent, `complete`, or `consumed`** — a real document. Proceed below.
-- **`writing`** — the automated write leg's placeholder, mid-authoring. Do not treat its own body
-  as content to act on (it is a signal, not a handoff), and do not just report this and move on to
-  other work — a real handoff exists specifically to prevent re-deriving what this session would
-  otherwise lose, and starting other work before it lands defeats that. Wait for it instead, the
-  same way the automatic `SessionStart` injection does (`hooks/handoff-inject.sh`, D26): run this
-  now, as its own Bash tool call with `timeout` set to at least 610000ms (covers the default
-  `CTX_FORK_TIMEOUT_SECONDS` of 600, `lib/context-economy/context-thresholds.sh`, with margin —
-  raise it if that constant was customized higher):
-
-  ```bash
-  until grep -qm1 '^progress: complete' "$handoff" 2>/dev/null; do
-    m=$(stat -c %Y "$handoff" 2>/dev/null || stat -f %m "$handoff" 2>/dev/null)
-    [ -z "$m" ] && break
-    [ $(( $(date +%s) - m - ${CTX_FORK_TIMEOUT_SECONDS:-600} )) -ge 0 ] && break
-    sleep 10
-  done
-  grep -m1 '^progress:' "$handoff"
-  ```
-
-  If that now prints `progress: complete`, proceed below as normal. If it still prints
-  `progress: writing`, the authoring run most likely died before finishing — say so, and proceed
-  as if no handoff exists for this target at all.
+- **`writing`** — a v1 leftover: v1's out-of-band writer left this placeholder and never finished.
+  Nothing writes it any more, so nothing is coming. Say so, and proceed as if no handoff exists for
+  this target.
 
 Then verify with **one argument**:
 

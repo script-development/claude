@@ -42,7 +42,7 @@ values=$(bash -c '
     . "$1" || exit 1
     for v in CTX_NOTICE_TOKENS CTX_URGE_TOKENS \
              CTX_GROWTH_TOKENS_PER_TURN HANDOFF_TARGET_TOKENS HANDOFF_CEILING_TOKENS \
-             CTX_CHARS_PER_TOKEN_X100 CTX_HANDOFF_ACCEPTABLE_GAP_TOKENS; do
+             CTX_CHARS_PER_TOKEN_X100; do
         printf "%s=%s\n" "$v" "${!v-<UNSET>}"
     done' _ "$subject" 2>/dev/null)
 
@@ -59,7 +59,7 @@ get() { printf '%s\n' "$values" | grep "^$1=" | cut -d= -f2-; }
 
 for v in CTX_NOTICE_TOKENS CTX_URGE_TOKENS CTX_GROWTH_TOKENS_PER_TURN \
          HANDOFF_TARGET_TOKENS HANDOFF_CEILING_TOKENS CTX_CHARS_PER_TOKEN_X100 \
-         CTX_HANDOFF_ACCEPTABLE_GAP_TOKENS; do
+        ; do
     got=$(get "$v")
     case "$got" in
         ''|'<UNSET>'|*[!0-9]*) fail "$v is a non-empty integer" "got [${got:-<empty>}]" ;;
