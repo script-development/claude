@@ -3587,3 +3587,42 @@ The resumed context opened with the handoff and `GATE: OK`, and work picked up f
 tokens and 21.2s at 70K (finding #43), so its latency is set by the output, not the depth it reads.
 That is one data point per depth, not a curve. The cache-create count (61 tokens) shows the fork
 reused the main thread's cache at full depth too.
+
+## Finding #45, 2026-10-02 — `$.state` does not survive a `/clear`: the marker `session.end` wrote was gone at the next prompt, so v2 delivered nothing after a live `/clear`
+
+**Question.** Finding #41 left this open: does the `/clear` marker v2 keeps in `$.state` reach the
+first prompt of the conversation after the `/clear`?
+
+**Method.** Build 2.1.287, Windows 11, launched from PowerShell, cache 1.0.3 at d41f6d8. In session
+`a24a1b11…`, after one exchange, a manual `/compact` (10:48:18), then `/clear` (10:48:27), then one
+prompt in the new session `d35ae612…`. The debug logs of both sessions were read. The dev mod
+`handoff-probe@inline` was still loaded and kept its own marker in `$.store`.
+
+**Result.**
+
+- **The compaction was answered** as in finding #43: the first draft failed the gate (exit 1), the
+  retry passed (exit 0), the handoff was stored, and "core never ran".
+- **`session.end` ran on the `/clear`** through both mods, settling in 41.3ms.
+- **The first prompt got nothing from context-economy.** Its `prompt.submit` settled in 29.5ms, with
+  no `$.process.run` at all: `orient` never ran. So `$.state.get(lastClear)` found no value and the
+  hook returned `next(e)` without a word. The stored handoff was still `progress: complete`, not
+  `consumed`.
+- **The probe's `$.store` marker did arrive**, as "handoffProbe (via prompt.submit): …". So the
+  `prompt.submit` channel itself still works (finding #40).
+- `$.state` calls are not in the debug log, so the `set` in `session.end` is inferred from the code
+  path, not seen. The types say what fits the result: `$.state` holds values "for the session", and
+  a `/clear` starts a new one.
+
+**Fix.** The marker moves to `$.store`, keyed by the process. The key is a random id that a fresh
+process mints in `session.start` and keeps in its own environment (`CONTEXT_ECONOMY_PROCESS_KEY`).
+The environment outlasts both a `/clear` and a hot reload. A child process inherits the
+environment, so every fresh process mints its own key, and `$.state` tells a fresh process from a
+reload: it survives a reload and starts empty in a new process. `session.end` drops the process's
+marker on any other reason, and prunes any marker older than a day. `prompt.submit` now writes a
+debug line either way: "no /clear marker for process <key>", or what it delivered.
+
+**Remaining gap.** A hot reload between a `/clear` and the next prompt finds `$.state` empty (the
+`/clear` dropped it), mints a new key, and never reads the marker under the old one.
+
+**Bearing on D32.** `$.state` is per session, not per process. A value that has to outlive a `/clear`
+lives in `$.store`, under a key the process owns.

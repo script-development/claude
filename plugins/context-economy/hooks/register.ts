@@ -18,12 +18,38 @@ import {
 //                    live session writes it, the gate checks it, the store keeps it, and it stands
 //                    in place of core's summary (D29, D30). Autocompact's threshold is the trigger;
 //                    this plugin has none of its own (D31).
-//   session.end      a /clear records which session ended, in $.state (D32).
+//   session.start    a fresh process mints its process key (D32).
+//   session.end      a /clear records which session ended, in $.store under that key (D32).
 //   prompt.submit    the first prompt after that /clear carries the handoff that session wrote,
 //                    or says it wrote none (D32). Not prompt.context: that event never fires on
 //                    the builds measured (docs/measured.md finding #40).
 
-const LAST_CLEAR = { plugin: 'context-economy', key: 'lastClear' } as const
+// The /clear marker has to outlive the session it is written in, and be found only by the process
+// that wrote it. `$.state` is the session's, so a /clear drops it (finding #45); `$.store` is shared
+// by every session on the machine (finding #41). So the marker lives in `$.store` under a key naming
+// the process, and that key lives in the process environment, which outlasts both a /clear and a hot
+// reload. A child process (a `claude` run from Bash) inherits the environment, so every fresh
+// process mints its own key in session.start; `$.state` tells a fresh process from a reload, as it
+// survives a reload and starts empty in a new process.
+//
+// One gap: a hot reload between a /clear and the next prompt finds `$.state` empty, mints a new key,
+// and the marker under the old one is never read. It is pruned a day later.
+const PROCESS_KEY = { plugin: 'context-economy', key: 'processKey' } as const
+const CLEAR_PREFIX = 'lastClear:'
+const CLEAR_KEPT_MS = 24 * 60 * 60 * 1000
+
+function processKey($: EngineInterface): Promise<string | undefined> {
+  return $.env.get('CONTEXT_ECONOMY_PROCESS_KEY')
+}
+
+// Markers no prompt took (the process exited, or the gap above) are dropped once they are old.
+async function pruneClears($: EngineInterface, now: number): Promise<void> {
+  for (const key of await $.store.keys()) {
+    if (!key.startsWith(CLEAR_PREFIX)) continue
+    const marker = (await $.store.get(key)) as ContextEconomyLastClear | undefined
+    if (!marker || !(now - marker.clearedAt < CLEAR_KEPT_MS)) await $.store.delete(key)
+  }
+}
 
 type Written = { doc: string; path: string; gate: GateResult | undefined }
 
@@ -155,22 +181,44 @@ export const register: Register = on => {
     }
   })
 
-  on('session.end', async ($, e, next) => {
-    if (e.reason === 'clear') {
-      const lastClear: ContextEconomyLastClear = {
-        sessionId: e.sessionId,
-        cwd: await $.session.cwd(),
-        startedAt: (await $.session.usage()).startedAt,
-      }
-      await $.state.set(LAST_CLEAR, lastClear)
+  on('session.start', async ($, e, next) => {
+    const { value: held } = await $.state.get(PROCESS_KEY)
+    if (!held) {
+      const key = crypto.randomUUID()
+      await $.env.set('CONTEXT_ECONOMY_PROCESS_KEY', key)
+      await $.state.set(PROCESS_KEY, key)
     }
     return next(e)
   })
 
+  on('session.end', async ($, e, next) => {
+    const key = await processKey($)
+    if (key) {
+      if (e.reason === 'clear') {
+        const lastClear: ContextEconomyLastClear = {
+          sessionId: e.sessionId,
+          cwd: await $.session.cwd(),
+          startedAt: (await $.session.usage()).startedAt,
+          clearedAt: Date.now(),
+        }
+        await $.store.set(`${CLEAR_PREFIX}${key}`, lastClear)
+      } else {
+        // The process is going; nothing after it will read its marker.
+        await $.store.delete(`${CLEAR_PREFIX}${key}`)
+      }
+    }
+    await pruneClears($, Date.now())
+    return next(e)
+  })
+
   on('prompt.submit', async ($, e, next) => {
-    const { value: lastClear } = await $.state.get(LAST_CLEAR)
-    if (!lastClear) return next(e)
-    await $.state.set(LAST_CLEAR, null)
+    const key = await processKey($)
+    const lastClear = key ? ((await $.store.get(`${CLEAR_PREFIX}${key}`)) as ContextEconomyLastClear | undefined) : undefined
+    if (!lastClear) {
+      $.ui.log(`context-economy: prompt.submit: no /clear marker ${key ? `for process ${key}` : '(no process key set)'}; nothing to deliver`, { to: 'debug' })
+      return next(e)
+    }
+    await $.store.delete(`${CLEAR_PREFIX}${key}`)
 
     const oriented = await orient($, lastClear.cwd)
     const o = typeof oriented === 'string' ? undefined : oriented
@@ -184,6 +232,7 @@ export const register: Register = on => {
     } else {
       context = noHandoffContext(lastClear.sessionId, o, lastClear.startedAt)
     }
+    $.ui.log(`context-economy: prompt.submit: delivered ${o && isCovering ? `the handoff ${o.handoff}` : 'a no-handoff note'} for cleared session ${lastClear.sessionId}`, { to: 'debug' })
     return next({ ...e, context: [...(e.context ?? []), context] })
   })
 }

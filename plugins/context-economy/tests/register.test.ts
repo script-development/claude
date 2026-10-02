@@ -47,6 +47,10 @@ type World = {
   shells: string[]
   toasts: string[]
   core: number
+  // The host process's environment, the plugin's store, and its debug log lines.
+  env: Map<string, string>
+  store: Map<string, unknown>
+  logs: string[]
 }
 
 type Options = {
@@ -59,16 +63,49 @@ type Options = {
   gitExecPath?: string
   // An orient run that fails the way a non-bash fails, e.g. the WSL launcher.
   orientFailure?: { exitCode: number; stderr: string }
+  // The environment the process starts with, e.g. a key inherited from a parent `claude`.
+  env?: Record<string, string>
+  store?: Record<string, unknown>
 }
 
 const slashed = (path: string) => path.replace(/\\/g, '/')
 
 function world(on: On, opts: Options = {}): World {
-  const w: World = { files: new Map(), forks: [], gateRuns: [], shells: [], toasts: [], core: 0 }
+  const w: World = {
+    files: new Map(),
+    forks: [],
+    gateRuns: [],
+    shells: [],
+    toasts: [],
+    core: 0,
+    env: new Map(Object.entries(opts.env ?? {})),
+    store: new Map(Object.entries(opts.store ?? {})),
+    logs: [],
+  }
   if (opts.existing) w.files.set(HANDOFF, opts.existing.doc)
   const exits = opts.gate ?? [0]
 
   on('session.cwd', () => ({ value: CHECKOUT }))
+  on('ui.log', (_$, e) => {
+    w.logs.push(e.text)
+    return { value: undefined }
+  })
+  on('env.get', (_$, e) => ({ value: w.env.get(e.name) }))
+  on('env.set', (_$, e) => {
+    if (e.value === undefined) w.env.delete(e.name)
+    else w.env.set(e.name, e.value)
+    return { value: undefined }
+  })
+  on('store.get', (_$, e) => ({ value: w.store.get(e.key) }))
+  on('store.set', (_$, e) => {
+    w.store.set(e.key, e.value)
+    return { value: undefined }
+  })
+  on('store.delete', (_$, e) => {
+    w.store.delete(e.key)
+    return { value: undefined }
+  })
+  on('store.keys', () => ({ value: [...w.store.keys()] }))
   on('session.usage', () => ({ value: { startedAt: 1_000_000, context: {}, rateLimits: [] } }) as never)
   on('ui.status', () => ({ value: undefined }))
   on('ui.toast', (_$, e) => {
@@ -278,34 +315,47 @@ describe('compaction', () => {
   })
 })
 
+const KEY_VAR = 'CONTEXT_ECONOMY_PROCESS_KEY'
+const START = { cwd: CHECKOUT, surface: 'terminal', isInteractive: true } as never
+const CLEAR = { reason: 'clear', sessionId: 'old-session', resume: { id: 'old-session' } } as const
+const DAY_MS = 24 * 60 * 60 * 1000
+const submit = (text: string) => ({ text, wait: false, origin: { kind: 'composer' } }) as never
+
+// session.start mints the process key, so every /clear test starts the session first, as a live
+// process does before its first prompt.
 describe('/clear', () => {
   test('the first prompt after a /clear carries the handoff the cleared session wrote, once', async ($, on) => {
     // Arrange
     const w = world(on, { existing: { mtime: 2_000, doc: DOC } })
+    on('session.start', (_$, e) => ({ cwd: e.cwd }))
     on('session.end', (_$, e) => ({ sessionId: e.sessionId }))
     on('prompt.submit', (_$, e) => ({ text: e.text, context: e.context }))
 
     // Act
-    await $.session.end({ reason: 'clear', sessionId: 'old-session', resume: { id: 'old-session' } })
-    const first = await $.prompt.submit({ text: 'go on', wait: false, origin: { kind: 'composer' } } as never)
-    const second = await $.prompt.submit({ text: 'and?', wait: false, origin: { kind: 'composer' } } as never)
+    await $.session.start(START)
+    await $.session.end(CLEAR)
+    const first = await $.prompt.submit(submit('go on'))
+    const second = await $.prompt.submit(submit('and?'))
 
     // Assert
     expect(first.context?.join('\n')).toContain('Chose A over B.')
     expect(first.context?.join('\n')).toContain('old-session')
     expect(w.files.get(HANDOFF)).toContain('progress: consumed')
     expect(second.context ?? []).toEqual([])
+    expect(w.logs.some(l => l.includes('delivered the handoff'))).toBe(true)
   })
 
   test('a handoff older than the cleared session is not presented as covering it', async ($, on) => {
     // Arrange
     world(on, { existing: { mtime: 500, doc: DOC } })
+    on('session.start', (_$, e) => ({ cwd: e.cwd }))
     on('session.end', (_$, e) => ({ sessionId: e.sessionId }))
     on('prompt.submit', (_$, e) => ({ text: e.text, context: e.context }))
 
     // Act
-    await $.session.end({ reason: 'clear', sessionId: 'old-session', resume: { id: 'old-session' } })
-    const first = await $.prompt.submit({ text: 'go on', wait: false, origin: { kind: 'composer' } } as never)
+    await $.session.start(START)
+    await $.session.end(CLEAR)
+    const first = await $.prompt.submit(submit('go on'))
 
     // Assert
     const context = first.context?.join('\n') ?? ''
@@ -315,15 +365,93 @@ describe('/clear', () => {
     expect(context).not.toContain('Chose A over B.')
   })
 
-  test('without a /clear, prompts pass through untouched', async ($, on) => {
+  test('the marker is kept in the store under the process key, where a new session finds it', async ($, on) => {
     // Arrange
-    world(on)
+    const w = world(on)
+    on('session.start', (_$, e) => ({ cwd: e.cwd }))
+    on('session.end', (_$, e) => ({ sessionId: e.sessionId }))
+
+    // Act
+    await $.session.start(START)
+    await $.session.end(CLEAR)
+
+    // Assert
+    const key = w.env.get(KEY_VAR)
+    expect(key).toBeDefined()
+    expect(w.store.get(`lastClear:${key}`)).toMatchObject({ sessionId: 'old-session', cwd: CHECKOUT })
+  })
+
+  test("another process's marker is never delivered here", async ($, on) => {
+    // Arrange
+    const theirs = { sessionId: 'theirs', cwd: CHECKOUT, startedAt: 0, clearedAt: Date.now() }
+    const w = world(on, { existing: { mtime: 2_000, doc: DOC }, store: { 'lastClear:other-process': theirs } })
+    on('session.start', (_$, e) => ({ cwd: e.cwd }))
     on('prompt.submit', (_$, e) => ({ text: e.text, context: e.context }))
 
     // Act
-    const res = await $.prompt.submit({ text: 'hello', wait: false, origin: { kind: 'composer' } } as never)
+    await $.session.start(START)
+    const res = await $.prompt.submit(submit('hello'))
 
     // Assert
     expect(res.context ?? []).toEqual([])
+    expect(w.store.has('lastClear:other-process')).toBe(true)
+  })
+
+  test('a process mints its own key rather than keep the one its parent passed down', async ($, on) => {
+    // Arrange
+    const w = world(on, { env: { [KEY_VAR]: 'parent-key' } })
+    on('session.start', (_$, e) => ({ cwd: e.cwd }))
+
+    // Act
+    await $.session.start(START)
+
+    // Assert
+    expect(w.env.get(KEY_VAR)).toBeDefined()
+    expect(w.env.get(KEY_VAR)).not.toBe('parent-key')
+  })
+
+  test('a reload keeps the key the process already has', async ($, on) => {
+    // Arrange
+    const w = world(on)
+    on('session.start', (_$, e) => ({ cwd: e.cwd }))
+
+    // Act
+    await $.session.start(START)
+    const minted = w.env.get(KEY_VAR)
+    await $.session.start(START)
+
+    // Assert
+    expect(w.env.get(KEY_VAR)).toBe(minted)
+  })
+
+  test("an exit drops this process's marker, and a day-old marker of any process is pruned", async ($, on) => {
+    // Arrange
+    const dead = { sessionId: 'gone', cwd: CHECKOUT, startedAt: 0, clearedAt: Date.now() - 2 * DAY_MS }
+    const w = world(on, { store: { 'lastClear:dead-process': dead } })
+    on('session.start', (_$, e) => ({ cwd: e.cwd }))
+    on('session.end', (_$, e) => ({ sessionId: e.sessionId }))
+
+    // Act
+    await $.session.start(START)
+    await $.session.end(CLEAR)
+    await $.session.end({ reason: 'other', sessionId: 'new-session', resume: { id: 'new-session' } } as never)
+
+    // Assert
+    expect([...w.store.keys()]).toEqual([])
+  })
+
+  test('without a /clear, prompts pass through untouched, and the debug log says so', async ($, on) => {
+    // Arrange
+    const w = world(on)
+    on('session.start', (_$, e) => ({ cwd: e.cwd }))
+    on('prompt.submit', (_$, e) => ({ text: e.text, context: e.context }))
+
+    // Act
+    await $.session.start(START)
+    const res = await $.prompt.submit(submit('hello'))
+
+    // Assert
+    expect(res.context ?? []).toEqual([])
+    expect(w.logs.some(l => l.includes('no /clear marker for process'))).toBe(true)
   })
 })

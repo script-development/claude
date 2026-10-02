@@ -9,7 +9,7 @@ convention in `RELEASING.md`.
 
 The automatic path is rebuilt on Claude Code's function hooks ("mods"), which need a build that
 ships them (2.1.287 or later; the API is early access). Rationale: `docs/design.md`, D29–D33.
-Measurements: `docs/measured.md`, findings #37–#43.
+Measurements: `docs/measured.md`, findings #37–#45.
 
 ### Changed
 
@@ -18,10 +18,12 @@ Measurements: `docs/measured.md`, findings #37–#43.
   prompt cache. The gate checks it, and a failed draft gets one corrected retry. The gated
   document then stands in place of core's summary. v1 wrote the handoff out of band, in a
   detached `claude -p` turn next to the compaction, and the next session had to wait for it.
-- **`/clear` hands over in-band.** `session.end` (clear) leaves a marker in `$.state`. The first
+- **`/clear` hands over in-band.** `session.end` (clear) leaves a marker in the plugin's store,
+  under a key only this process holds (finding #45: `$.state` does not survive a `/clear`). The first
   prompt after the `/clear` then carries the handoff the cleared session wrote, once, and marks
   it `progress: consumed`. If no handoff newer than that session exists, the prompt instead says
-  so, with the `claude --resume <id>` line.
+  so, with the `claude --resume <id>` line. Either way the debug log gets a line saying what the
+  prompt was given, or that no marker was found.
 - **No trigger of the plugin's own.** `/autocompact` sets where compaction, and so the handoff,
   happens. `CTX_NOTICE_TOKENS` and `CTX_URGE_TOKENS` remain, for the statusline gauge only.
 
@@ -44,15 +46,17 @@ Measurements: `docs/measured.md`, findings #37–#43.
 
 - `lib/handoff-orient.sh`, which gives the module the checkout, branch, store path and gate from
   the shell library's single copy.
-- `types/index.d.ts`, the `$.state` contract, and `tests/register.test.ts`, which runs under
-  `claude plugin test`.
+- `types/index.d.ts`, the `$.state` contract (the process key), and `tests/register.test.ts`,
+  which runs under `claude plugin test`.
 
 ### Known gaps
 
 - If a resumed process compacts before its first response, `$.model.fork` has nothing to fork.
   Core's summary is used for that compaction.
-- Not yet measured live: an autocompaction answered by the module, `$.state` surviving a real
-  `/clear`, and the `precompute` veto.
+- A hot reload between a `/clear` and the next prompt mints a new process key, so that prompt gets
+  no handoff (finding #45).
+- Not yet measured live: the process-keyed `/clear` path, and the `precompute` veto. (An
+  autocompaction answered by the module was measured in finding #44.)
 
 ## [1.0.3] - 2026-09-25
 

@@ -2174,7 +2174,7 @@ Re-probe on a build bump before trusting any line here.
 
 ### What the probes established
 
-The labels M1–M10 are what D29–D33 cite. Numbers and method are in the findings, not repeated here.
+The labels M1–M11 are what D29–D33 cite. Numbers and method are in the findings, not repeated here.
 
 | #   | Question                                                                       | Answer on 2.1.287                                                              | Finding |
 | --- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------ | ------- |
@@ -2188,6 +2188,7 @@ The labels M1–M10 are what D29–D33 cite. Numbers and method are in the findi
 | M8  | Does a `prompt.submit` hook's `context` reach the model?                       | Yes                                                                            | #40     |
 | M9  | Does `session.end` see a `/clear`?                                             | Yes: `reason: 'clear'` plus the ending session id                              | #41     |
 | M10 | Is `$.store` per session?                                                      | No, it is shared by every session on the machine                               | #41     |
+| M11 | Does `$.state` survive a `/clear`?                                             | No, it is the session's; a `/clear` starts a new one                           | #45     |
 
 ### D29 — The compaction *is* the handoff: a `session.compact` hook answers in core's place
 
@@ -2267,21 +2268,27 @@ human when to reset by hand, and the engine now resets at the chosen depth. **St
 a gauge earns its place as a plain display (`$.ui.status`, a band). It would be a convenience; the
 mechanism no longer depends on one.
 
-### D32 — The `/clear` path: an in-process marker, delivered through `prompt.submit`
+### D32 — The `/clear` path: a process-keyed marker, delivered through `prompt.submit`
 
 `/clear` stays the deliberate fresh start, after a manual `/handoff`. v2 replaces v1's
 `SessionEnd` marker file and `SessionStart` `additionalContext` with two hooks in one module:
 
-- **`session.end` with `reason: 'clear'`** records the ending session id and the resolved handoff
-  (M9). It records them **in-process**, as a module value or `$.state`, never `$.store`, which every
-  session on the machine shares (M10). The process continues across a `/clear`, so only the session
-  that cleared can read the marker. That removes v1's md5(main)+slug correlation key, and with it
-  [D15](#d15)-era "most recent wins" guessing on this path.
+- **`session.end` with `reason: 'clear'`** records the ending session id and where it ran (M9). It
+  records them in `$.store` under a key naming the **process**, never under one fixed key: the
+  store is shared by every session on the machine (M10). Not in `$.state` either: that is the
+  session's, and a `/clear` starts a new session (M11). The process continues across a `/clear`, so
+  only the process that cleared can read the marker. That removes v1's md5(main)+slug correlation
+  key, and with it [D15](#d15)-era "most recent wins" guessing on this path.
+- **The process key** is a random id a fresh process mints in `session.start` and keeps in its own
+  environment, which outlasts a `/clear` and a hot reload. A child `claude` inherits the
+  environment, so each fresh process mints its own; `$.state`, which survives a reload and starts
+  empty in a new process, tells the two apart. One gap remains: a reload between a `/clear` and the
+  next prompt mints a new key and orphans the marker (finding #45). Markers older than a day are
+  pruned.
 - **The first `prompt.submit` after it** attaches the gated handoff as hidden `context` (M8). It
-  doesn't depend on `prompt.context`, which never fires live (M7).
+  doesn't depend on `prompt.context`, which never fires live (M7). It writes a debug line either
+  way, so a `/clear` that delivered nothing says why.
 
-**To verify during the port:** that the chosen in-process holder survives the `/clear` itself, and
-what a hot reload does to it. A reload restarts module variables, so `$.state` is the likely choice.
 M6 also makes a further step possible: submitting the resume prompt for the person. Whether a
 `/clear` should continue on its own is a product question, not a mechanism one, and is left open.
 
@@ -2310,7 +2317,7 @@ start one today. This is recorded so a future feature doesn't rediscover it.
 - **Built 2026-10-02, and run end to end** (finding #42). The pieces:
   - `hooks/register.ts`, plus `hooks/handoff-text.ts` for every text the module sends.
   - `lib/handoff-orient.sh`, so the store name stays the shell library's single copy.
-  - `types/index.d.ts`, the `$.state` contract for the `/clear` marker.
+  - `types/index.d.ts`, the `$.state` contract (the process key) and the `/clear` marker's type.
   - `tests/register.test.ts`, the kit tests.
 
   The three command hooks and their suites are deleted. Store functions and threshold constants
@@ -2329,8 +2336,10 @@ start one today. This is recorded so a future feature doesn't rediscover it.
   matter.
 - **Autocompaction is answered like `/compact`** (finding #44). A `trigger: 'auto'` compaction at the
   180K threshold went down the same path: fork 21.4s at 158K cache-read tokens, core never ran.
+- **`$.state` does not survive a `/clear`** (finding #45). The first live `/clear` delivered nothing:
+  the marker was gone at the next prompt. It now lives in `$.store` under a process key.
 - **Still unmeasured:** M2 against M3 at equal depth, a fork latency curve over depth (two points so
-  far: 21.2s at 70K, 21.4s at 158K), `$.state` surviving a live `/clear`, and the `precompute` veto.
+  far: 21.2s at 70K, 21.4s at 158K), the process-keyed `/clear` path live, and the `precompute` veto.
 
 ---
 
