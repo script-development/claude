@@ -9,6 +9,9 @@ the harness's hook, flag and control-protocol surface — the thing this documen
 enumerated. Claims it refutes are struck or narrowed **in place**, each citing the finding (F1–F8)
 that did it, on the same reasoning as O1 and O3 below: _why_ a claim was wrong is the reusable part.
 Nothing the first report measured changed.
+**Amended 2026-10-02** for v2.0.0, a port to Claude Code function hooks: see
+[v2 — function hooks ("mods")](#v2--function-hooks-mods). D29–D33 reverse or narrow D1, D2 and
+build-order item 4 in place, and retire D22, D23, D26 and D28's machinery.
 
 This document exists because the reasoning that produced it is the part that cannot be recovered.
 The measurement is reproducible (`node tools/context-audit.js`) and the tooling is on disk; the
@@ -340,6 +343,10 @@ solved problem.
 _Rejected:_ building a better summariser. Measured post-compaction size is ~20k from ~1M; there is
 no headroom worth chasing there, and a hand-written summariser would be worse.
 
+_Amended 2026-10-02 by [D29](#d29) (v2):_ the compaction is now answered by a fork-written
+handoff. It isn't a hand-written summariser: it's the same model over the same context, asked for
+D16's format instead of core's.
+
 ### D2 — A written artifact, in addition to compaction, not instead of it
 
 Compaction produces an in-context summary, selected by a process we cannot audit, ~~that dies with the
@@ -355,6 +362,10 @@ correction pays off elsewhere — it makes this document's own falsification tes
 _Rejected:_ relying on compaction alone, triggered earlier. Cheaper, and would capture most of the
 66% — but it forfeits verifiability, and [D6](#d6) argues the selection process is exactly what we
 should not trust.
+
+_Narrowed 2026-10-02 by [D29](#d29) (v2):_ "in addition to" now means one document doing two jobs.
+The written, gated file *is* the compacted conversation. Core's unaudited summary is no longer
+produced at all.
 
 ### D3 — The three-way port test
 
@@ -2146,6 +2157,225 @@ suites (`lib/handoff-store.test.sh`, `hooks/handoff-fork-write.test.sh`,
 
 ---
 
+## v2 — function hooks ("mods")
+
+Decided 2026-10-02, on branch `feat/context-economy-v2-mods`, to ship as **v2.0.0 of this
+plugin** rather than as a replacement plugin. Claude Code's function hooks ("mods": a TypeScript
+hooks module named under `modules` in `hooks/hooks.json`, exporting `register(on)`, every hook
+`($, e, next)`) can rewrite events, call the model, keep state and start turns, which command hooks
+cannot. Most of v1's machinery exists because a command hook could neither generate text inside the
+session nor decide what the session continues from. v2 revisits every decision a hook limit
+forced, and keeps only what still holds once that limit is gone.
+
+**Status: design.** The evidence is `docs/measured.md` findings #37–#41. They were measured on
+**build 2.1.287** with a throwaway probe mod (`handoff-probe`, kept outside this repo), n = 1 per
+probe. The mods API is early access and its declaration file says it may change between releases.
+Re-probe on a build bump before trusting any line here.
+
+### What the probes established
+
+The labels M1–M11 are what D29–D33 cite. Numbers and method are in the findings, not repeated here.
+
+| #   | Question                                                                       | Answer on 2.1.287                                                              | Finding |
+| --- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------ | ------- |
+| M1  | Can a `session.compact` hook answer in core's place?                           | Yes. Its message *is* the compacted conversation; core's preamble is gone      | #37     |
+| M2  | Does `$.model.fork` work inside that hook, and from cache?                     | Yes, ~99.7% of input read from the main thread's cache                         | #37     |
+| M3  | Does core's summarizer, steered by our instructions, compare?                  | It follows the shape and keeps core's preamble; only ~15% comes from cache     | #37     |
+| M4  | Does a plugin's own hook take part in a compaction the plugin itself starts?   | Only via `$.command.run({ command: 'compact' })`; `$.session.compact()` skips it | #38     |
+| M5  | Can a plugin start one from inside a `command.run` hook?                       | No, refused; use a timer or a later event                                      | #38     |
+| M6  | Does `$.prompt.submit` start a turn unattended?                                | Yes, which closes F6                                                           | #39     |
+| M7  | Does `prompt.context` fire?                                                    | Never, live, although the test kit raises it                                   | #40     |
+| M8  | Does a `prompt.submit` hook's `context` reach the model?                       | Yes                                                                            | #40     |
+| M9  | Does `session.end` see a `/clear`?                                             | Yes: `reason: 'clear'` plus the ending session id                              | #41     |
+| M10 | Is `$.store` per session?                                                      | No, it is shared by every session on the machine                               | #41     |
+| M11 | Does `$.state` survive a `/clear`?                                             | No, it is the session's; a `/clear` starts a new one                           | #45     |
+
+### D29 — The compaction *is* the handoff: a `session.compact` hook answers in core's place
+
+The hook calls `$.model.fork` with the handoff instructions, runs the gate on the result, writes it
+to the store, and returns it as the compacted conversation (M1, M2). One model call replaces two. In
+v1 these ran side by side: the detached writer, plus core's summarizer, which v1 never controlled.
+
+**This reverses [D1](#d1)'s rejection and narrows [D2](#d2).** D1 rejected "building a better
+summariser" because a hand-written one would be worse. This isn't one. It is the same model, over
+the same context, asked for D16's format instead of core's. D2's load-bearing reasons all still hold
+(a file that survives, is inspectable and is mechanically verified). What changes is that the
+in-context summary *is* that file, not a second, unaudited account beside it. One document now does
+both jobs: it is what the session continues from, and it is what a later session picks up.
+
+**Cost, by extrapolation, not measured at equal depth** (finding #37's "Bearing" paragraph): core's
+summarizer writes most of the context to the cache, where a fork reads it, so a fork is roughly an
+order of magnitude cheaper on input. That holds while the main thread's cache is warm,
+which is the normal case: autocompaction fires between requests of a live turn. A compaction after
+an idle gap past the cache TTL pays full price either way.
+
+_Rejected:_ **steering core's summarizer instead** (`next({ ...e, instructions })`, M3). It's the
+cheapest code, and it gets the shape. But `instructions` only *steers*: it's the slot the text
+after `/compact` fills. Core's preamble and framing remain, D16's contract can't be guaranteed, and
+by M3 it costs more, not less.
+
+_Rejected:_ **keeping a separate writer beside compaction**, i.e. porting v1. Every cost in
+D22–D28 came from that separation.
+
+**Failure handling, proposed, not yet decided.** The fork returns no text (`api-error`,
+`empty-reply`, `aborted`): fall back to `next(e)`. Core's summary is worse than a handoff but far
+better than a failed compaction. The gate exits 2 (MALFORMED): same fallback, and keep the file for
+inspection. The gate exits 1 (FAILED): use the handoff with its verdict inline, per [D14](#d14).
+A verdict demotes the citable half; it doesn't discard the document.
+
+### D30 — The handoff is written from the live context, in-band, so v1's write-race machinery goes
+
+Waiting on a `$` call doesn't count against a hook's budget, so the compaction hook simply waits for
+the fork. Compaction can't complete before the handoff exists. That removes the problem behind each
+of these decisions:
+
+- **[D22](#d22)'s detached `claude -p`.** It re-read the transcript cold (finding #33: $0.71, 215 s,
+  ended in `api_error`), shared the account budget, and broke the skill's core rule by mining
+  `transcript_path` instead of writing from context. The fork writes from context, so that rule
+  holds again on the automatic path.
+- **[D23](#d23)'s `progress: writing` placeholder** and the `writing → complete → consumed`
+  lifecycle. Nothing is ever half-written when the next request reads it.
+- **[D26](#d26)'s injected poll loop.** There is nothing to wait for.
+- **[D28](#d28)'s liveness probe,** the pinned `--session-id`, `uuidgen`/`openssl`, and the
+  `timeout`/`gtimeout`/watchdog chain.
+- **The 90 s dedup lock** (finding #13: PreCompact firing twice). `session.compact` is the
+  compaction itself, not a notification that one might happen.
+- **The `.claude` write-guard detour ([D21](#d21))** stops being *forced*. The hook writes through
+  `$.fs`, not the headless Write tool. The store stays where it is anyway, to avoid a second migration.
+
+**One cost does not go away: latency.** The fork's ~27 s (finding #37) now sits inside the compaction, in the
+foreground. Core's own summarizer took a comparable time in M3, so the person waits about as long
+as before, just for a better document.
+
+### D31 — No trigger of our own: the autocompact threshold *is* the reset threshold
+
+The person chooses where the reset happens with `/autocompact` (or `--autocompact`), and D29 turns
+every compaction there into a handoff. **This reverses build-order item 4's "Do not set
+`autoCompactThreshold` to the reset threshold".** That ruling was right for v1. There, compaction
+and the handoff writer were two mechanisms at one depth, and when compaction won the race, the
+handoff was written from a summary. In v2 they are one mechanism, so that race can't happen. "One
+mechanism owns the threshold", item 4's own principle, is now literally true.
+
+_Rejected:_ **a plugin threshold off `session.measure`.** It would race autocompaction again. It is
+also strictly coarser. The engine checks before every model request, mid-turn included. A plugin
+sees the fill only after a response, and can start a compaction only between turns (M5, and
+`$.session.compact()`'s own "rejects while a turn runs"). So it could never fire earlier than the
+engine, only at or after it, and one wide turn could carry it far past (finding #18's 549k turn).
+
+**What this retires:** `lib/context-economy/context-thresholds.sh`'s trigger and fork constants,
+and the case for [D10](#d10)/[D25](#d25)'s NOTICE/URGE advisory. That advisory existed to tell a
+human when to reset by hand, and the engine now resets at the chosen depth. **Still open:** whether
+a gauge earns its place as a plain display (`$.ui.status`, a band). It would be a convenience; the
+mechanism no longer depends on one.
+
+### D32 — The `/clear` path: a process-keyed marker, delivered through `prompt.submit`
+
+`/clear` stays the deliberate fresh start, after a manual `/handoff`. v2 replaces v1's
+`SessionEnd` marker file and `SessionStart` `additionalContext` with two hooks in one module:
+
+- **`session.end` with `reason: 'clear'`** records the ending session id and where it ran (M9). It
+  records them in `$.store` under a key naming the **process**, never under one fixed key: the
+  store is shared by every session on the machine (M10). Not in `$.state` either: that is the
+  session's, and a `/clear` starts a new session (M11). The process continues across a `/clear`, so
+  only the process that cleared can read the marker. That removes v1's md5(main)+slug correlation
+  key, and with it [D15](#d15)-era "most recent wins" guessing on this path.
+- **The process key** is a random id a fresh process mints in `session.start` and keeps in its own
+  environment, which outlasts a `/clear` and a hot reload. A child `claude` inherits the
+  environment, so each fresh process mints its own; `$.state`, which survives a reload and starts
+  empty in a new process, tells the two apart. One gap remains: a reload between a `/clear` and the
+  next prompt mints a new key and orphans the marker (finding #45). Markers older than a day are
+  pruned.
+- **The first `prompt.submit` after it** attaches the gated handoff as hidden `context` (M8). It
+  doesn't depend on `prompt.context`, which never fires live (M7). It writes a debug line either
+  way, so a `/clear` that delivered nothing says why.
+
+M6 also makes a further step possible: submitting the resume prompt for the person. Whether a
+`/clear` should continue on its own is a product question, not a mechanism one, and is left open.
+
+### D33 — If v2 ever starts a compaction itself, it does so through `/compact`
+
+`$.session.compact()` skips the caller's own `session.compact` hook (M4). A plugin calling it gets
+core's summary, never its own handoff. Run `$.command.run({ command: 'compact' })` instead, from a
+timer or a later event, never from inside a `command.run` hook (M5). D31 means v2 has no reason to
+start one today. This is recorded so a future feature doesn't rediscover it.
+
+### D34 — The handoff's checkout: an override, the fork's choice, then the cwd
+
+v2 first keyed every automatic handoff to the session's cwd, and forced the `checkout:` header to it.
+A mission_control run's cwd is mission_control while its work is in a sibling worktree, the case
+the skill's Step 1 already handles by having the model name `TARGET`. Keyed to cwd, such a run's
+compaction wrote into mission_control's `main` slot, which the owner's own session and every
+concurrent run share. Its citations were then gated against the wrong tree. v1 had the same keying,
+but its wrong-slot document sat beside the session. In v2 it replaces core's summary, so the run
+resumed from it (reported from mission_control's side, 2026-10-02). The checkout is now, in order:
+
+1. **`CONTEXT_ECONOMY_CHECKOUT`**, set by whatever launched the run. It is the only deterministic
+   source, and the launcher already knows the worktree. When it orients, the fork is told to copy it.
+2. **The checkout the fork names.** Unless the override held, the fork prompt gives the cwd and
+   lets the fork write the checkout the work is really in. The module orients from it, which runs
+   `git rev-parse --show-toplevel`, before using it.
+3. **The cwd.**
+
+A step that does not orient falls through to the next one, and the compaction still gets a
+handoff. Every handoff's toast and debug line name the checkout and the step that chose it, plus an
+override that was ignored. A stale or mistyped override shows up there rather than quietly
+resolving to the cwd's slot.
+
+The skill's Step 1 takes `CONTEXT_ECONOMY_CHECKOUT` as `TARGET` when it orients, and prints
+`target-from=`. Otherwise a run's own `/handoff` and its compaction handoff could write two slots,
+and the run and its watcher would disagree about which one is current.
+
+For a `/clear`, the marker records where this session's last compaction wrote, else the override,
+else the cwd, and also the cwd. Delivery falls back to the cwd when the recorded checkout no longer
+orients. **Gap:** a handoff the skill wrote by hand to a sibling tree is looked for in the cwd when
+there was no compaction and no override.
+
+### v2 build notes and open questions
+
+- **v1 and v2 must not both run.** The probe session still had v1 enabled. Its `PreCompact` started a
+  `claude -p` writer on the steered compaction, and its `SessionStart(compact)` injected v1's
+  handoff (with `GATE: FAILED`) beside v2's. v2.0.0 replaces `hooks/hooks.json`'s command hooks
+  outright. v1's state dirs (`~/.claude/state/handoff-fork/`, `~/.claude/state/last-clear/`) are
+  left orphaned; the handoff store under `$XDG_DATA_HOME` is kept as is.
+- **The gate stays shell.** `verify-handoff.sh` and `verify-citations.sh` run through
+  `$.process.run`. D14 and D16 are unchanged, and so is the skill's write mode, which is still the
+  manual path before a `/clear`.
+- **`/handoff` as a registered command** (`$.command.register`) would put it beyond v1.0.3's
+  `$<digit>` substitution hazard. That's a choice for the port, not yet made.
+- **Test the live engine, not only the kit.** M7 is a case where `claude plugin test` passes against
+  behaviour the live engine doesn't have. Each mechanism v2 relies on needs one live probe, not only a
+  kit test.
+- **Built 2026-10-02, and run end to end** (finding #42). The pieces:
+  - `hooks/register.ts`, plus `hooks/handoff-text.ts` for every text the module sends.
+  - `lib/handoff-orient.sh`, so the store name stays the shell library's single copy.
+  - `types/index.d.ts`, the `$.state` contract (the process key) and the `/clear` marker's type.
+  - `tests/register.test.ts`, the kit tests.
+
+  The three command hooks and their suites are deleted. Store functions and threshold constants
+  that only they used are removed too: the resolver, the placeholder, the transcript finder, the
+  progress rewrite, `CTX_FORK_*`, and the gap constant. Drafts are gated at `<path>.draft`, and only
+  a document that passes the contract (exit 0 or 1) replaces the stored handoff. So a malformed
+  draft never overwrites a good one.
+- **Bash is resolved, not taken from PATH** (finding #43). A bare `bash` in `$.process.run` found the
+  WSL launcher when Claude Code was started from PowerShell. So the module uses Git for Windows' own
+  bash where there is one, and `orient()` reports why it failed instead of always reporting "not
+  inside a git checkout".
+- **Open: compacting a resumed process before its first response** (finding #42). `$.model.fork` has
+  no main-thread request to reuse, so v2 falls back to core's summary. The alternative is
+  `$.model.complete` over `e.messages`, which pays for the whole transcript uncached. Core's summary
+  costs about the same and needs no new code, so the fallback stands until this case is shown to
+  matter.
+- **Autocompaction is answered like `/compact`** (finding #44). A `trigger: 'auto'` compaction at the
+  180K threshold went down the same path: fork 21.4s at 158K cache-read tokens, core never ran.
+- **`$.state` does not survive a `/clear`** (finding #45). The first live `/clear` delivered nothing:
+  the marker was gone at the next prompt. It now lives in `$.store` under a process key, and the
+  live retest delivered the handoff to the first prompt after the `/clear` (finding #45).
+- **Still unmeasured:** M2 against M3 at equal depth, a fork latency curve over depth (three points
+  so far: 21.2s at 70K, 21.4s at 158K, 27.4s in the retest), a hot reload between a `/clear` and the
+  next prompt, and the `precompute` veto.
+
+---
+
 1. ~~`verify-citations` generalisation~~ — **done**, 2026-08-21. `tools/verify-citations.sh` +
    `tools/verify-citations.test.sh`, 50 assertions passing. Scope per [D4](#d4), layout per
    [D9](#d9), three outcomes per [D5](#d5). Flowed back via `upstream-feedback/kendo.md`, which also
@@ -2231,6 +2461,9 @@ SymbolicLink` fails with `Administrator privilege required`, where git-bash's `l
      handoff is authored from a summary — the degradation `compacted:` is gated to record
      ([D16](#d16)). Leave auto-compaction at its default so it stays the backstop [D1](#d1) wants:
      one mechanism owns the threshold.
+     _Reversed for v2 by [D31](#d31):_ with the compaction itself writing the handoff
+     ([D29](#d29)), there is no second mechanism left to race, so setting the threshold this way
+     is now the intended setup.
    - **Capture `compact_summary` from `PostCompact` at the same time** (F3). It is nearly free and it
      is the experiment this document's own falsification section names.
    - **There is no last-chance trigger at `/clear`** (F9). `Stop` does not fire there — traced: the

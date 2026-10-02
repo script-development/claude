@@ -3275,3 +3275,370 @@ disown
 git rev-parse --show-toplevel                       # C:/Users/Bart/Documents/GitHub/claude
 ls ~/.claude/projects/ | grep -i documents-github-claude   # C--Users-Bart-Documents-GitHub-claude
 ```
+
+## Finding #37, 2026-10-02 — a function-hook `session.compact` hook can answer a compaction in core's place with a handoff written by `$.model.fork`; the fork is served ~99.7% from the main thread's prompt cache, while core's own summarizer re-writes most of the context to the cache
+
+**Question.** First of five probes for v2.0.0, the port to Claude Code function hooks ("mods";
+`docs/design.md`, v2 section). Can a hook stand a handoff in for core's compaction summary, write it
+from the live session context rather than a cold transcript read, and what does that cost against
+core's own summarizer?
+
+**Method.** A throwaway mod, `handoff-probe`, kept outside this repo (source sketched under
+Reproduction). It was loaded with `--plugin-dir` into a finished interactive session
+(`7c2310ad-635a-4992-b362-c7b74aefd6af`, mission_control, ~197k resident) on build **2.1.287**, Opus.
+The probe command arms a mode, then has the engine run `/compact` (Finding #38 says why that route).
+The `session.compact` hook does one of two things:
+- **`steer`:** calls `next({ ...e, instructions })` with D16's six section names, so core's
+  summarizer runs as steered.
+- **`fork`:** calls `$.model.fork({ prompt })` with handoff instructions and returns
+  `{ messages: [handoffMessage] }` without calling `next`.
+
+Each result's `usage`, before and after sizes, and the resulting `$.session.messages()` were logged.
+`steer` ran first, over the full transcript. A warm-up prompt preceded each probe, so the main
+thread's cache was fresh. **n = 1 each.** context-economy v1.0.3 was still enabled for the `steer`
+run (its `PreCompact` writer fired; `~/.claude/state/handoff-fork/log.txt`, 09:38:56Z). That doesn't
+affect the summarizer's own `usage`, which is what is reported here.
+
+**Result.**
+
+- **`steer`:** 196,752 → 9,587 tokens. Output 4,122 tokens. Input split:
+
+  | Input type          | Tokens  |
+  | ------------------- | ------- |
+  | Uncached            | 15,440  |
+  | Cache read          | 30,296  |
+  | Cache creation      | 152,753 |
+
+  So core's summarizer request doesn't share the main thread's prefix beyond roughly the system
+  prompt and tools, and re-caches the conversation. Its output followed the six-section shape
+  (Goal, State, Decisions, Dead ends, Traps, Next), but stayed wrapped in core's "This session is
+  being continued from a previous conversation… Summary:" preamble. `instructions` steers the
+  summary prompt; it doesn't replace it.
+- **`fork`:** run over ~66k (what the `steer` compaction left, plus a few turns). 27.3 s
+  wall-clock, 3,003 output tokens, 7,441 characters. Input split:
+
+  | Input type          | Tokens |
+  | ------------------- | ------ |
+  | Uncached            | 197    |
+  | Cache read          | 66,053 |
+  | Cache creation      | 0      |
+
+  That's ~99.7% served from the main thread's cache, as `$.model.fork`'s declaration says it should
+  be.
+- **The hook's answer is the whole compaction.** Afterwards the conversation held exactly the
+  hook's handoff message, followed by the engine's own `/compact` command rows. There was no core
+  preamble and no core summary.
+- **Not a fair accuracy comparison.** Steer's summary called the work "uncommitted", which is what the
+  transcript had last said. The fork's handoff called it committed, with the commit hashes, which
+  is correct, because a `git status` the model ran had entered the context in between. The
+  difference comes from what each one read, not from fork versus core.
+
+**Bearing on D29/D30.** This is the evidence for "the compaction is the handoff". The two runs were
+at different depths, so only the cache *ratio* compares: ~15% read for core versus ~99.7% for the
+fork. Extrapolated to equal depth, not measured: at ~197k, core billed ~153k of cache writes
+(1.25×), where a fork would bill ~197k of cache reads (0.1×).
+
+### Reproduction
+
+```ts
+// hooks/register.ts of a mod loaded with --plugin-dir; types from 'claude-code'
+on('session.compact', async ($, e, next) => {
+  if (mode === 'steer') return next({ ...e, instructions: SIX_SECTIONS }) // log r.usage
+  const r = await $.model.fork({ prompt: HANDOFF_PROMPT })              // log r.usage, ms
+  if (!r.isAnswered) return next(e)
+  return { messages: [{ role: 'user', text: framed(r.text), toolUses: [] }] }
+})
+```
+
+## Finding #38, 2026-10-02 — a plugin cannot have its own `session.compact` hook answer a compaction it starts with `$.session.compact()`; it can through `$.command.run({ command: 'compact' })`, and neither call is allowed from inside a `command.run` hook
+
+**Question.** v2 might someday start a compaction itself. Does a compaction a plugin starts pass
+through that same plugin's `session.compact` hook, so the result is still a handoff?
+
+**Method.** Same mod as Finding #37. First in `claude plugin test` (the test kit), then live in
+session `7c2310ad…`: one run calling `$.session.compact({})`, one calling
+`$.command.run({ command: 'compact' })`. Both were started from a `$.clock.after` timer, after a
+first attempt from inside the command's own `command.run` hook.
+
+**Result.**
+
+- **From inside a `command.run` hook, both are refused.** The error reads: "session.compact:
+  called from a command.run hook, it would compact under the turn this hook is holding; call it
+  from a later event (turn.complete) (host check)".
+- **`$.session.compact()` from a timer skips the caller's own hook,** as its declaration says
+  ("runs through every hook but the calling one, then core"). Live: no `compact.*` log entry, and
+  the resulting conversation opened with core's "This session is being continued…" summary.
+- **`$.command.run({ command: 'compact' })` from a timer goes through every hook.** The compaction
+  arrived as `trigger: 'manual'`, and the plugin's own hook answered it (Finding #37's runs).
+
+**Bearing on D33.** If v2 ever starts a compaction itself, it must run `/compact` as a command,
+from a timer or a later event. D31 means v2 has no reason to start one today.
+
+### Reproduction
+
+```ts
+on('command.run', { command: 'probe' }, $ => {
+  $.clock.after(250, () => void $.command.run({ command: 'compact' })) // own hook runs
+  // $.clock.after(250, () => void $.session.compact({}))              // own hook skipped
+  // await $.session.compact({})  /* here, inside the hook */           // refused
+  return { text: 'scheduled' }
+})
+```
+
+## Finding #39, 2026-10-02 — `$.prompt.submit` starts a turn with nobody at the keyboard, closing F6 for a plugin
+
+**Question.** v1 is "zero-typing, not zero-touch". `additionalContext` doesn't start a turn (F6),
+so every reset waits for a keystroke. Can a mod start the turn itself?
+
+**Method.** After Finding #37's `fork` compaction, the probe called
+`$.prompt.submit({ text: RESUME_PROMPT })`. The prompt asked for three lines: what the context now
+held, the task, and the next step.
+
+**Result.** The turn started on its own. The transcript shows it as "The handoff-probe plugin sent
+a message: … This is how Claude Code surfaces a prompt a plugin submits between turns — it starts
+this turn in the user's place." The model answered all three points correctly from the handoff.
+
+**Bearing on D32.** Continuing on its own after a reset is now possible mechanically. Whether a
+`/clear` *should* continue on its own is left as a product question.
+
+## Finding #40, 2026-10-02 — `prompt.context` never fires on build 2.1.287, although its declaration says it does and the test kit raises it; a `prompt.submit` hook's `context` blocks reach the model instead
+
+**Question.** v1 injects a handoff after `/clear` through SessionStart's `additionalContext`. Does
+the mods API's own channel for this, `prompt.context`, fire for a conversation's first message,
+after a compaction, and after `/clear`?
+
+**Method.** The probe's `prompt.context` hook logged every call. It was checked live in four
+places, in session `7c2310ad…` and headless:
+1. The resumed session's first prompt.
+2. The context re-added after each of three compactions (visible in the transcript as `instructions`
+   and `session_context` attachments).
+3. The first prompt after a `/clear` (new session `59989e63-…`).
+4. Two fresh `claude -p` runs on Haiku, one with and one without
+   `--exclude-dynamic-system-prompt-sections`. The user's shell aliases `claude` to include that
+   flag, so it was a suspect.
+
+Then a `prompt.submit` hook was added that attaches `next({ ...e, context: [block] })` when a
+`/clear` marker is set. It was tested with one headless prompt asking whether such a block exists.
+
+**Result.**
+
+- **`prompt.context`: zero calls in all of the above.** No hook error was surfaced either. Its
+  declaration says it "fires once per conversation… until… a re-read (compaction, `/clear`)". The
+  kit's `$.prompt.context(...)` raises it, so a kit test of that behaviour passes, against behaviour
+  the live engine doesn't have.
+- **`prompt.submit` context: delivered.** The model answered "Yes" and quoted the block, which it
+  received as "prompt.submit hook additional context: handoffProbe (via prompt.submit): …".
+
+**Bearing on D32.** The `/clear` path injects through `prompt.submit`, not `prompt.context`. Each
+mechanism v2 relies on needs a live probe as well as a kit test.
+
+## Finding #41, 2026-10-02 — `session.end` reports a `/clear` with the ending session id; `$.store` is shared by every session on the machine, so a marker kept there is picked up by whichever session reads it first
+
+**Question.** To replace v1's `SessionEnd` marker file, where does a mod keep "this process just
+cleared session X" so that only the session that cleared reads it?
+
+**Method.** The probe's `session.end` hook wrote `{ sessionId, at }` to `$.store` on
+`reason: 'clear'`. Its `prompt.context` and `prompt.submit` hooks consumed it within 10 minutes.
+
+**Result.**
+
+- **`session.end` fired on `/clear`** with `reason: 'clear'` and `sessionId: '7c2310ad-…'`, the
+  session ending.
+- **The marker was consumed by the wrong session.** `prompt.context` never fired (Finding #40), so
+  the marker survived until the probe's later headless `-p` run, an unrelated process. Its
+  `prompt.submit` hook took the marker and injected it there. `$.store` is one JSON file per
+  plugin under the user's config directory, shared across sessions.
+
+**Bearing on D32.** The `/clear` marker belongs in the process: a module variable or `$.state`. The
+process continues across a `/clear`; `$.store` is shared by every session. A hot reload restarts
+module variables, which makes `$.state` the likely holder. Not yet measured: whether `$.state`
+survives the `/clear` itself.
+
+## Finding #42, 2026-10-02 — the v2 hooks module, end to end: a compaction answered by a gated, stored handoff with core's summarizer never run; but a compaction before a resumed process's first model response has nothing to fork, and falls back to core
+
+**Question.** Does `hooks/register.ts` as built (orient, fork, gate, store, answer) work against the
+live engine, not just the test kit, and where does it fall back?
+
+**Method.** Build 2.1.287. A scratch git repo (`feature/e2e`, one file `math.js` with a deliberate
+bug). `HANDOFF_STORE_DIR` was pointed at a scratch store. context-economy v1 was disabled, and v2
+was loaded from the branch with `--plugin-dir`. Haiku, `--debug`. Two runs:
+
+1. **Resumed:** `claude -p "<prompt>"` (read the file, choose between two fixes, edit nothing), then
+   `claude -p "/compact" --resume <id>` in a second process.
+2. **Single process:** the same prompt and then `/compact`, both sent over
+   `--input-format stream-json`.
+
+`MSYS_NO_PATHCONV=1` was needed under Git Bash. Without it, the argument `/compact` reached Claude
+Code as `C:/Program Files/Git/compact`.
+
+**Result.**
+
+- **Run 1, resumed:** orientation ran (0.5 s). Then `$.model.fork` answered `nothing-to-fork`: "no
+  main-thread response to fork yet". The resumed process had sent no request of its own. The module
+  toasted the reason and returned `next(e)`, so core's own compaction ran instead. The fallback
+  behaved as designed.
+- **Run 2, single process:** the whole hook took 8.6 s:
+
+  | Step                         | Time   |
+  | ---------------------------- | ------ |
+  | Orientation                  | 0.5 s  |
+  | Fork (one reply)             | 6.1 s  |
+  | Gate (on the draft)          | 1.9 s  |
+
+  The gate returned exit 0 on the first attempt, with one advisory WARN. The handoff was then
+  written to the store. Core's summarizer never ran: no `reactive-compact` request, and the
+  post-compaction `usage` was all zeros. The stored handoff carried the correct `branch:` and
+  `checkout:`. Its Decisions recorded the choice and what it beat ("in place over an arrow-function
+  rewrite: the bug is only the operator"). Its one Pointer resolved. Re-gating the stored file by
+  hand gave exit 0 again.
+- **The engine hands `$.fs` paths to hooks in host notation** (`C:\…` on Windows), whatever
+  notation the module wrote them in. That matters only to tests that key on paths.
+
+**Bearing on D29/D30.** The mechanism holds live, here even on Haiku. **One real gap:** a process
+that resumes a session and compacts before its first model response gets core's summary, not a
+handoff. That happens when someone resumes a large session and runs `/compact` straight away, or
+when autocompaction fires on a resumed session's first request. An autocompaction (`trigger: 'auto'`)
+answered by the module was measured later (finding #44). Not yet measured: a `/clear` delivered live
+through `$.state`.
+
+## Finding #43, 2026-10-02 — `$.process.run(['bash', …])` resolves `bash` from the host's PATH; launched from PowerShell on Windows that is the WSL launcher, so v2 fell back to core on every compaction and named the wrong cause
+
+**Question.** The first live test inside a real session: after context-economy v2 was swapped into the
+active plugin cache, why did `/compact` still produce core's summary?
+
+**Method.** Build 2.1.287, Windows 11. Claude Code was started from PowerShell with `--debug`,
+resuming a session in this repo's checkout on `feat/context-economy-v2-mods`. Then `/compact` was run
+and the debug log read.
+
+**Result.**
+
+- **The module loaded and its hook ran.** The status line read "writing the handoff…", and the log shows
+  `$.process.run (context-economy): bash with 2 args in C:\Users\Bart\Documents\GitHub\claude`.
+  174 ms later came `bash exited 1 … 0 + 108 chars`, then the toast "No handoff (not inside a git
+  checkout); compacting the usual way."
+- **The cause:** `$.process.run` takes no shell, so `argv[0] = 'bash'` is whatever PATH finds first.
+  From PowerShell that is `C:\WINDOWS\system32\bash.exe`, the WSL launcher. With no Linux
+  distribution installed it prints `WSL … execvpe(/bin/bash) failed: No such file or directory`
+  (the 108 chars) and exits 1. Finding #42's run passed only because it was launched from Git Bash,
+  whose own `bash` comes first on PATH. `runGate` had the same bare `bash`.
+- **The cause was mislabelled.** `orient()` turned every failure into `undefined`, and
+  `writeHandoff` reported every `undefined` as "not inside a git checkout". So the toast pointed away
+  from the actual fault.
+- **`/reload-plugins` was not the problem.** Its "0 hooks" counts command hooks only. The restarted
+  process loaded the module with the rest, and it settled `session.compact` with `next()` included.
+- The same log shows `autocompact: … effectiveWindow=180000`.
+
+**Fix.**
+
+- **Resolve bash once per load.** If `git --exec-path` ends in `/(mingw64|mingw32|clangarm64)/libexec/git-core`,
+  it is Git for Windows, and its `<root>/bin/bash.exe` is used. On a Windows plugin root,
+  `C:/Program Files/Git/bin/bash.exe` comes next. Each candidate is probed with `-c 'echo ok'`, and
+  bare `bash` is used only when no candidate answers.
+- **`orient()` now returns its reason.** A run with exit 1 and nothing on stderr is "not inside a git
+  checkout", as `handoff-orient.sh` documents. Any other failure names the bash and the exit code,
+  with the first line of stderr.
+- **Three kit tests** cover the toast outside a checkout, the reported failure of a bash that cannot
+  run the scripts, and Git for Windows' bash running both scripts.
+
+**Bearing.** Any plugin that calls `$.process.run(['bash', …])` on Windows depends on how Claude Code
+was launched. Plugins should name their interpreter by path, or resolve it.
+
+**Live retest after the fix, 2026-10-02.** The retest ran in a PowerShell-launched session on cache
+1.0.3 with d508795. The first `/compact` came 27s after `--continue`, before the process had answered
+anything. It ran orientation under `C:/Program Files/Git/bin/bash.exe` (exit 0, 661ms). The fork then
+returned `nothing-to-fork`, and the toast gave that reason (finding #42's case). After one exchange, a
+second manual `/compact` (10:40:36) went down the whole path:
+- orient: exit 0, 656ms;
+- `$.model.fork`: 21.2s, 1 reply, 70,681 cache-read tokens, 2,226 output;
+- gate: exit 0, 4.3s;
+- handoff written (5,131 bytes), with the toast `Handoff written: …`;
+- log line: "context-economy answered session.compact without next() in 26193.9ms";
+- log line: "a hook's 1 messages stand …; core never ran".
+
+The resumed context opened with the handoff and `GATE: OK`. For comparison, core's summary of the same
+session took 44.6s at 112,106 cache-read tokens.
+
+## Finding #44, 2026-10-02 — an autocompaction (`trigger: 'auto'`) is answered by the module exactly like a manual one; the fork at ~180K depth takes no longer than at 70K
+
+**Question.** Every earlier run used `/compact`. Does v2 also answer the compaction Claude Code starts
+itself when the context crosses its threshold, and what does the fork cost at that depth?
+
+**Setup.** The same session as finding #43's retest, on cache 1.0.3 with d508795. After the second
+manual `/compact`, the context was filled on purpose by reading this bundle's own docs, until the
+threshold was crossed. The dev mod `handoff-probe@inline` was loaded to log the trigger.
+
+**Result.** The debug log, 10:42:45–10:43:18:
+- `autocompact: … level=warn effectiveWindow=180000` at 10:42:45, then `level=compact` at 10:42:54,
+  then "routing through reactive (thresholdSource=settings)". The threshold is 180K, not the 200K
+  window the user set.
+- orient: exit 0, 642ms, under `C:/Program Files/Git/bin/bash.exe`;
+- `$.model.fork`: 21.4s, 1 reply, 158,257 cache-read tokens, 61 cache-create, 2,181 output;
+- gate: exit 0, 2.6s;
+- handoff written (4,900 bytes), with the toast `Handoff written: …`;
+- log line: "context-economy (user) answered session.compact without next() in 24616.1ms";
+- log line: "session.compact (auto): a hook's 1 messages stand …; core never ran";
+- handoff-probe logged `compact.core {"trigger":"auto","messagesIn":53,…}`. No `reactive-compact` fork
+  ran: although autocompaction routes through reactive compaction, the hook answers before it.
+
+The resumed context opened with the handoff and `GATE: OK`, and work picked up from its first
+`## Next` step without re-reading anything.
+
+**Bearing.** The `auto` trigger needs no separate handling. The fork took 21.4s at 158K cache-read
+tokens and 21.2s at 70K (finding #43), so its latency is set by the output, not the depth it reads.
+That is one data point per depth, not a curve. The cache-create count (61 tokens) shows the fork
+reused the main thread's cache at full depth too.
+
+## Finding #45, 2026-10-02 — `$.state` does not survive a `/clear`: the marker `session.end` wrote was gone at the next prompt, so v2 delivered nothing after a live `/clear`
+
+**Question.** Finding #41 left this open: does the `/clear` marker v2 keeps in `$.state` reach the
+first prompt of the conversation after the `/clear`?
+
+**Method.** Build 2.1.287, Windows 11, launched from PowerShell, cache 1.0.3 at d41f6d8. In session
+`a24a1b11…`, after one exchange, a manual `/compact` (10:48:18), then `/clear` (10:48:27), then one
+prompt in the new session `d35ae612…`. The debug logs of both sessions were read. The dev mod
+`handoff-probe@inline` was still loaded and kept its own marker in `$.store`.
+
+**Result.**
+
+- **The compaction was answered** as in finding #43: the first draft failed the gate (exit 1), the
+  retry passed (exit 0), the handoff was stored, and "core never ran".
+- **`session.end` ran on the `/clear`** through both mods, settling in 41.3ms.
+- **The first prompt got nothing from context-economy.** Its `prompt.submit` settled in 29.5ms, with
+  no `$.process.run` at all: `orient` never ran. So `$.state.get(lastClear)` found no value and the
+  hook returned `next(e)` without a word. The stored handoff was still `progress: complete`, not
+  `consumed`.
+- **The probe's `$.store` marker did arrive**, as "handoffProbe (via prompt.submit): …". So the
+  `prompt.submit` channel itself still works (finding #40).
+- `$.state` calls are not in the debug log, so the `set` in `session.end` is inferred from the code
+  path, not seen. The types say what fits the result: `$.state` holds values "for the session", and
+  a `/clear` starts a new one.
+
+**Fix.** The marker moves to `$.store`, keyed by the process. The key is a random id that a fresh
+process mints in `session.start` and keeps in its own environment (`CONTEXT_ECONOMY_PROCESS_KEY`).
+The environment outlasts both a `/clear` and a hot reload. A child process inherits the
+environment, so every fresh process mints its own key, and `$.state` tells a fresh process from a
+reload: it survives a reload and starts empty in a new process. `session.end` drops the process's
+marker on any other reason, and prunes any marker older than a day. `prompt.submit` now writes a
+debug line either way: "no /clear marker for process <key>", or what it delivered.
+
+**Remaining gap.** A hot reload between a `/clear` and the next prompt finds `$.state` empty (the
+`/clear` dropped it), mints a new key, and never reads the marker under the old one.
+
+**Bearing on D32.** `$.state` is per session, not per process. A value that has to outlive a `/clear`
+lives in `$.store`, under a key the process owns.
+
+**Live retest.** Build 2.1.287, Windows 11, cache 1.0.3 at 668ba15, loaded by a hot reload at
+11:03:07 that minted process key `7387051e…`. In session `d35ae612…`, a manual `/compact`
+(11:03:39), then `/clear`, then one prompt in the new session `2fabcf22…`. The debug logs of both
+sessions were read; the probe mod was disabled.
+
+- **The compaction was answered** as in finding #43, this time on the first draft: fork 27.4s, the
+  gate passed (exit 0), the handoff was stored, and "core never ran".
+- **`session.end` wrote the marker** under the process key: `$.store.set … lastClear:7387051e-…`
+  (11:04:19), settling in 28.7ms.
+- **The first prompt got the handoff.** Its `prompt.submit` ran `orient` and the gate (5.6s of a
+  6.2s hook), then logged "delivered the handoff … for cleared session d35ae612-…". The prompt
+  carried the handoff and a `GATE: OK` line, and the stored handoff now says `progress: consumed`.
+- The new session wrote a new debug file, so the process does not keep one file across a `/clear`.
+
+The process-keyed path works live. The hot-reload gap above is still unmeasured.

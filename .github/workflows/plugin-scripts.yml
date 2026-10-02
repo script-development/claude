@@ -44,18 +44,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # context-economy's handoff-fork-write hook exits early when no `claude` is on PATH, and its
-      # suite then fails on purpose. The suite checks the lock and the skeleton the hook writes,
-      # not what the detached turn does, so a no-op stub is enough. It also means CI never starts
-      # a real Claude turn.
-      - name: Stub the claude CLI
-        run: |
-          stub="$RUNNER_TEMP/stub-bin"
-          mkdir -p "$stub"
-          printf '#!/bin/sh\nexit 0\n' > "$stub/claude"
-          chmod +x "$stub/claude"
-          echo "$stub" >> "$GITHUB_PATH"
-
       # The scripts are written to run on bash 3.2, the /bin/bash of stock macOS. The runner
       # image puts a newer Homebrew bash first on PATH, so put /bin/bash ahead of it. Then the
       # suites, and every `bash <subject>` they start, run on 3.2.
