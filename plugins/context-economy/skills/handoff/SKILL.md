@@ -177,10 +177,26 @@ citations describe — *not* the session's cwd, and the two differ whenever a mi
 drives a sibling checkout. If the work happened in a worktree this run created, `TARGET` is that
 worktree. Get this wrong and everything below is keyed to the wrong repository.
 
+**`CONTEXT_ECONOMY_CHECKOUT`, when set, overrides your choice.** Whatever launched the run set it
+to the checkout the run works in, and the hooks module's compaction handoff resolves to it as well:
+two different TARGETs for one run would write two slots, and whichever wrote last would be the one
+the run and its watcher disagree about. `target-from=` says which one Step 1 used; carry it into
+`status:` when it is not `you`.
+
 **Then one bash call, and it resolves paths only — never file contents.**
 
 ```bash
 TARGET=<absolute path of the checkout the work is in>   # cwd only if that is genuinely where it is
+# A launcher that set CONTEXT_ECONOMY_CHECKOUT named the tree for this run; the plugin's compaction
+# handoff uses it too, so both land in one slot. One that is not a checkout is said, then ignored.
+from=you
+if [ -n "${CONTEXT_ECONOMY_CHECKOUT:-}" ]; then
+    if git -C "$CONTEXT_ECONOMY_CHECKOUT" rev-parse --show-toplevel >/dev/null 2>&1; then
+        TARGET=$CONTEXT_ECONOMY_CHECKOUT; from=CONTEXT_ECONOMY_CHECKOUT
+    else
+        from="you (CONTEXT_ECONOMY_CHECKOUT=$CONTEXT_ECONOMY_CHECKOUT is not a git checkout)"
+    fi
+fi
 
 # cut, not awk: Claude Code substitutes a dollar-digit token in a skill body with the matching
 # skill argument, fences included. The string must stay byte-identical to what the hooks hash.
@@ -223,6 +239,7 @@ fi
 echo "checkout=$here"
 echo "branch=$ref"
 echo "gate=${gate:-NONE}"
+echo "target-from=$from"
 ```
 
 The filename is computed by `handoff_store_path`, never hand-built. It is a contract shared with

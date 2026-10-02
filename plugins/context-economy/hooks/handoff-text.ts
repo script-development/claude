@@ -39,7 +39,13 @@ export function verdictLine(gate: GateResult | undefined): string {
   return `GATE: ${verdict}${warnings}`
 }
 
-export function forkPrompt(o: Orientation, instructions: string | undefined): string {
+// `checkoutFixed` is true when CONTEXT_ECONOMY_CHECKOUT named the tree, so the fork must copy it.
+// Otherwise `checkout:` starts as the session's cwd and the fork may name the checkout the work is
+// really in, which register.ts then verifies (docs/design.md D34).
+const CHECKOUT_RULE = `- Copy the branch: and progress: lines exactly as given above.
+- checkout: as given is this session's working directory. If the work in this conversation was done in a different git checkout (a sibling repo or worktree driven with git -C or absolute paths), write that checkout's absolute path instead; branch: is then corrected to match it. Paths in Pointers are relative to the checkout you write.`
+
+export function forkPrompt(o: Orientation, instructions: string | undefined, checkoutFixed: boolean): string {
   const stress = instructions?.trim()
     ? `\nThe person asked this compaction to keep or stress: ${instructions.trim()}\n`
     : ''
@@ -78,7 +84,7 @@ path/to/other.ext | a substring anywhere in that file
 \`\`\`
 
 RULES THE GATE ENFORCES:
-- Copy the branch:, checkout: and progress: lines exactly as given above.
+${checkoutFixed ? '- Copy the branch:, checkout: and progress: lines exactly as given above.' : CHECKOUT_RULE}
 - Decisions, Dead ends and Traps must each be non-empty. "None." is a real answer; silence is not.
 - Paths in Pointers are relative to the checkout. Never write path:symbol; write path:line | symbol.
 - Every path:line in the body must also appear in Pointers, character for character.
@@ -87,8 +93,8 @@ RULES THE GATE ENFORCES:
 Reply with the document only: no preamble, no closing remarks, no code fence around the whole.`
 }
 
-export function retryPrompt(o: Orientation, instructions: string | undefined, draft: string, gate: GateResult): string {
-  return `${forkPrompt(o, instructions)}
+export function retryPrompt(o: Orientation, instructions: string | undefined, checkoutFixed: boolean, draft: string, gate: GateResult): string {
+  return `${forkPrompt(o, instructions, checkoutFixed)}
 
 YOUR PREVIOUS DRAFT FAILED THE GATE. Its report:
 
@@ -101,9 +107,18 @@ ${draft}
 Write the corrected document in full. Fix the structure, or correct each MISSING/CHANGED citation from what this conversation shows, or drop a pointer you cannot stand behind and the claim that cites it. Do not cut Decisions, Dead ends or Traps to make it pass.`
 }
 
-// The fork is told to copy the envelope verbatim; this makes sure it did. A wrong `checkout:` is the
-// one header error the gate cannot catch on its own: it would verify every citation against the
-// wrong tree and report the result as rot.
+// The `checkout:` a fork wrote, if any: the tree it says the work is in. Only a candidate until
+// register.ts has oriented from it.
+export function namedCheckout(text: string): string | undefined {
+  const line = text.split('\n').slice(0, 20).find(l => l.startsWith('checkout:'))
+  const named = line?.slice('checkout:'.length).trim()
+  return named ? named : undefined
+}
+
+// The envelope, forced to `o`: the orientation register.ts settled on, which is the fork's named
+// checkout only once orienting from it succeeded. A wrong `checkout:` is the one header error the
+// gate cannot catch on its own: it would verify every citation against the wrong tree and report
+// the result as rot.
 export function normalizeEnvelope(text: string, o: Orientation): string {
   let doc = text.trim()
   const fenced = /^```[a-z]*\n([\s\S]*)\n```$/.exec(doc)

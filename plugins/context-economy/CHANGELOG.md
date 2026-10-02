@@ -8,7 +8,7 @@ convention in `RELEASING.md`.
 ## [2.0.0] - 2026-10-02
 
 The automatic path is rebuilt on Claude Code's function hooks ("mods"), which need a build that
-ships them (2.1.287 or later; the API is early access). Rationale: `docs/design.md`, D29–D33.
+ships them (2.1.287 or later; the API is early access). Rationale: `docs/design.md`, D29–D34.
 Measurements: `docs/measured.md`, findings #37–#45.
 
 ### Changed
@@ -24,6 +24,12 @@ Measurements: `docs/measured.md`, findings #37–#45.
   it `progress: consumed`. If no handoff newer than that session exists, the prompt instead says
   so, with the `claude --resume <id>` line. Either way the debug log gets a line saying what the
   prompt was given, or that no marker was found.
+- **The handoff goes to the checkout the work is in, not always the cwd** (D34). The checkout is
+  `CONTEXT_ECONOMY_CHECKOUT` when the launcher set it, else the one the fork names, once it orients,
+  else the session's cwd. A source that does not orient falls through to the next, and the toast
+  and the debug log say which source chose. The `/clear` marker records where the last compaction
+  wrote, and the skill's Step 1 takes the variable as its `TARGET`, so a run's manual and automatic
+  handoffs share one slot.
 - **No trigger of the plugin's own.** `/autocompact` sets where compaction, and so the handoff,
   happens. `CTX_NOTICE_TOKENS` and `CTX_URGE_TOKENS` remain, for the statusline gauge only.
 
@@ -50,6 +56,9 @@ Measurements: `docs/measured.md`, findings #37–#45.
   which runs under `claude plugin test`.
 
 ### Known gaps
+
+- A handoff the skill wrote by hand to a sibling checkout is looked for in the cwd after a
+  `/clear` if the session neither compacted nor had `CONTEXT_ECONOMY_CHECKOUT` set.
 
 - If a resumed process compacts before its first response, `$.model.fork` has nothing to fork.
   Core's summary is used for that compaction.

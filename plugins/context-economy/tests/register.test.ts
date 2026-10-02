@@ -9,6 +9,10 @@ import { describe, expect, test } from 'claude-code/testing'
 
 const CHECKOUT = 'C:/work/repo'
 const HANDOFF = 'C:/store/repo-main-abcd1234.md'
+// A sibling worktree the work can be in while the session's cwd stays at CHECKOUT.
+const SIBLING = 'C:/work/sibling'
+const SIBLING_HANDOFF = 'C:/store/sibling-feat-x-ef567890.md'
+const CHECKOUT_VAR = 'CONTEXT_ECONOMY_CHECKOUT'
 const USAGE = { input_tokens: 1, output_tokens: 2, cache_read_input_tokens: 3, cache_creation_input_tokens: 0 }
 const TRANSCRIPT: SessionMessage[] = [{ role: 'user', text: 'do the thing', toolUses: [] }]
 const CORE: SessionMessage = { role: 'user', text: 'core summary', toolUses: [] }
@@ -45,6 +49,8 @@ type World = {
   gateRuns: string[][]
   // argv[0] of every script run: which bash ran it.
   shells: string[]
+  // The directory of every orient run.
+  orients: string[]
   toasts: string[]
   core: number
   // The host process's environment, the plugin's store, and its debug log lines.
@@ -76,6 +82,7 @@ function world(on: On, opts: Options = {}): World {
     forks: [],
     gateRuns: [],
     shells: [],
+    orients: [],
     toasts: [],
     core: 0,
     env: new Map(Object.entries(opts.env ?? {})),
@@ -133,8 +140,24 @@ function world(on: On, opts: Options = {}): World {
     const script = e.argv[1] ?? ''
     w.shells.push(e.argv[0] ?? '')
     if (script.endsWith('handoff-orient.sh')) {
+      const dir = e.argv[2] ?? ''
+      w.orients.push(dir)
       if (opts.orientFailure) return ran(opts.orientFailure.exitCode, '', opts.orientFailure.stderr)
-      if (opts.isCheckout === false) return { value: { exitCode: 1, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+      // The sibling orients from its own path; a handoff there exists once something wrote it.
+      if (dir === SIBLING) {
+        const exists = w.files.has(SIBLING_HANDOFF)
+        return ran(0, [
+          `main=${SIBLING}`,
+          `checkout=${SIBLING}`,
+          'branch=feat/x',
+          `handoff=${SIBLING_HANDOFF}`,
+          `exists=${exists ? 1 : 0}`,
+          `mtime=${exists ? 2_000 : ''}`,
+          `progress=${exists ? 'complete' : ''}`,
+          'gate=C:/plugin/lib/verify-handoff.sh',
+        ].join('\n'))
+      }
+      if (opts.isCheckout === false || dir !== CHECKOUT) return ran(1, '')
       const ex = opts.existing
       const stdout = [
         `main=${CHECKOUT}`,
@@ -229,7 +252,7 @@ describe('compaction', () => {
     expect(w.files.get(HANDOFF)).toBe('the older good one')
   })
 
-  test('the envelope is forced to the oriented branch and checkout', async ($, on) => {
+  test('a checkout the fork names that is not a git checkout gives way to the cwd', async ($, on) => {
     // Arrange
     const w = world(on, { forkText: DOC.replace(`checkout: ${CHECKOUT}`, 'checkout: /somewhere/else') })
 
@@ -239,6 +262,78 @@ describe('compaction', () => {
     // Assert
     expect(w.files.get(HANDOFF)).toContain(`checkout: ${CHECKOUT}`)
     expect(w.files.get(HANDOFF)).not.toContain('/somewhere/else')
+  })
+
+  test('a checkout the fork names is where the handoff goes, gated against that tree', async ($, on) => {
+    // Arrange
+    const w = world(on, { forkText: DOC.replace(`checkout: ${CHECKOUT}`, `checkout: ${SIBLING}`) })
+
+    // Act
+    const res = await $.session.compact({ trigger: 'auto', messages: TRANSCRIPT })
+
+    // Assert
+    expect(w.forks[0]).toContain('If the work in this conversation was done in a different git checkout')
+    expect(w.files.get(SIBLING_HANDOFF)).toContain(`checkout: ${SIBLING}`)
+    expect(w.files.get(SIBLING_HANDOFF)).toContain('branch: feat/x')
+    expect(w.files.has(HANDOFF)).toBe(false)
+    expect(w.gateRuns[0]?.slice(2)).toEqual([`${SIBLING_HANDOFF}.draft`, SIBLING])
+    expect(res.messages?.[0]?.text).toContain(SIBLING_HANDOFF)
+  })
+
+  test('CONTEXT_ECONOMY_CHECKOUT names the tree, and the fork is told to copy it', async ($, on) => {
+    // Arrange
+    const w = world(on, { env: { [CHECKOUT_VAR]: SIBLING } })
+
+    // Act
+    await $.session.compact({ trigger: 'auto', messages: TRANSCRIPT })
+
+    // Assert
+    expect(w.orients).toEqual([SIBLING])
+    expect(w.forks[0]).toContain(`checkout: ${SIBLING}`)
+    expect(w.forks[0]).toContain('Copy the branch:, checkout: and progress: lines exactly')
+    expect(w.files.get(SIBLING_HANDOFF)).toContain(`checkout: ${SIBLING}`)
+    expect(w.files.has(HANDOFF)).toBe(false)
+    expect(w.toasts[0]).toContain(`from ${CHECKOUT_VAR}`)
+  })
+
+  test('under CONTEXT_ECONOMY_CHECKOUT, a checkout the fork names is ignored', async ($, on) => {
+    // Arrange
+    const w = world(on, { env: { [CHECKOUT_VAR]: SIBLING }, forkText: DOC })
+
+    // Act
+    await $.session.compact({ trigger: 'auto', messages: TRANSCRIPT })
+
+    // Assert
+    expect(w.orients).toEqual([SIBLING])
+    expect(w.files.get(SIBLING_HANDOFF)).toContain(`checkout: ${SIBLING}`)
+    expect(w.files.has(HANDOFF)).toBe(false)
+  })
+
+  test('a CONTEXT_ECONOMY_CHECKOUT that is not a git checkout falls through, and the toast says so', async ($, on) => {
+    // Arrange
+    const w = world(on, { env: { [CHECKOUT_VAR]: 'C:/nowhere' } })
+
+    // Act
+    const res = await $.session.compact({ trigger: 'auto', messages: TRANSCRIPT })
+
+    // Assert
+    expect(w.core).toBe(0)
+    expect(w.forks[0]).toContain('If the work in this conversation was done in a different git checkout')
+    expect(w.files.get(HANDOFF)).toContain(`checkout: ${CHECKOUT}`)
+    expect(res.messages?.[0]?.text).toContain('Chose A over B.')
+    expect(w.toasts[0]).toContain(`checkout ${CHECKOUT}, from the cwd; CONTEXT_ECONOMY_CHECKOUT=C:/nowhere ignored: not inside a git checkout`)
+  })
+
+  test('the toast and the debug log name the source that chose the checkout', async ($, on) => {
+    // Arrange
+    const w = world(on, { forkText: DOC.replace(`checkout: ${CHECKOUT}`, `checkout: ${SIBLING}`) })
+
+    // Act
+    await $.session.compact({ trigger: 'auto', messages: TRANSCRIPT })
+
+    // Assert
+    expect(w.toasts[0]).toBe(`Handoff written: ${SIBLING_HANDOFF} (checkout ${SIBLING}, from the fork)`)
+    expect(w.logs.some(l => l.includes(`wrote ${SIBLING_HANDOFF} (checkout ${SIBLING}, from the fork)`))).toBe(true)
   })
 
   test('outside a git checkout, core compacts as before', async ($, on) => {
@@ -378,12 +473,12 @@ describe('/clear', () => {
     // Assert
     const key = w.env.get(KEY_VAR)
     expect(key).toBeDefined()
-    expect(w.store.get(`lastClear:${key}`)).toMatchObject({ sessionId: 'old-session', cwd: CHECKOUT })
+    expect(w.store.get(`lastClear:${key}`)).toMatchObject({ sessionId: 'old-session', checkout: CHECKOUT })
   })
 
   test("another process's marker is never delivered here", async ($, on) => {
     // Arrange
-    const theirs = { sessionId: 'theirs', cwd: CHECKOUT, startedAt: 0, clearedAt: Date.now() }
+    const theirs = { sessionId: 'theirs', checkout: CHECKOUT, startedAt: 0, clearedAt: Date.now() }
     const w = world(on, { existing: { mtime: 2_000, doc: DOC }, store: { 'lastClear:other-process': theirs } })
     on('session.start', (_$, e) => ({ cwd: e.cwd }))
     on('prompt.submit', (_$, e) => ({ text: e.text, context: e.context }))
@@ -426,7 +521,7 @@ describe('/clear', () => {
 
   test("an exit drops this process's marker, and a day-old marker of any process is pruned", async ($, on) => {
     // Arrange
-    const dead = { sessionId: 'gone', cwd: CHECKOUT, startedAt: 0, clearedAt: Date.now() - 2 * DAY_MS }
+    const dead = { sessionId: 'gone', checkout: CHECKOUT, startedAt: 0, clearedAt: Date.now() - 2 * DAY_MS }
     const w = world(on, { store: { 'lastClear:dead-process': dead } })
     on('session.start', (_$, e) => ({ cwd: e.cwd }))
     on('session.end', (_$, e) => ({ sessionId: e.sessionId }))
@@ -438,6 +533,56 @@ describe('/clear', () => {
 
     // Assert
     expect([...w.store.keys()]).toEqual([])
+  })
+
+  test('after a compaction into another checkout, the /clear looks for the handoff there', async ($, on) => {
+    // Arrange
+    const w = world(on, { forkText: DOC.replace(`checkout: ${CHECKOUT}`, `checkout: ${SIBLING}`) })
+    on('session.start', (_$, e) => ({ cwd: e.cwd }))
+    on('session.end', (_$, e) => ({ sessionId: e.sessionId }))
+    on('prompt.submit', (_$, e) => ({ text: e.text, context: e.context }))
+
+    // Act
+    await $.session.start(START)
+    await $.session.compact({ trigger: 'auto', messages: TRANSCRIPT })
+    await $.session.end(CLEAR)
+    const first = await $.prompt.submit(submit('go on'))
+
+    // Assert
+    expect(first.context?.join('\n')).toContain('Chose A over B.')
+    expect(w.files.get(SIBLING_HANDOFF)).toContain('progress: consumed')
+  })
+
+  test('under CONTEXT_ECONOMY_CHECKOUT, the /clear marker names that tree', async ($, on) => {
+    // Arrange
+    const w = world(on, { env: { [CHECKOUT_VAR]: SIBLING } })
+    on('session.start', (_$, e) => ({ cwd: e.cwd }))
+    on('session.end', (_$, e) => ({ sessionId: e.sessionId }))
+
+    // Act
+    await $.session.start(START)
+    await $.session.end(CLEAR)
+
+    // Assert
+    expect(w.store.get(`lastClear:${w.env.get(KEY_VAR)}`)).toMatchObject({ checkout: SIBLING })
+  })
+
+  test('a /clear marker whose checkout no longer orients falls back to the cwd', async ($, on) => {
+    // Arrange
+    const w = world(on, { existing: { mtime: 2_000, doc: DOC }, env: { [CHECKOUT_VAR]: 'C:/gone' } })
+    on('session.start', (_$, e) => ({ cwd: e.cwd }))
+    on('session.end', (_$, e) => ({ sessionId: e.sessionId }))
+    on('prompt.submit', (_$, e) => ({ text: e.text, context: e.context }))
+
+    // Act
+    await $.session.start(START)
+    await $.session.end(CLEAR)
+    const first = await $.prompt.submit(submit('go on'))
+
+    // Assert
+    expect(w.orients).toEqual(['C:/gone', CHECKOUT])
+    expect(first.context?.join('\n')).toContain('Chose A over B.')
+    expect(w.logs.some(l => l.includes('checkout C:/gone did not orient'))).toBe(true)
   })
 
   test('without a /clear, prompts pass through untouched, and the debug log says so', async ($, on) => {

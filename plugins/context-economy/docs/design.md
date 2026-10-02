@@ -2299,6 +2299,37 @@ core's summary, never its own handoff. Run `$.command.run({ command: 'compact' }
 timer or a later event, never from inside a `command.run` hook (M5). D31 means v2 has no reason to
 start one today. This is recorded so a future feature doesn't rediscover it.
 
+### D34 — The handoff's checkout: an override, the fork's choice, then the cwd
+
+v2 first keyed every automatic handoff to the session's cwd, and forced the `checkout:` header to it.
+A mission_control run's cwd is mission_control while its work is in a sibling worktree, the case
+the skill's Step 1 already handles by having the model name `TARGET`. Keyed to cwd, such a run's
+compaction wrote into mission_control's `main` slot, which the owner's own session and every
+concurrent run share. Its citations were then gated against the wrong tree. v1 had the same keying,
+but its wrong-slot document sat beside the session. In v2 it replaces core's summary, so the run
+resumed from it (reported from mission_control's side, 2026-10-02). The checkout is now, in order:
+
+1. **`CONTEXT_ECONOMY_CHECKOUT`**, set by whatever launched the run. It is the only deterministic
+   source, and the launcher already knows the worktree. When it orients, the fork is told to copy it.
+2. **The checkout the fork names.** Unless the override held, the fork prompt gives the cwd and
+   lets the fork write the checkout the work is really in. The module orients from it, which runs
+   `git rev-parse --show-toplevel`, before using it.
+3. **The cwd.**
+
+A step that does not orient falls through to the next one, and the compaction still gets a
+handoff. Every handoff's toast and debug line name the checkout and the step that chose it, plus an
+override that was ignored. A stale or mistyped override shows up there rather than quietly
+resolving to the cwd's slot.
+
+The skill's Step 1 takes `CONTEXT_ECONOMY_CHECKOUT` as `TARGET` when it orients, and prints
+`target-from=`. Otherwise a run's own `/handoff` and its compaction handoff could write two slots,
+and the run and its watcher would disagree about which one is current.
+
+For a `/clear`, the marker records where this session's last compaction wrote, else the override,
+else the cwd, and also the cwd. Delivery falls back to the cwd when the recorded checkout no longer
+orients. **Gap:** a handoff the skill wrote by hand to a sibling tree is looked for in the cwd when
+there was no compaction and no override.
+
 ### v2 build notes and open questions
 
 - **v1 and v2 must not both run.** The probe session still had v1 enabled. Its `PreCompact` started a

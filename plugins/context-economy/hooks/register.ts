@@ -5,6 +5,7 @@ import {
   compactedMessage,
   forkPrompt,
   noHandoffContext,
+  namedCheckout,
   normalizeEnvelope,
   retryPrompt,
   setProgress,
@@ -12,14 +13,16 @@ import {
   type Orientation,
 } from './handoff-text'
 
-// context-economy v2: handoffs as function hooks. docs/design.md, "v2 — function hooks", D29-D33.
+// context-economy v2: handoffs as function hooks. docs/design.md, "v2 — function hooks", D29-D34.
 //
 //   session.compact  every compaction of the main conversation becomes a handoff: a fork of the
 //                    live session writes it, the gate checks it, the store keeps it, and it stands
-//                    in place of core's summary (D29, D30). Autocompact's threshold is the trigger;
+//                    in place of core's summary (D29, D30), keyed to the checkout the work is in,
+//                    which need not be the cwd (D34). Autocompact's threshold is the trigger;
 //                    this plugin has none of its own (D31).
 //   session.start    a fresh process mints its process key (D32).
-//   session.end      a /clear records which session ended, in $.store under that key (D32).
+//   session.end      a /clear records which session ended, and where its handoff is, in $.store
+//                    under that key (D32, D34).
 //   prompt.submit    the first prompt after that /clear carries the handoff that session wrote,
 //                    or says it wrote none (D32). Not prompt.context: that event never fires on
 //                    the builds measured (docs/measured.md finding #40).
@@ -51,7 +54,8 @@ async function pruneClears($: EngineInterface, now: number): Promise<void> {
   }
 }
 
-type Written = { doc: string; path: string; gate: GateResult | undefined }
+// `chosen` names the checkout and which source chose it, for the toast.
+type Written = { doc: string; path: string; gate: GateResult | undefined; chosen: string }
 
 // `$.process.run` takes no shell, so a bare `bash` is whatever the host's PATH finds first. On
 // Windows that can be System32's bash.exe, the WSL launcher, which runs none of these scripts
@@ -131,31 +135,77 @@ async function runGate($: EngineInterface, o: Orientation, file: string, checkou
   return { exitCode: run.exitCode, report, warnings }
 }
 
+// The session's cwd is not always the checkout the work is in: a mission_control run drives a
+// sibling worktree with `git -C` and never moves its cwd (skills/handoff/SKILL.md, "The session's
+// repo is not the work's repo"). Keyed to cwd, its handoff would land in the cwd's slot, shared with
+// every other such run, and be gated against the wrong tree (docs/design.md D34). So the checkout is,
+// in order: CONTEXT_ECONOMY_CHECKOUT, set by whatever launched the run; else the one the fork names,
+// once orienting from it succeeds; else the cwd. A step that does not orient falls through to the
+// next, and the toast and the debug log always say which one chose: an override gone stale must
+// show, not quietly resolve to the cwd's slot.
+const CHECKOUT_VAR = 'CONTEXT_ECONOMY_CHECKOUT'
+
+// $.env.get takes a literal name, so the variables a module reads can be listed.
+function checkoutOverride($: EngineInterface): Promise<string | undefined> {
+  return $.env.get('CONTEXT_ECONOMY_CHECKOUT')
+}
+// The checkout this session's last handoff went to, so a /clear looks for it there.
+const WORK_CHECKOUT = { plugin: 'context-economy', key: 'workCheckout' } as const
+
+type Source = typeof CHECKOUT_VAR | 'the fork' | 'the cwd'
+
+// The fork's `checkout:` when it names a tree that orients, else `o` unchanged.
+async function retarget($: EngineInterface, o: Orientation, text: string): Promise<Orientation> {
+  const named = namedCheckout(text)
+  if (!named || named === o.checkout) return o
+  const t = await orient($, named)
+  if (typeof t !== 'string') return t
+  $.ui.log(`context-economy: session.compact: the fork named checkout ${named}, which did not orient (${t}); keeping ${o.checkout}`, { to: 'debug' })
+  return o
+}
+
 // Fork, gate, and at most one corrected retry. Drafts go to `<path>.draft` and only a document
 // that passed the contract (exit 0 or 1) replaces the stored handoff, so a malformed draft never
 // overwrites a good one. The draft file is not `*.md`, so the store's enumeration never lists it.
 async function writeHandoff($: EngineInterface, instructions: string | undefined): Promise<Written | string> {
-  const o = await orient($, await $.session.cwd())
-  if (typeof o === 'string') return o
-  const draftPath = `${o.handoff}.draft`
+  const override = await checkoutOverride($)
+  let start: Orientation | string | undefined
+  let stale = ''
+  if (override) {
+    start = await orient($, override)
+    if (typeof start === 'string') {
+      stale = `${CHECKOUT_VAR}=${override} ignored: ${start}`
+      start = undefined
+    }
+  }
+  const isFixed = start !== undefined
+  start ??= await orient($, await $.session.cwd())
+  if (typeof start === 'string') return stale ? `${stale}; cwd: ${start}` : start
+  let o = start
 
-  let prompt = forkPrompt(o, instructions)
-  let last: { doc: string; gate: GateResult | undefined } | undefined
+  let prompt = forkPrompt(o, instructions, isFixed)
+  let last: { doc: string; gate: GateResult | undefined; o: Orientation } | undefined
   for (let attempt = 0; attempt < 2; attempt++) {
     const reply = await $.model.fork({ prompt })
     if (!reply.isAnswered) return `the fork returned no text (${reply.reason})`
+    if (!isFixed) o = await retarget($, o, reply.text)
     const doc = normalizeEnvelope(reply.text, o)
+    const draftPath = `${o.handoff}.draft`
     await $.fs.write(draftPath, doc)
     const gate = await runGate($, o, draftPath, o.checkout)
-    last = { doc, gate }
+    last = { doc, gate, o }
     if (!gate || gate.exitCode === 0) break
-    prompt = retryPrompt(o, instructions, doc, gate)
+    prompt = retryPrompt(o, instructions, isFixed, doc, gate)
   }
   if (!last) return 'no draft was written'
   if (last.gate?.exitCode === 2) return 'the handoff broke the format contract twice'
 
-  await $.fs.write(o.handoff, last.doc)
-  return { doc: last.doc, path: o.handoff, gate: last.gate }
+  await $.fs.write(last.o.handoff, last.doc)
+  await $.state.set(WORK_CHECKOUT, last.o.checkout)
+  const from: Source = isFixed ? CHECKOUT_VAR : last.o.checkout === start.checkout ? 'the cwd' : 'the fork'
+  const chosen = `checkout ${last.o.checkout}, from ${from}${stale ? `; ${stale}` : ''}`
+  $.ui.log(`context-economy: session.compact: wrote ${last.o.handoff} (${chosen})`, { to: 'debug' })
+  return { doc: last.doc, path: last.o.handoff, gate: last.gate, chosen }
 }
 
 export const register: Register = on => {
@@ -175,7 +225,7 @@ export const register: Register = on => {
       $.ui.toast(`No handoff (${written}); compacting the usual way.`)
       return next(e)
     }
-    $.ui.toast(`Handoff written: ${written.path}`)
+    $.ui.toast(`Handoff written: ${written.path} (${written.chosen})`)
     return {
       messages: [{ role: 'user', text: compactedMessage(written.doc, written.gate, written.path), toolUses: [] }],
     }
@@ -195,9 +245,16 @@ export const register: Register = on => {
     const key = await processKey($)
     if (key) {
       if (e.reason === 'clear') {
+        // Where this session's handoff is: where its last compaction wrote one, which already
+        // resolved the override and the fork's choice; else the override; else the cwd. Not
+        // oriented here, so prompt.submit falls back to the cwd when the checkout does not orient.
+        // A handoff the skill wrote by hand to a sibling tree, with none of these set, is missed.
+        const { value: wrote } = await $.state.get(WORK_CHECKOUT)
+        const cwd = await $.session.cwd()
         const lastClear: ContextEconomyLastClear = {
           sessionId: e.sessionId,
-          cwd: await $.session.cwd(),
+          checkout: wrote || (await checkoutOverride($)) || cwd,
+          cwd,
           startedAt: (await $.session.usage()).startedAt,
           clearedAt: Date.now(),
         }
@@ -220,7 +277,11 @@ export const register: Register = on => {
     }
     await $.store.delete(`${CLEAR_PREFIX}${key}`)
 
-    const oriented = await orient($, lastClear.cwd)
+    let oriented = await orient($, lastClear.checkout)
+    if (typeof oriented === 'string' && lastClear.checkout !== lastClear.cwd) {
+      $.ui.log(`context-economy: prompt.submit: checkout ${lastClear.checkout} did not orient (${oriented}); looking in the cwd ${lastClear.cwd}`, { to: 'debug' })
+      oriented = await orient($, lastClear.cwd)
+    }
     const o = typeof oriented === 'string' ? undefined : oriented
     const isCovering = o !== undefined && o.exists && o.mtime !== undefined && o.mtime * 1000 >= lastClear.startedAt
     let context: string

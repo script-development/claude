@@ -8,7 +8,10 @@
 export type ContextEconomyLastClear = {
   // The session the /clear ended: what `claude --resume` takes to get its conversation back.
   sessionId: string
-  // Where it ran, absolute; the handoff to surface is this directory's.
+  // Where to look for its handoff, absolute: the checkout the session's last compaction wrote to,
+  // else CONTEXT_ECONOMY_CHECKOUT, else its cwd (docs/design.md D34).
+  checkout: string
+  // Where it ran, absolute: the fallback when `checkout` does not orient.
   cwd: string
   // When the cleared session began (`$.session.usage().startedAt`, epoch ms). A handoff written
   // before it cannot cover that session.
@@ -22,6 +25,9 @@ declare module 'claude-code' {
     // The process key this load minted, or null. Only its presence matters: it survives a hot reload
     // but not a /clear, so a session.start that finds it set is a reload of a process that already
     // has its key, and one that finds it unset is a fresh process (docs/design.md D32).
-    'context-economy': { processKey: string | null }
+    //
+    // workCheckout: the checkout the session's last compaction wrote its handoff to, or null. Read by
+    // session.end on a /clear, in the same session, so being dropped by the /clear does not matter.
+    'context-economy': { processKey: string | null; workCheckout: string | null }
   }
 }
