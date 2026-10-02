@@ -2337,9 +2337,11 @@ start one today. This is recorded so a future feature doesn't rediscover it.
 - **Autocompaction is answered like `/compact`** (finding #44). A `trigger: 'auto'` compaction at the
   180K threshold went down the same path: fork 21.4s at 158K cache-read tokens, core never ran.
 - **`$.state` does not survive a `/clear`** (finding #45). The first live `/clear` delivered nothing:
-  the marker was gone at the next prompt. It now lives in `$.store` under a process key.
-- **Still unmeasured:** M2 against M3 at equal depth, a fork latency curve over depth (two points so
-  far: 21.2s at 70K, 21.4s at 158K), the process-keyed `/clear` path live, and the `precompute` veto.
+  the marker was gone at the next prompt. It now lives in `$.store` under a process key, and the
+  live retest delivered the handoff to the first prompt after the `/clear` (finding #45).
+- **Still unmeasured:** M2 against M3 at equal depth, a fork latency curve over depth (three points
+  so far: 21.2s at 70K, 21.4s at 158K, 27.4s in the retest), a hot reload between a `/clear` and the
+  next prompt, and the `precompute` veto.
 
 ---
 

@@ -55,8 +55,8 @@ Measurements: `docs/measured.md`, findings #37–#45.
   Core's summary is used for that compaction.
 - A hot reload between a `/clear` and the next prompt mints a new process key, so that prompt gets
   no handoff (finding #45).
-- Not yet measured live: the process-keyed `/clear` path, and the `precompute` veto. (An
-  autocompaction answered by the module was measured in finding #44.)
+- Not yet measured live: the `precompute` veto. (An autocompaction answered by the module was
+  measured in finding #44, and the process-keyed `/clear` path in finding #45's live retest.)
 
 ## [1.0.3] - 2026-09-25
 

@@ -3626,3 +3626,19 @@ debug line either way: "no /clear marker for process <key>", or what it delivere
 
 **Bearing on D32.** `$.state` is per session, not per process. A value that has to outlive a `/clear`
 lives in `$.store`, under a key the process owns.
+
+**Live retest.** Build 2.1.287, Windows 11, cache 1.0.3 at 668ba15, loaded by a hot reload at
+11:03:07 that minted process key `7387051e…`. In session `d35ae612…`, a manual `/compact`
+(11:03:39), then `/clear`, then one prompt in the new session `2fabcf22…`. The debug logs of both
+sessions were read; the probe mod was disabled.
+
+- **The compaction was answered** as in finding #43, this time on the first draft: fork 27.4s, the
+  gate passed (exit 0), the handoff was stored, and "core never ran".
+- **`session.end` wrote the marker** under the process key: `$.store.set … lastClear:7387051e-…`
+  (11:04:19), settling in 28.7ms.
+- **The first prompt got the handoff.** Its `prompt.submit` ran `orient` and the gate (5.6s of a
+  6.2s hook), then logged "delivered the handoff … for cleared session d35ae612-…". The prompt
+  carried the handoff and a `GATE: OK` line, and the stored handoff now says `progress: consumed`.
+- The new session wrote a new debug file, so the process does not keep one file across a `/clear`.
+
+The process-keyed path works live. The hot-reload gap above is still unmeasured.
