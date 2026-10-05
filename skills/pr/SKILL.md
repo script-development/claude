@@ -115,6 +115,11 @@ matched — including the `neither` row that otherwise skips this step.
 git diff --name-only origin/{{DEFAULT_BRANCH}}...HEAD -- {{DOC_PATHS}}
 ```
 
+If `origin/{{DEFAULT_BRANCH}}` is unavailable, fall back to `{{DEFAULT_BRANCH}}...HEAD` — the same
+fallback `/review-branch` Step 1 uses for its own base-branch diff. Treating an unresolvable base
+as "no output" would silently skip this gate on any checkout missing that remote, not just on a
+branch with nothing to review.
+
 Copy the `{{DOC_PATHS}}` pathspecs exactly. They are directory prefixes on purpose —
 `<prefix>/**/*.md` looks equivalent and is not: git requires an intervening directory for that
 `**`, so it misses `<prefix>/README.md` and every sibling sitting directly under `<prefix>`.
