@@ -1,6 +1,6 @@
 # Content economy
 
-A plugin bundling the /handoff skill and supporting hooks.
+A plugin bundling the /handoff skill and a hooks module (Claude Code function hooks, "mods") that writes and delivers handoffs automatically. Requires a Claude Code build with function hooks; developed against 2.1.287.
 
 The /handoff skill aims to reduce context growth post-compaction by providing the post-compaction session with references to decisions, traps and dead-ends from the pre-compaction session, which would otherwise be lost in compaction and then re-derived.
 
@@ -16,7 +16,7 @@ The handoff file is structured as follows:
 - Branch | Branch name
 - Checkout | Path the branch is checked out in
 - Status | Verification status
-- Progress | Lifecycle stage of the handoff: writing / complete / consumed
+- Progress | Lifecycle stage of the handoff: complete / consumed
 
 2 Do not re-derive -> What the post-compaction session needs to know to prevent re-deriving it - Decisions(/implementation) - Dead ends - Traps
 3 Next -> Ordered work items for the post-compaction session
@@ -25,42 +25,25 @@ The handoff file is structured as follows:
 
 ### Automatic trigger
 
-The automatic trigger hooks into Claude's auto-compaction mechanism through a PreCompact hook. At the latest possible moment before compaction, the hook does two things
-1 Create a skeleton handoff file - mostly empty with two notable exceptions:
+Every compaction of the main conversation becomes a handoff. When Claude Code compacts (at the auto-compact threshold, or on `/compact`), the plugin's `session.compact` hook:
 
-- Progress (field) | Lifecycle stage of the handoff: Writing / Complete / Consumed
-- Next (section) | Contains an instruction to wait for the progress field to be overwritten to "Complete"
+1. forks the live session, which is served from its prompt cache, and asks the fork for a handoff in the format above, written only from what is already in context;
+2. runs the format gate (`lib/verify-handoff.sh`) on it, with one corrected retry if it fails;
+3. saves it to the store, and returns it as the compacted conversation **in place of** Claude Code's own summary.
 
-By design the skill uses one handoff file per worktree, and overwrites stale handoffs with the skeleton for a fresh handoff.
+The session carries on from the handoff. Nothing runs in the background, and there is nothing to wait for. If no handoff can be written (outside a git checkout, the fork returns nothing, or the document is malformed twice), the compaction falls back to Claude Code's own summary.
 
-2 Spawn a detached session forked just before auto-compaction
-
-After this point there are two sessions, which do the following:
-
-A - Main session: Starts writing the auto-compacting summary
-B - Forked session: Starts drafting the handoff
-
-The forked session is run without a binding auto-compaction threshold as it must keep its context to write the handoff.
-
-The Main session generally completes compaction before the Forked session finishes the handoff process. When the post-compaction session starts, a SessionStart hook detects the skeleton's Progress field still says "writing" and, instead of blocking itself, hands the model a bounded Bash poll loop to run as its own first tool call — waiting until Progress flips to "Complete" before continuing.
-
-The Forked session drafts a handoff per the /handoff skill and writes it to the skeleton file only when finished overwriting the Progress field with "Complete".
-
-From the Main session's perspective new Next items appear at the same time as Progress flips to Complete, the signal to start the first real Next item.
-
-To configure when a handoff is written simply change the auto-compact threshold:
+To choose when a handoff is written, set the auto-compact threshold:
 
 `claude  --autocompact <auto|tokens>           Auto-compact window size (auto, or 100k–1M tokens)`
+
+or `/autocompact` inside a session. The plugin has no threshold of its own.
 
 ### Manual trigger
 
 /handoff invokes the skills write branch manually. Use it instead of /compact whenever you want to pro-actively shrink your context.
 
-The write branch produces the handoff and will end with an instruction to /clear, and then start the next session with /handoff --read.
-
-Using /handoff --read is just as suggestion. Any prompt after /clear has finished works, e.g. starting with a "." prompt will also activate the handoff skill's read branch.
-
-The handoff file is automatically injected into the post-compaction session.
+The write branch produces the handoff and ends with an instruction to `/clear`. The first prompt after the `/clear` carries the handoff automatically, verified by the gate. If the cleared session wrote no handoff, it says so instead, and how to `claude --resume` the cleared conversation. `/handoff --read` remains for reading a handoff by hand, for example one belonging to another checkout.
 
 #### Orchestrated trigger
 
