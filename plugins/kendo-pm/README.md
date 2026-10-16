@@ -53,8 +53,8 @@ template can't already cover.
 
 | Skill | Description |
 |-------|-------------|
-| [kendo-cli](skills/kendo-cli/) | Kendo CLI for issues, sprints, epics, time tracking — from the terminal, no MCP server required |
-| [kendo-mcp](skills/kendo-mcp/) | Kendo MCP server integration for issue management: issues, comments, sprints, epics (Goal, Done when wishes and their ticks), time tracking, reports, attachments |
+| [kendo-cli](skills/kendo-cli/) | Kendo CLI for issues, sprints, epics, labels, reports, time tracking and token usage — from the terminal, no MCP server required |
+| [kendo-mcp](skills/kendo-mcp/) | Kendo MCP server integration for issue management: issues, comments, labels, sprints, epics (Goal, Done when wishes and their ticks), time and token usage, reports, error groups, attachments |
 | [prepare-issue](skills/prepare-issue/) | Prepare a kendo issue: assign, branch (via `/core-skills:newbranch`), link, move to In Progress, optionally check out in a worktree |
 | [triage-reports](skills/triage-reports/) | Walk pending Kendo reports one-by-one; promote, combine, park, or dismiss with a reason recorded on the report; score promotions for `Ready for Agent` |
 
