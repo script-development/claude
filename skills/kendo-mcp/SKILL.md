@@ -3,7 +3,8 @@ name: kendo-mcp
 description: |
   MCP integration for kendo project management. Use when creating, updating, moving, or
   searching issues via MCP tools. Also use when writing user stories, logging time,
-  managing epics, linking branches to issues, or triaging reports (bug reports, feedback).
+  managing epics (Goal, Done when wishes and their ticks, What done looks like checks),
+  commenting on issues or epics, linking branches to issues, or triaging reports (bug reports, feedback).
   Provides access to projects, issues, lanes, sprints, epics, reports, and teams through
   MCP resources and tools.
 ---
@@ -35,7 +36,7 @@ Use this ID for all `project_id` parameters and resource URIs below.
 | `kendo://projects/{id}/issues` | List issues in a project |
 | `kendo://projects/{id}/lanes` | List board lanes |
 | `kendo://projects/{id}/sprints` | List sprints (status: 0=Planned, 1=Active, 2=Completed) |
-| `kendo://projects/{id}/epics` | List epics for a project |
+| `kendo://projects/{id}/epics` | List epics for a project: `get-epics-tool`'s list form plus `issues_count`, without issue rows |
 | `kendo://projects/{id}/members` | List project members (for assignee_id) |
 | `kendo://projects/{id}/github-repos` | List linked GitHub repositories |
 | `kendo://issues/{id}` | Get a single issue with details |
@@ -49,14 +50,29 @@ Use this ID for all `project_id` parameters and resource URIs below.
 |------|---------|
 | `mcp__kendo__create-issue-tool` | Create new issue |
 | `mcp__kendo__update-issue-tool` | Update issue fields (including lane changes via `lane_id`) |
-| `mcp__kendo__add-comment-tool` | Add comment to issue (max 2000 chars) |
 | `mcp__kendo__delete-issue-tool` | Delete issue (destructive) |
 | `mcp__kendo__link-branch-tool` | Link a git branch to an issue |
 | `mcp__kendo__unlink-branch-tool` | Remove a git branch link from an issue (multi-repo: pass `repo_full_name` to disambiguate) |
 | `mcp__kendo__prepare-project-context-tool` | Read-only bundle: returns `project + lanes + sprints (Planned/Active) + active_sprint shortcut + labels + members + members_count + current_user` in one call. Use as the gather step for any project-scoped flow (triage, board sync, branch creation, picking up an issue); replaces separate reads of `kendo://projects/{id}`, `kendo://projects/{id}/lanes`, `kendo://projects/{id}/sprints`, `kendo://projects/{id}/members`, plus the legacy `git config user.email` heuristic |
-| `mcp__kendo__prepare-issue-context-tool` | Read-only bundle: returns `issue + epic` (full issue payload with comments, branches, attachments). For project meta, fire `prepare-project-context-tool` in parallel — see the parallel-gather pattern below |
-| `mcp__kendo__search-issues-tool` | Text search across title, description, and issue key. Does not match numeric database IDs |
+| `mcp__kendo__prepare-issue-context-tool` | Read-only bundle: returns `issue + epic` (full issue payload with comments, branches, attachments; the epic with its `goal`, description, derived status, `checks` and `wishes`). For project meta, fire `prepare-project-context-tool` in parallel — see the parallel-gather pattern below |
+| `mcp__kendo__search-issues-tool` | Search, filter or count issues in one project — see [Search Issues](#search-issues) |
+| `mcp__kendo__get-my-issues-tool` | Your assigned issues across all projects, done lane excluded (filter by `project_id`, `priority`, `type`, `query`) |
 | `mcp__kendo__start-work-on-issue-tool` | Idempotent one-call write: assigns user, moves to lane, optionally updates sprint, and links a git branch. The act step that pairs with the gather tools. Repo is auto-resolved from the project's primary GitHub repo |
+
+### Comments
+
+Each comment tool names its subject with exactly one of `issue_id`, `issue_key` or `epic_id`; none,
+or more than one, is refused.
+
+| Tool | Purpose |
+|------|---------|
+| `mcp__kendo__add-comment-tool` | Comment on an issue or an epic (max 10,000 chars). `parent_id` replies to a top-level comment on the same subject; a reply to a reply is refused |
+| `mcp__kendo__update-comment-tool` | Edit a comment. Find its ID in `kendo://issues/{id}`, or in `get-epics-tool` with `epic_id` |
+| `mcp__kendo__delete-comment-tool` | Delete a comment and its attachments (destructive) |
+
+Comments read back with `parent_id`, `is_pinned` and `liker_ids`. A comment on an issue notifies the
+issue's watchers; epics have no watchers, so a comment on an epic notifies only the members it
+mentions, and a reply its parent's author.
 
 ### Time Logging
 
@@ -69,10 +85,12 @@ Use this ID for all `project_id` parameters and resource URIs below.
 
 | Tool | Purpose |
 |------|---------|
-| `mcp__kendo__get-epics-tool` | Get epics with full issue details and progress (filter by status) |
-| `mcp__kendo__create-epic-tool` | Create a new epic (with color, dates, linked issues) |
-| `mcp__kendo__update-epic-tool` | Update epic details, status, dates, or issue assignments |
-| `mcp__kendo__delete-epic-tool` | Delete an epic (destructive). Issues are kept. |
+| `mcp__kendo__get-epics-tool` | Get epics with their issues and progress (filter by derived `status`: 0=Open, 1=Closed). With `epic_id`, also the description, `checks`, `wishes` and comments — see [Epics in Detail](#epics-in-detail) |
+| `mcp__kendo__create-epic-tool` | Create an epic: title, color, `goal`, `assignee_id`, dates, `issue_ids`, `checks`, `wishes` |
+| `mcp__kendo__update-epic-tool` | Update an epic's fields, issues, `checks` or `wishes`. Status is derived, not set |
+| `mcp__kendo__delete-epic-tool` | Delete an epic and its comments (destructive). Issues are kept. |
+| `mcp__kendo__tick-epic-wish-tool` | Tick one Done when wish (`epic_id`, `wish_id`); records who and when |
+| `mcp__kendo__untick-epic-wish-tool` | Untick one Done when wish; clears who and when |
 
 ### Sprints
 
@@ -91,7 +109,7 @@ Use this ID for all `project_id` parameters and resource URIs below.
 | `mcp__kendo__list-reports-tool` | List reports (bug reports, feedback) for a project with triage status |
 | `mcp__kendo__create-report-tool` | Create a new report (bug report, feature request, feedback) |
 | `mcp__kendo__promote-reports-tool` | Promote/convert one or more reports into a single issue (core triage action) |
-| `mcp__kendo__dismiss-report-tool` | Dismiss a report as not actionable (soft-archive) |
+| `mcp__kendo__dismiss-report-tool` | Dismiss a report as not actionable (soft-archive). Current releases take a reason `category` (`not-planned` / `invalid` / `duplicate` / `already-shipped`) + optional `note`, stored on the report; older ones take `report_id` only |
 | `mcp__kendo__delete-report-tool` | Delete a report permanently (destructive) |
 
 ### Attachments
@@ -121,7 +139,7 @@ user-facing references, and `id` for API calls to other tools.
 
 ### Mentions in description / comment body
 
-When writing `description` (create-issue-tool, update-issue-tool) or `content` (add-comment-tool), a plain
+When writing `description` (create-issue-tool, update-issue-tool) or `content` (add-comment-tool, on an issue or an epic), a plain
 `@Full Name` or unique `@FirstName` of a project member is resolved server-side into a
 mention that notifies the named person. Ambiguous or unknown names stay as literal text —
 no error is raised.
@@ -168,6 +186,57 @@ branch_name: "feature/my-branch"
 **Guard:** when the branch name already carries the issue key (e.g.
 `feat/{{ISSUE_KEY_PREFIX}}-0003-target-context`), Kendo auto-links it — do not call `link-branch`
 for that branch. Reserve the tool for branches whose name does not contain the key.
+
+### Epics in Detail
+
+An epic has a title, a color (`0`–`9`: Grey, Green, Blue, Red, Purple, Yellow, Orange, Teal, Pink,
+Indigo; reads send `color_name` beside it), a **Goal** (`goal`, at most 500 characters, what the
+epic delivers), a description (at most 65,535), `start` and `end` (sent together), an assignee
+(`assignee_id`, a project member; a new assignee is notified unless they set it themselves),
+`issue_ids`, and two ordered lists of at most 100 items of at most 500 characters:
+
+- **Done when** (`wishes`): the customer's wishes. Each is ticked by hand, with
+  `tick-epic-wish-tool`, and can link up to 100 issues of the same epic (`issue_ids`).
+- **What done looks like** (`checks`): plain-text lines to verify the work against, labelled by
+  habit `Proof: …` / `Browser look: …`. Never ticked, no links.
+
+**Status is derived** (`status` 0=Open / 1=Closed, with `status_name`); no tool sets it. An epic
+with wishes is Closed once every wish is ticked, even with issues still open. Without wishes, it
+is Closed when it has issues and every one is in the project's last lane. `progress` counts issues
+either way.
+
+**Read one epic for the full picture.** The list form (`get-epics-tool` without `epic_id`, and
+`kendo://projects/{id}/epics`) sends the goal, the status and the counts (`checks_count`,
+`wishes_count`, `checked_wishes_count`), but no description, lists or comments. Pass `epic_id`
+for those; each wish then carries its linked issues as `{id, key}`, `checked_at` and
+`checked_by_id`.
+
+**A list is saved whole.** `create-epic-tool` and `update-epic-tool` take `checks` and `wishes` as
+the complete list, in order:
+
+- An item sent with its `id` keeps its row, and a wish keeps its tick.
+- An item without an `id` is created. A stored item left out is deleted, a wish with its tick.
+- Omitting the key, or sending `null`, keeps the list; `[]` clears it. `issue_ids` works the same.
+- Every issue a wish links must be in the epic once the call's own `issue_ids` apply. One wrong
+  link, or an `id` from another list, rejects the whole call and nothing is stored.
+
+So before sending a list on `update-epic-tool`, read the epic with `epic_id` and send every kept
+item with its `id`. To change only the goal, dates, assignee or issues, leave both lists out. An
+issue that leaves the epic loses its wish links; the wish keeps its text and its tick.
+
+**Ticking.** `tick-epic-wish-tool` and `untick-epic-wish-tool` take `epic_id` and a `wish_id` from
+the `epic_id` read. Both are idempotent: a second tick keeps the first ticker and time. Both answer
+the wish and the epic's `status` and wish counts after the change, so ticking the last open wish
+answers Closed. Saving an epic never ticks or unticks a wish.
+
+```
+# A new epic whose wishes link the issues the same call attaches
+create-epic-tool  project_id: <your-project-id>, title: "Checkout", color: 2,
+                  goal: "Customers pay for an order in one step.",
+                  issue_ids: [<issue-a>, <issue-b>],
+                  wishes: [{text: "The customer can pay by card", issue_ids: [<issue-a>]}],
+                  checks: [{text: "Browser look: checkout on desktop and phone"}]
+```
 
 ### Log Time
 
@@ -216,8 +285,39 @@ and time spent. **Always prefer this over searching when you have the issue ID.*
 
 ### Search Issues
 
-Use `mcp__kendo__search-issues-tool` for text-based discovery across title, description, and issue key.
-Note: this searches text fields only — it does not match on numeric database IDs.
+Use `mcp__kendo__search-issues-tool` to find, filter or count issues in one project. `query` searches
+title, description and issue key; it does not match on numeric database IDs.
+
+- **Lists match any value.** `lane_ids`, `assignee_ids`, `sprint_ids`, `epic_ids`, `label_ids`,
+  `priorities`, `types`. The scalar forms (`lane_id`, `priority`, …) still work and merge into the list.
+- **`exclude_*` leaves issues out** (`exclude_lane_ids`, `exclude_types`, …). An exclusion wins over an
+  inclusion of the same value.
+- **`0` means none** in assignee, sprint and epic lists: unassigned, backlog, no epic. An exclusion keeps
+  issues without a value unless `0` is in it, so `exclude_epic_ids: [0]` returns only issues with an epic.
+- **`group_by` counts instead of listing** (`lane`, `assignee`, `sprint`, `epic`, `priority`, `type`,
+  `label`). It returns `total` plus `groups` of `{key, label, count}`, uncapped; the "none" group has
+  key `0`. Grouped by label the counts can sum above `total`.
+- **`include_description: false`** drops each description. Use it for any list you only scan.
+- **`limit`** is 1–100, default 25. Check `truncated` before treating a list as complete.
+
+Each row names its lane, assignee, sprint and epic next to their IDs, carries `labels` as `{id, name}`,
+and gives `priority_name` / `type_name` beside the numeric `priority` / `type`. Answer the user from the
+names and feed the IDs to the next call — no `get-labels` round-trip is needed to name a label.
+
+One call answers questions that used to take several:
+
+```
+# Open issues per lane, without Tasks. Nothing is excluded by default, so leave out the
+# done lane yourself: it is the highest-order lane in prepare-project-context's lanes.
+search-issues-tool  project_id: <your-project-id>, group_by: "lane", exclude_lane_ids: [<done lane>], exclude_types: [2]
+
+# Unassigned bugs in the active sprint, light rows
+search-issues-tool  project_id: <your-project-id>, sprint_ids: [<active>], assignee_ids: [0], types: [1], include_description: false
+```
+
+`mcp__kendo__get-my-issues-tool` rows name the lane, project, sprint and epic the same way and carry
+`labels` as `{id, name}`. Its `priority` and `type` are already names, with `priority_value` /
+`type_value` for the numbers.
 
 ## References
 
