@@ -3,7 +3,7 @@ name: kendo-mcp
 description: |
   MCP integration for kendo project management. Use when creating, updating, moving, or
   searching issues via MCP tools. Also use when writing user stories, logging time,
-  managing epics (Goal, Done when wishes and their ticks, What done looks like checks),
+  managing epics (Goal, Done when wishes and their ticks, What done looks like),
   commenting on issues or epics, linking branches to issues, or triaging reports (bug reports, feedback).
   Provides access to projects, issues, lanes, sprints, epics, reports, and teams through
   MCP resources and tools.
