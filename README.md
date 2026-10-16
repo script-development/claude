@@ -66,8 +66,8 @@ For any project using [Kendo](https://kendo.dev) for issue tracking. Requires th
 | Skill | Description |
 |-------|-------------|
 | [board-sync](skills/board-sync/) | Sync kendo board with GitHub branch/PR status |
-| [kendo-cli](skills/kendo-cli/) | Kendo CLI for issues, sprints, epics, time tracking |
-| [kendo-mcp](skills/kendo-mcp/) | Kendo MCP server integration for issue management |
+| [kendo-cli](skills/kendo-cli/) | Kendo CLI for issues, sprints, epics, labels, reports, time tracking and token usage |
+| [kendo-mcp](skills/kendo-mcp/) | Kendo MCP server integration for issues, comments, labels, sprints, epics, time and token usage, reports and error groups |
 | [lint-issues](skills/lint-issues/) | Audit every To Do / In Progress issue against the issue-writing standard via parallel issue-linter agents; post a summary on an audit issue |
 | [prepare-issue](skills/prepare-issue/) | Prepare a kendo issue: assign, branch, link, move to In Progress |
 | [triage-reports](skills/triage-reports/) | Walk pending Kendo reports one-by-one; promote, combine, park, or dismiss with a logged reason |

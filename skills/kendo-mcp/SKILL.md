@@ -4,9 +4,9 @@ description: |
   MCP integration for kendo project management. Use when creating, updating, moving, or
   searching issues via MCP tools. Also use when writing user stories, logging time,
   managing epics (Goal, Done when wishes and their ticks, What done looks like),
-  commenting on issues or epics, linking branches to issues, or triaging reports (bug reports, feedback).
-  Provides access to projects, issues, lanes, sprints, epics, reports, and teams through
-  MCP resources and tools.
+  commenting on issues or epics, setting labels, linking branches to issues, recording token
+  usage, reading error groups, or triaging reports (bug reports, feedback). Provides access to
+  projects, issues, lanes, sprints, epics, labels, reports, and teams through MCP resources and tools.
 ---
 
 # Kendo MCP
@@ -32,14 +32,17 @@ Use this ID for all `project_id` parameters and resource URIs below.
 
 | URI | Description |
 |-----|-------------|
-| `kendo://projects` | List all accessible projects |
+| `kendo://projects` | List the accessible active projects (archived ones are left out) |
+| `kendo://projects/archived` | List the archived projects; every other resource still reads them |
+| `kendo://projects/{id}` | One project, with its linked GitHub repositories |
 | `kendo://projects/{id}/issues` | List issues in a project |
 | `kendo://projects/{id}/lanes` | List board lanes |
 | `kendo://projects/{id}/sprints` | List sprints (status: 0=Planned, 1=Active, 2=Completed) |
 | `kendo://projects/{id}/epics` | List epics for a project: `get-epics-tool`'s list form plus `issues_count`, without issue rows |
 | `kendo://projects/{id}/members` | List project members (for assignee_id) |
 | `kendo://projects/{id}/github-repos` | List linked GitHub repositories |
-| `kendo://issues/{id}` | Get a single issue with details |
+| `kendo://issues/{id}` | Get a single issue with details; also takes a key (`kendo://issues/{{ISSUE_KEY_PREFIX}}-0042`) |
+| `kendo://reports/{id}` | Get a single report with its attachments and triage status |
 | `kendo://teams` | List teams and members |
 
 ## MCP Tools
@@ -48,16 +51,28 @@ Use this ID for all `project_id` parameters and resource URIs below.
 
 | Tool | Purpose |
 |------|---------|
-| `mcp__kendo__create-issue-tool` | Create new issue |
-| `mcp__kendo__update-issue-tool` | Update issue fields (including lane changes via `lane_id`) |
+| `mcp__kendo__create-issue-tool` | Create new issue (`label_ids`, `blocked_by_ids`, `blocks_ids`: at most 500 each) |
+| `mcp__kendo__bulk-create-issues-tool` | Create 1–25 issues in one call, all in the backlog and one lane. Rows take `title`, `description`, `priority`, `type` only; one malformed row rejects the whole call. Returns `keys` and per-row `failed` |
+| `mcp__kendo__update-issue-tool` | Update issue fields (including lane changes via `lane_id`). Blocking lists replace the stored ones: omit to keep, `[]` to clear |
 | `mcp__kendo__delete-issue-tool` | Delete issue (destructive) |
-| `mcp__kendo__link-branch-tool` | Link a git branch to an issue |
+| `mcp__kendo__link-branch-tool` | Link a git branch to an issue (multi-repo: retry with a `repo_id` from the candidate-listing error) |
 | `mcp__kendo__unlink-branch-tool` | Remove a git branch link from an issue (multi-repo: pass `repo_full_name` to disambiguate) |
 | `mcp__kendo__prepare-project-context-tool` | Read-only bundle: returns `project + lanes + sprints (Planned/Active) + active_sprint shortcut + labels + members + members_count + current_user` in one call. Use as the gather step for any project-scoped flow (triage, board sync, branch creation, picking up an issue); replaces separate reads of `kendo://projects/{id}`, `kendo://projects/{id}/lanes`, `kendo://projects/{id}/sprints`, `kendo://projects/{id}/members`, plus the legacy `git config user.email` heuristic |
 | `mcp__kendo__prepare-issue-context-tool` | Read-only bundle: returns `issue + epic` (full issue payload with comments, branches, attachments; the epic with its `goal`, description, derived status, `checks` and `wishes`). For project meta, fire `prepare-project-context-tool` in parallel — see the parallel-gather pattern below |
 | `mcp__kendo__search-issues-tool` | Search, filter or count issues in one project — see [Search Issues](#search-issues) |
-| `mcp__kendo__get-my-issues-tool` | Your assigned issues across all projects, done lane excluded (filter by `project_id`, `priority`, `type`, `query`) |
-| `mcp__kendo__start-work-on-issue-tool` | Idempotent one-call write: assigns user, moves to lane, optionally updates sprint, and links a git branch. The act step that pairs with the gather tools. Repo is auto-resolved from the project's primary GitHub repo |
+| `mcp__kendo__get-my-issues-tool` | Your assigned issues across all projects, done lane excluded (filter by `project_id`, `priority`, `type`, `query`). Capped at 500: check `truncated` |
+| `mcp__kendo__kendo-today-tool` | Your Today snapshot in one read: active sprints, open issues per project, today's logged minutes. Prefer it over `get-my-issues` for "what's on my plate" |
+| `mcp__kendo__start-work-on-issue-tool` | Idempotent one-call write: assigns user, moves to lane, optionally updates sprint, and links a git branch. The act step that pairs with the gather tools. The repo resolves when the project has exactly one; with several, retry with a `repo_id` from the candidate-listing error |
+
+### Labels
+
+| Tool | Purpose |
+|------|---------|
+| `mcp__kendo__get-labels-tool` | A project's labels (`id`, `name`, `color` 0–9, `order`). `prepare-project-context-tool` carries them too |
+| `mcp__kendo__create-label-tool` | Create a label (`name` unique in the project, `color` 0–9) |
+| `mcp__kendo__update-label-tool` | Rename or recolor a label |
+| `mcp__kendo__delete-label-tool` | Delete a label; issues keep everything but the label (destructive) |
+| `mcp__kendo__sync-issue-labels-tool` | Set an issue's labels: `label_ids` replaces the set exactly, `[]` clears it |
 
 ### Comments
 
@@ -74,12 +89,15 @@ Comments read back with `parent_id`, `is_pinned` and `liker_ids`. A comment on a
 issue's watchers; epics have no watchers, so a comment on an epic notifies only the members it
 mentions, and a reply its parent's author.
 
-### Time Logging
+### Time and Token Usage
 
 | Tool | Purpose |
 |------|---------|
-| `mcp__kendo__get-time-entries-tool` | Query time entries (filter by project, user, team, issue, sprint; group by user/project/team/issue/day) |
-| `mcp__kendo__create-time-entry-tool` | Log time spent on an issue (1-479 minutes) |
+| `mcp__kendo__get-time-entries-tool` | Query time entries between `date_from` and `date_to` (filter by project, user, team, issue; group by user/project/team/issue/day, or `none` for raw entries, at most 100 with `has_more`). An entry counts on the day its work started |
+| `mcp__kendo__create-time-entry-tool` | Log time on an issue: `minutes_spent` (at least 1), optional `started_at` and `note` |
+| `mcp__kendo__update-time-entry-tool` | Correct your own entry: minutes, note, start, or move it to another issue in the project |
+| `mcp__kendo__delete-time-entry-tool` | Delete your own entry (destructive) |
+| `mcp__kendo__record-token-usage-tool` | Record one session's token usage for one model on an issue (`model`, `tokens_in`, `tokens_out`, optional cache counts). Pass `external_event_id` (`<session id>:<model>`) so a resend replaces instead of adding |
 
 ### Epics
 
@@ -99,6 +117,7 @@ mentions, and a reply its parent's author.
 | `mcp__kendo__create-sprint-tool` | Create a new sprint (title, start/end dates). Created as Planned. |
 | `mcp__kendo__update-sprint-tool` | Update sprint title, dates, or status (partial updates supported) |
 | `mcp__kendo__complete-sprint-tool` | Complete the active sprint, move incomplete issues to target sprint |
+| `mcp__kendo__delete-sprint-tool` | Delete a Planned sprint; its issues leave the sprint (destructive) |
 | `mcp__kendo__assign-issues-to-sprint-tool` | Bulk-assign up to 100 issues to a sprint (or `null` to clear). Prefer over looping `update-issue` when the only change is sprint membership |
 | `mcp__kendo__get-sprints-tool` | List sprints for a project (all statuses, or filter by `status` 0/1/2). Use to resolve a sprint id by name before write operations, or to list Completed sprints (excluded from `prepare-project-context`). Optional `sprint_id` for a single sprint. |
 
@@ -106,11 +125,19 @@ mentions, and a reply its parent's author.
 
 | Tool | Purpose |
 |------|---------|
-| `mcp__kendo__list-reports-tool` | List reports (bug reports, feedback) for a project with triage status |
+| `mcp__kendo__list-reports-tool` | List reports (bug reports, feedback) for a project with triage status: the last `limit` (default 20, max 500) of the triage queue. Pass `status: 0` for pending; check `truncated` |
+| `mcp__kendo__get-report-tool` | One report by `report_id`, in the list's shape |
 | `mcp__kendo__create-report-tool` | Create a new report (bug report, feature request, feedback) |
 | `mcp__kendo__promote-reports-tool` | Promote/convert one or more reports into a single issue (core triage action) |
-| `mcp__kendo__dismiss-report-tool` | Dismiss a report as not actionable (soft-archive). Current releases take a reason `category` (`not-planned` / `invalid` / `duplicate` / `already-shipped`) + optional `note`, stored on the report; older ones take `report_id` only |
+| `mcp__kendo__dismiss-report-tool` | Dismiss a report as not actionable (soft-archive). Requires a reason `category` (`not-planned` / `invalid` / `duplicate` / `already-shipped`), optional `note`; both are stored on the report. A second dismiss is refused |
 | `mcp__kendo__delete-report-tool` | Delete a report permanently (destructive) |
+| `mcp__kendo__send-feedback-tool` | Send feedback about Kendo itself to the Kendo team (`title`, `description`), from any tenant. Not for a project's own queue: that is `create-report-tool` |
+
+### Error Groups
+
+| Tool | Purpose |
+|------|---------|
+| `mcp__kendo__get-error-groups-tool` | Recurring exceptions captured from the apps, newest failure first, across accessible projects or one `project_id`. Filter by `environment`, `since_days`; `limit` default 20 (max 500). Stack traces only with `include_stack_trace: true` — pair it with a small `limit` |
 
 ### Attachments
 
@@ -178,9 +205,10 @@ lane_id: <target-lane-id>
 ### Link Branch
 
 ```
-issue_id: <issue-id>
+issue_id: <issue-id>          # or issue_key: "{{ISSUE_KEY_PREFIX}}-0042"
 branch_name: "feature/my-branch"
-# GitHub repo is auto-resolved from the issue's project (primary repo preferred)
+# The repo resolves when the project has exactly one. With several, the call fails with a
+# candidate list: retry with one of its repo_id values, or ask the user.
 ```
 
 **Guard:** when the branch name already carries the issue key (e.g.
@@ -241,9 +269,10 @@ create-epic-tool  project_id: <your-project-id>, title: "Checkout", color: 2,
 ### Log Time
 
 ```
-issue_id: <issue-id>
-time_spent: 60  # Minutes (1-479)
-sprint_id: <sprint_id> (optional)
+issue_id: <issue-id>          # or issue_key: "{{ISSUE_KEY_PREFIX}}-0042"
+minutes_spent: 60             # At least 1
+started_at: "2026-01-15"      # Optional: when the work started (ISO 8601)
+note: "What was done"         # Optional
 ```
 
 ### Query Time Logs
@@ -279,8 +308,9 @@ existing issue you just looked up). The two tools are sized to be cheap to call 
 ### Get Issue by ID
 
 Use `ReadMcpResourceTool` with `server: "kendo"` and `uri: "kendo://issues/{id}"` to fetch a single
-issue directly. This returns full details including comments, branch links, blocking relations,
-and time spent. **Always prefer this over searching when you have the issue ID.** Prefer
+issue directly; the URI takes a key too (`kendo://issues/{{ISSUE_KEY_PREFIX}}-0042`). This returns full details
+including comments, branch links, blocking relations, and time spent. **Always prefer this over
+searching when you have the issue ID or key.** Prefer
 `prepare-issue-context-tool` when you have the key and want the gather bundle.
 
 ### Search Issues
@@ -316,8 +346,8 @@ search-issues-tool  project_id: <your-project-id>, sprint_ids: [<active>], assig
 ```
 
 `mcp__kendo__get-my-issues-tool` rows name the lane, project, sprint and epic the same way and carry
-`labels` as `{id, name}`. Its `priority` and `type` are already names, with `priority_value` /
-`type_value` for the numbers.
+`labels` as `{id, name}`, with `priority` / `type` as numbers and `priority_name` / `type_name`
+beside them, as search does.
 
 ## References
 
