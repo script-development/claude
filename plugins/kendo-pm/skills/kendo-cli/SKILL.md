@@ -124,6 +124,10 @@ kendo issue create --title "Title"    # Create issue (see flags below)
 kendo issue update <REF> [flags]      # Update issue fields
 kendo issue move <REF> <LANE_ID>      # Move issue to a lane
 kendo issue comment <REF> -m "text"   # Add comment to issue
+kendo issue comment <REF> -m "text" --reply-to 41  # Reply to top-level comment 41
+kendo issue comments <REF>            # Read the comments on an issue
+kendo issue update-comment <REF> <COMMENT_ID> --content "text"  # Edit a comment
+kendo issue delete-comment <REF> <COMMENT_ID>  # Delete a comment (destructive!)
 kendo issue delete <REF>              # Delete issue (destructive!)
 kendo issue link-branch <REF>         # Link current git branch to issue
 ```
@@ -219,13 +223,45 @@ kendo sprint todo                     # To Do issues in active sprint (sorted by
 ### Epics
 
 ```bash
-kendo epic list                       # List epics with issue counts and dates
+kendo epic list                       # Epics with status, issue and Done when progress
+kendo epic view 9                     # Goal, Done when (wish ids, ticks, issues), What done looks like, assignee, status
 kendo epic issues <epic>              # List issues in epic (by ID or name)
 kendo epic issues "My Epic"           # By name (case-insensitive)
 kendo epic issues 9                   # By ID
 kendo epic create --title "Title"     # Create epic (defaults: color blue, order 0)
 kendo epic create --title "T" --start 2026-03-17 --end 2026-04-01 --color red
+kendo epic create --title "Checkout" --goal "Pay in one tap" --assignee "Jane Doe"
+kendo epic update 9 --wish "The customer can pay [PROJ-0011, PROJ-0012]" --wish "The customer gets a receipt"
+kendo epic update 9 --check "Browser look: checkout on desktop and phone"  # Set What done looks like
+kendo epic update 9 --wish ""         # Clear Done when
+kendo epic tick 9 21                  # Tick wish 21 (epic untick 9 21 undoes it)
+kendo epic comments 9                 # Read the comments on an epic
+kendo epic comment 9 -m "text"        # Comment on an epic (--reply-to <id> replies)
+kendo epic attachments 9              # List attachments on an epic
+kendo epic attach 9 ./roadmap.pdf     # Upload a file to an epic
+kendo epic download 9 7               # Download attachment 7
+kendo epic delete 9                   # Delete epic and its comments; issues stay (destructive!)
 ```
+
+Needs CLI 0.16.0 or later for `view`, `tick`, `untick`, the epic comment commands and the
+`--goal`, `--assignee`, `--wish` and `--check` flags: check with `kendo version`, then `kendo update`.
+
+- `epic create` and `epic update` take `--goal`, `--assignee` (a user ID, a full name, or `none`),
+  `--color` (`grey`, `green`, `blue`, `red`, `purple`, `yellow`, `orange`, `teal`, `pink`,
+  `indigo`, or `0`-`9`) and the two lists. `epic update` also takes `--title`, `--description`
+  and `--start`/`--end`, passed together; an empty value clears them.
+- `--wish` sets Done when and `--check` sets What done looks like: repeat the flag once per line,
+  in order. The lines you pass replace the whole list. A line with the same text as a stored one
+  keeps that item, so a kept wish keeps its tick and its issues. `--wish ""` or `--check ""` alone
+  clears that list; a flag you leave out leaves its list as it is.
+- On `epic update`, a trailing bracket of issue keys or IDs links a wish to issues of the epic;
+  `[]` unlinks them. `epic create` refuses a bracket: attach the issues first with
+  `kendo issue update <REF> --epic <EPIC_ID>`.
+- `epic update` sends only the flags you pass. `epic view` prints each wish's ID for `epic tick`
+  and `epic untick`. A save never ticks a wish, and an epic's status is derived: with wishes it is
+  Closed once every wish is ticked; without, when it has issues and all are in the last lane.
+- `epic comments`, `comment`, `update-comment` and `delete-comment` work like their `issue`
+  counterparts, with the epic ID in place of the issue key.
 
 ### Reports
 
