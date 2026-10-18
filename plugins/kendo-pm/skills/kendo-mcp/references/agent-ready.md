@@ -18,7 +18,8 @@ only ratifying.** The session may be a developer running `/plan-feature` or `/fi
 `/next` and `/pr`, or an orchestrator briefing a worker; the label does not care which. Planning
 is expected and welcome: the issue does not have to carry every decision, because the driving
 session settles the technical forks first. It has to be the *kind* of work one session finishes
-without a product ruling, a wireframe round, a manual verification, or hands outside the repo.
+without a product ruling, a wireframe round, a staging or production check, or hands outside the
+repo.
 
 It is not a quality score for the issue text (AC clarity, bounded scope, named files, observable
 behaviour, no ambiguity are a separate rubric). A well-written issue that ends in a product
@@ -40,10 +41,9 @@ decision is not ready; a mechanical fix with a thin body can be.
 3. **Never a full feature.** A Feature-type issue qualifies only when it extends an existing
    surface: no new screen, no wireframe round, no `/plan-feature` pass needed before a worker can
    start. Anything needing those is an epic or a planning issue, not a labelled issue.
-4. **Verifiable by CI and automated review alone.** The Testing section names a runnable command
-   and the test that goes red to green. No manual browser check (styling and animation fixes are
-   gated on one by `/fix-bug`), no production or staging measurement, no "compare before and after
-   by eye".
+4. **Verifiable in the repo.** The issue's `## What done looks like` names a runnable command and
+   the test that goes red to green. A `Browser look:` in the running local app qualifies, whether
+   an agent or a developer does it. No production or staging measurement.
 5. **No developer hands outside the repo.** No hosting secrets, payment-provider or DNS
    configuration, production runbook step, or third-party console.
 
@@ -54,8 +54,8 @@ issue waits for: a product ruling from the developer, recorded on the issue (a c
 edit to the body). Once the ruling is in the text, the label flips to `Ready for Agent` if the
 other four criteria hold. Both labels are resolved by name from `prepare-project-context`'s
 `labels` array; a project without them simply goes unlabelled. `blocked` is a different bucket
-(another issue or an upstream release is in the way), and so is a manual-verification gap
-(criterion 4), which carries no label.
+(another issue or an upstream release is in the way), and so is a check that only staging or
+production can answer (criterion 4), which carries no label.
 
 ## Hints for the plan or brief (not gates)
 
@@ -76,5 +76,5 @@ Record these on the triage card and in the issue when known; the driving session
 | Add a missing feature or unit test | A rule-reach or convention ruling on the test suite |
 | Gate a control on a permission the route already checks (decision made: hide) | A spend cap, retention horizon or purge window |
 | Delete pass-through tests a prior issue removed elsewhere | A migration with backfill |
-| Re-measure a constant and pin it | A fix whose proof is a screenshot or a staging run |
+| Re-measure a constant and pin it | A fix whose proof is a staging or production run |
 | Prefix a cache or limiter key with the tenant id | Anything needing a secret or a provider console |
