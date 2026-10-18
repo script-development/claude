@@ -86,7 +86,8 @@ that variant is a pass, not a fail.**
 **Task issues — no section checklist applies.** The rubric defines no fixed template for Tasks. Instead grade against
   these three criteria:
 - **Description of work** — is it clear what the work is and why it is being done?
-- **Definition of done** — is it clear what "done" looks like?
+- **Definition of done** — does it end with `## What done looks like`, with real checks named? A Task written
+  before the section existed may state it in prose; that passes.
 - **AC appropriateness** — are the AC written at the correct level for the task's nature (refactoring /
 infrastructure / research), as described in the rubric's Task section?
 
@@ -104,10 +105,10 @@ Sort every finding from Step 3 into two buckets.
 
 **Hard failures (these FAIL the issue):**
 - **Wrong type** — content clearly mismatches the filed type (per Step 2).
-- **Missing required section** — a section the rubric requires for this type is absent (Feature: User Story, Acceptance Criteria, Scope, Testing; Bug: Problem, plus either Cause or the reproduction set; etc.).
+- **Missing required section** — a section the rubric requires for this type is absent (Feature: User Story, Acceptance Criteria, Scope, What done looks like; Bug: Problem, plus either Cause or the reproduction set; etc.).
 - **Intrusion** — a section that belongs exclusively to another type (Feature with `## Cause`, Bug with `## User Story`).
 - **Untestable or empty AC** — acceptance criteria that are vague ("must be fast", "must be pretty") or purely mechanism with no observable outcome at all. AC that name an API/CLI contract where the surface *is* the observable outcome (e.g. `issue create --label` attaches the label) are NOT a hard failure.
-- **Empty / shallow Testing** — the section is only a catch-all ("make sure it works", "all tests keep passing") with no real check named.
+- **Empty / shallow What done looks like** — the section is only a catch-all ("make sure it works", "all tests keep passing") with no real check named, or it has no `Browser look:` line. An issue written before the section existed ends with `## Testing`: grade that section the same way, and do not flag the old heading or a missing `Browser look:` in it.
 - **Unfilled placeholders** — template boilerplate left in the body (`[Which environment...]`, `[concrete criterion]`).
 
 **Advisory nits (these do NOT fail the issue — note them, never block):**
@@ -170,17 +171,17 @@ Otherwise, call `mcp__kendo__add-comment-tool` with:
 **Type** — filed as Feature, content describes a defect — suggest correcting to Bug
 Rubric: "Use for defects in existing behaviour."
 Current: "## User Story\nAs a user, I want to log out so that my session is closed."
-Suggested: type → Bug; restructure content to the Bug template (Context / Steps to Reproduce / Expected / Actual / Cause / Acceptance Criteria / Scope / Testing).
+Suggested: type → Bug; restructure content to the Bug template (Context / Steps to Reproduce / Expected / Actual / Cause / Acceptance Criteria / Scope / What done looks like).
 
 **Acceptance Criteria** — mechanism-layer criteria — suggest rewriting as outcomes
 Rubric: "AC describe user-observable outcomes — what the user sees or can do — not mechanism."
 Current: "1. Clicking 'Log out' calls DELETE /logout and clears the session cookie"
 Suggested: "1. Clicking 'Log out' returns the user to the login page"
 
-**Testing** — vague testing section — suggest naming the suite
+**What done looks like** — vague section — suggest naming the suite and the look
 Rubric: "Name the specific test suite or arch test, not 'make sure it works'."
 Current: "- Make sure tests pass"
-Suggested: "- `<the auth domain's test suite command>` green"
+Suggested: "- Browser look: the login page after 'Log out'\n- `<the auth domain's test suite command>` green"
 ```
 After the comment is posted, return `**[issue key]** — FAIL — Flagged: [Section], [Section]` as plain text.
 
