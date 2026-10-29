@@ -31,7 +31,7 @@ Work in any project, no configuration needed.
 | [newbranch](skills/newbranch/) | Create a new branch from the default branch |
 | [next](skills/next/) | Continue through TASKS.md — find next task, execute, mark done |
 | [plan-feature](skills/plan-feature/) | Interrogate the developer, verify citations, gate the Security & Cost Surface, then produce PLAN.md + DECISIONS.md reviewed by plan-reviewer + surface-reviewer |
-| [pr](skills/pr/) | Create a pull request for the current branch; gates on this session's /review-branch report for plan branches and on BUG.md's verdict for bug branches |
+| [pr](skills/pr/) | Create a pull request for the current branch; gates on this session's /review-branch report for plan branches and on BUG.md's verdict for bug branches; attaches screenshots of the changed screens when the branch changes frontend files |
 | [research](skills/research/) | Research a topic, produce a filed report, build cumulative knowledge |
 | [retro](skills/retro/) | Write retrospectives capturing what went wrong, why, and what changed |
 | [review-branch](skills/review-branch/) | Full-branch review vs base: runtime-integrity-reviewer + precedent-reviewer in parallel, joined by docs-accuracy-reviewer when the diff ships user-facing text; reports in chat |

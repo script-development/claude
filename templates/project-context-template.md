@@ -97,6 +97,12 @@ references:
   shepard_notes:       # e.g. .claude/references/shepard-<repo>.md — the repo notes /core-skills:shepard
                        # reads (gates, auto-fixers, board, merge signal), in the shape of its
                        # references/repos/_template.md. Used by: shepard.
+  browser:             # e.g. .claude/references/browser.md — how a session opens this project's
+                       # running local app: the URL, the login, the seeded accounts per role,
+                       # the 2FA code command, and what the local stack cannot show. Local
+                       # accounts only. Shaped like this plugin's
+                       # references/browser-reference-template.md. Without it, pr takes no
+                       # screenshots and says so in the PR body. Used by: pr.
 
 # --- Worktrees (used by: worktree, commit, newbranch, review-branch, sync-worktrees, shepard,
 #     next, implement-plan, fix-bug) ---
