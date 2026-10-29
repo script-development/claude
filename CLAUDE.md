@@ -17,8 +17,9 @@ Skills are **not** consumed via symlinks. Consumers hold their own copies. When 
 - `docs/` - Contributing guide and best practices
 - `.githooks/` - Optional shared git hooks. One-time setup per clone:
   `git config core.hooksPath .githooks`. Currently: `pre-commit` keeps
-  `plugins/core-skills/references/project-context-template.md` in sync with its canonical
-  source whenever the source changes.
+  `plugins/core-skills/references/project-context-template.md` and
+  `plugins/core-skills/references/browser-reference-template.md` in sync with their canonical
+  sources whenever a source changes.
 
 ## When working in this repo
 

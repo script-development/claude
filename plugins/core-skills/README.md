@@ -39,10 +39,11 @@ back to, not re-explain the degrade-not-fail contract itself.
 
 **Project reference files.** A project's own notes that a skill reads beside its shipped text —
 hazards, a docs-sync map, filled-in issue examples, agent-ready calibration, shepard's repo
-notes — live in the repo and are named under the one `references:` map in that file (e.g.
+notes, the browser reference `pr` logs in with — live in the repo and are named under the one `references:` map in that file (e.g.
 `references.hazards`). The plugin install directory is shared and replaced on every update, so
 nothing a project writes there survives. Each key's reader and default are documented on the key
-in the template.
+in the template. The browser reference has a template of its own, shipped at
+[`references/browser-reference-template.md`](references/browser-reference-template.md).
 
 **Accepted failures.** A project's ruling on which failures it will not guard against lives in
 the file itself, under `## Review › ### Accepted failures`, not in a reference file: shepard,
@@ -64,7 +65,7 @@ existing ruling there, or walks the template's catalogue of failure classes to w
 | [newbranch](skills/newbranch/) | Create a new branch from this project's integration branch; if an issue tracker is configured, resolve/create the issue and start work on it |
 | [next](skills/next/) | Continue through TASKS.md — find next task, execute with TDD flow, mark done |
 | [plan-feature](skills/plan-feature/) | Interrogate the developer with codebase-informed questions, then produce PLAN.md and DECISIONS.md; self-gated by the bundled plan-reviewer and surface-reviewer agents |
-| [pr](skills/pr/) | Create a pull request with automatic issue feedback; offers `/core-skills:review-branch` when this session has none for HEAD, and gates bug branches on `bug-fix-verifier`'s BUG.md verdict |
+| [pr](skills/pr/) | Create a pull request with automatic issue feedback; offers `/core-skills:review-branch` when this session has none for HEAD, gates bug branches on `bug-fix-verifier`'s BUG.md verdict, and attaches screenshots of the changed screens via `references.browser` when the branch changes frontend files |
 | [review-branch](skills/review-branch/) | Full-branch review vs the integration branch: three finders (runtime-integrity, correctness, precedent) in parallel against a shared hunting corpus; reports tagged findings in chat |
 | [review-mcp-descriptions](skills/review-mcp-descriptions/) | Improve MCP tool/resource descriptions for Tool Search discoverability |
 | [shepard](skills/shepard/) | Drive one PR to green and answered: fix red CI, dispose every review finding, push once per cycle, arm a live watch; reads the repo's own notes via `references.shepard_notes` |
