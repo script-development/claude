@@ -333,7 +333,10 @@ recognise as a plain `PASS`:
   old string in place and `/core-skills:pr` would ask for an override anyway.
 - **Run a browser-driving skill or the Playwright MCP first** — after it
   finishes, re-ask the same question above. Don't fall through to Phase 9
-  on completion alone; a screenshot is not a "Yes."
+  on completion alone; a screenshot is not a "Yes." With the Playwright
+  MCP, follow the Look part of [`pr-screenshots.md`](../../references/pr-screenshots.md):
+  find-first login, the 2FA traps, the console check. Its screenshots are
+  for this check only; `/core-skills:pr` takes the PR's own.
 - **No — hold off** — stop the workflow here, do not hand off to `/core-skills:pr`.
   Update **Verdict:** to `BLOCKED — pending manual browser confirmation`
   and set **Status:** back to `Fixing`. `/core-skills:pr`'s bug-branch gate reads this

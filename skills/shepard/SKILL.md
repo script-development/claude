@@ -90,7 +90,10 @@ Find the PR. Parse the argument for a number or branch name; with none, detect f
 gh pr list --head "$(git branch --show-current)" --json number,url,title --jq '.[0]'
 ```
 
-No PR for the branch → say so and stop. Then read it:
+No PR for the branch → say so and stop. Before anything touches the working tree, run the Swap check
+in [`pr-screenshots.md`](../../templates/pr-screenshots.md): a screenshot run that stopped partway
+can leave the base branch's files in the tree, and committing them would quietly revert the branch.
+Then read the PR:
 
 ```bash
 gh pr view <url> --json state,author,isDraft,headRefName,headRefOid,mergeable,title,body
@@ -425,6 +428,14 @@ overwritten. Verify the upstream before pushing; if it reads the integration bra
 `git push -u origin HEAD` rather than pushing straight to the base.
 
 Record the pushed head; the step-9 report cites it.
+
+When the cycle changed frontend files (the same glob as `/pr`'s Screenshots step, over this cycle's
+commits: `git diff --name-only <head before the cycle>..HEAD -- <glob>`), bring the PR body's `##
+Screenshots` up to date after the push. Follow Look, Record and Attach in
+[`pr-screenshots.md`](../../templates/pr-screenshots.md), with the PR's base branch as `<base>`.
+Attach retakes only the screens that went stale and keeps every other entry word for word. Splice
+the section with the recipe in [`pr/SKILL.md`](../pr/SKILL.md) § Refreshing an existing PR body. A
+screen Look finds broken isn't attached: it is a new finding in the step-9 report.
 
 ### 8 · Reply in every thread. Never resolve one.
 

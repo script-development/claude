@@ -130,6 +130,12 @@ Use AskUserQuestion, up to four fields per call, one question per field:
 - **Nothing detectable, no default** → `Leave unset — <consequence>` plus the most plausible
   guess, if any.
 
+**Playwright output.** When `references.browser` ends up set (detected now or already in the file),
+`pr` and `shepard` will drive the Playwright MCP, which writes snapshots, logs and screenshots to
+`.playwright-mcp/`. If `git check-ignore -q .playwright-mcp/x.png` fails, add one question to
+the same AskUserQuestion call: `Add .playwright-mcp/ to .gitignore (Recommended)`, or `Leave it —
+pr ignores it on this machine only, through .git/info/exclude`.
+
 Put the evidence in each option's description (*"PRs #41–#60 all merged into `develop`"*), so the
 user is confirming a fact, not guessing. If AskUserQuestion is unavailable (a headless run), take
 every `(Recommended)` option and list the choices in the summary for review.
@@ -222,6 +228,10 @@ worktree_dir: ../kendo-{slug}
   more. Keep it, and say in the summary that `plan_root` replaced it — offer `plan_root` only if
   the old value pointed outside `docs/plans/`.
 
+If the user chose to ignore Playwright output, append `.playwright-mcp/` to the root
+`.gitignore` (create it if missing). That one line is the only change this skill makes outside
+`.claude/project-context.md`.
+
 Nothing to add → change nothing and say the file is already up to date for the installed
 plugins. Don't commit — the file belongs to the project; leave it for the user or `/core-skills:commit`.
 
@@ -237,11 +247,14 @@ plugins. Don't commit — the file belongs to the project; leave it for the user
 **Skipped (no reader installed):** <section or field>
 **Kept for a checked-in copy:** <field> — read once <plugin> replaces `.claude/skills/<name>/`
 **Left alone:** <existing fields/sections, including unknown ones>
+**Ignored:** `.playwright-mcp/` added to `.gitignore`
 **Moved:** <source file:lines> → § Accepted failures, pointer line left behind
 **Replaced by plugin:** `.claude/skills/<name>/`, `.claude/agents/<name>.md` — now also shipped as `<plugin>:<name>`
 
 Re-run /core-skills:install after installing another plugin from this marketplace.
 ```
+
+Omit the **Ignored** line when `.gitignore` wasn't changed.
 
 **Replaced by plugin** lists every checked-in skill or agent (the same locations Step 2 scans)
 whose name matches a skill or agent an installed plugin now ships. Both copies stay available
@@ -258,3 +271,4 @@ line when nothing matches.
 - Never pins a field to a value that equals its own default.
 - Never deletes a checked-in skill or agent, even one a plugin now replaces.
 - Never commits.
+- Never changes `.gitignore` beyond the one confirmed `.playwright-mcp/` line.

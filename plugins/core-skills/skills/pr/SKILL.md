@@ -6,7 +6,7 @@ description: >
   configured). Offers to run `/core-skills:review-branch` when this session has no review for HEAD, gates bug
   branches on `bug-fix-verifier`'s verdict, and embeds that verdict in the PR body. When the
   branch changes frontend files, looks at each changed screen in the running local app through
-  the Playwright MCP and attaches a screenshot of it. Use this skill whenever the user wants to
+  the Playwright MCP and attaches a before/after screenshot of it. Use this skill whenever the user wants to
   create a PR, open a pull request, submit their work for review, or is done with a feature/fix
   branch. Also triggers on phrases like "make a PR", "open PR", "create pull request", "submit
   for review", "I'm done with this branch", or "push and PR".
@@ -41,6 +41,11 @@ Then run these commands in parallel:
 - `git branch --show-current` — get current branch name
 - `git log origin/<base>..HEAD --oneline` — all commits on this branch
 - `git diff origin/<base>...HEAD --stat` — changed files summary
+
+Before reading `git status`, run the Swap check in
+[`pr-screenshots.md`](../../references/pr-screenshots.md). A screenshot run that stopped
+partway can leave the base branch's frontend files in the working tree. They look like uncommitted
+changes, and committing them would quietly revert the branch.
 
 If there are uncommitted changes, ask the user if they want to commit first.
 
@@ -210,8 +215,8 @@ Analyze ALL commits on the branch (not just the latest) to write:
 #### Screenshots
 
 A branch that changes what the app shows gets a look in the browser before its PR opens, and the
-PR shows what was seen. The look is half the point: it catches a screen that broke before a
-reviewer has to. Check whether the step runs:
+PR shows what was seen: one before/after image per changed screen. The look is half the point: it
+catches a screen that broke before a reviewer has to. Check whether the step runs:
 
 ```bash
 git diff --name-only origin/<base>...HEAD -- '*.vue' '*.tsx' '*.jsx' '*.css' '*.scss' '*.blade.php'
@@ -221,48 +226,26 @@ Empty output: skip this step, and the body gets no `## Screenshots` section. Oth
 always gets one, with screenshots or with one line that says why there are none. A skipped look
 is visible to the reviewer, never silent.
 
-1. **Read the browser reference**: the file `references.browser` names in
-   `.claude/project-context.md` (template:
-   [`browser-reference-template.md`](../../references/browser-reference-template.md), shipped
-   with this plugin). It holds the local URL, the login, the seeded accounts per role, the 2FA
-   code command and what the local stack cannot show. No reference → write
-   `No screenshots: this project has no browser reference.` and go on.
-2. **Pick the screens.** From the diff, name each screen a changed file renders: the route or page
-   that shows the changed component or style. A change that shows nothing on screen (a style for
-   a state the local data cannot reach, a template only a mail renders) gets no screen: write
-   `No screenshots: <why the change shows nothing locally>.`, using the reference's list of what
-   the local stack cannot show where it applies.
-3. **Open the app** through the Playwright MCP (`browser_navigate` to the reference's URL; load
-   the `mcp__plugin_playwright_playwright__browser_*` tools first if they are deferred). This
-   skill does not start the app. Not answering → write
-   `No screenshots: the app does not run locally (<URL> did not answer).` No Playwright MCP in
-   this session → write `No screenshots: no Playwright MCP in this session.`
-4. **Log in** on the reference's login page as the account for the role the screen needs. On a
-   2FA prompt, run the reference's code command and type the code at once. The code stays in this
-   session: never in the PR body, a commit or a comment. A setup screen for 2FA, or a wrong
-   password, stops the look: write `No screenshots: <what the login showed>.`
-5. **Look.** Open each screen, check that the change is there and looks right, and read the
-   console (`browser_console_messages`). A screen that looks broken, or a console error the
-   reference does not list as expected, stops this skill before the PR opens: tell the user what
-   you saw.
-6. **Take one screenshot per changed screen** (`browser_take_screenshot`) into a folder git does
-   not track, for example the Playwright MCP's `.playwright-mcp/`. Name each file after the
-   screen. Never commit a screenshot. Then close the browser (`browser_close`).
+Follow [`pr-screenshots.md`](../../references/pr-screenshots.md): Look, then Record, then Attach.
+This step runs after step 2's push, so every change is in HEAD, which is what makes Record's base
+swap safe. The setting `CORE_SKILLS_PR_SCREENSHOTS` (see the reference) decides which screens get
+taken. The browser reference it reads is the file `references.browser` names in
+`.claude/project-context.md` (template:
+[`browser-reference-template.md`](../../references/browser-reference-template.md), shipped with this
+plugin).
 
-**Attach them.** `--attach` is new in `gh`: check `gh pr create --help | grep -q -- --attach`.
-
-- **gh has it:** pass each file to the same `gh pr create` (or `gh pr edit` for an open PR) as
-  `--attach '<path>#<caption>'`, and reference it in the body's `## Screenshots` section as
-  `![<caption>](<path>)` with the same path. gh uploads the file and rewrites that reference to
-  the uploaded asset. One caption line per screen: the URL, the role, and what the screen shows.
-- **gh lacks it:** the PR still opens. The section reads
-  `Screenshots taken, not attached: this gh has no --attach. Files: <path>, <path>.`, and the
-  user drags the files into the PR by hand or upgrades `gh`.
+- **Look finds a broken screen** or a console error the browser reference doesn't list as
+  expected: stop before the PR opens, and tell the user what you saw.
+- **New PR:** the section Attach writes goes into `gh pr create`, with one `--attach` per file
+  (example below).
+- **Existing PR:** Attach compares the body's entries with the diff. It keeps the screenshots
+  that are still current and retakes only the stale ones. The result goes into the body through
+  the recipe below.
 
 If a PR already exists for this branch (`gh pr list --head "$(git branch --show-current)"`),
 splice the body using **Refreshing an existing PR body** below. Always splice `## Summary`.
 Also splice `## Bug Fix Verification` when **this run** just produced a new verifier verdict,
-and `## Screenshots` when this run took a new look — replace the heading if it is already in the
+and `## Screenshots` when Attach changed it — replace the heading if it is already in the
 body, insert it if it is missing. Do not add a Review Handoff.
 
 #### Refreshing an existing PR body
@@ -270,26 +253,34 @@ body, insert it if it is missing. Do not add a Review Handoff.
 `gh pr edit --body` replaces the **whole** body. A Summary-only string wipes later `##`
 sections. Always splice; never pass a partial body.
 
+A section starts at its heading, matched at the start of a line: the same words inside a sentence
+don't count. It runs until the next `## ` heading at the start of a line, the
+`🤖 Generated with` footer line, or the end of the body, whichever comes first. The footer is
+never part of a section. Screenshots is usually last, so a splice that ran to the end of the body
+would drop the footer.
+
 1. `old=$(gh pr view <n> --json body --jq .body)`
 2. Note whether `$old` contains `## Bug Fix Verification` and `## Screenshots`.
 3. Build `$new` from `$old`. Replace from `## Summary` through (not including) the next
    `## ` heading, or through EOF if Summary is last.
 4. When this run produced a new verifier verdict: replace from `## Bug Fix Verification`
    through the next `## `, or **insert** that heading after Summary if `$old` had none. Same
-   for Screenshots when this run took a new look.
+   for Screenshots when Attach changed it: replace it with the section Attach wrote, which
+   already holds the entries it kept.
 5. If `$old` had `## Bug Fix Verification` and `$new` does not, **abort**. Same for
    `## Screenshots`. A missing section may be added; a present one may not disappear unless
    step 4 replaced it with a new one.
 6. `gh pr edit <n> --body "$new"`, plus one `--attach '<path>#<caption>'` per new screenshot.
+   Never attach a kept entry again: its image line already holds the uploaded URL.
 
 Any skill that pushes to an open PR uses this same recipe. Splice Summary only, unless the run
-just produced that verdict or a new look.
+just produced that verdict or Attach changed Screenshots.
 
 Otherwise:
 
 ```bash
 gh pr create --base <base-branch> --title "PR title here" \
-  --attach '.playwright-mcp/customers-status-column.png#Admin, /customers: the new status column' \
+  --attach '.playwright-mcp/pr/feat-status-column/customers-index--admin.png#Admin, /customers: the new status column. Before: main @ 9f8e7d6, after: this branch @ 1a2b3c4' \
   --body "$(cat <<'EOF'
 ## Summary
 - Bullet points summarizing the changes
@@ -302,9 +293,10 @@ gh pr create --base <base-branch> --title "PR title here" \
 
 ## Screenshots
 <!-- Branches that change frontend files. Omit otherwise. -->
-<!-- One line per screen, or one line that says why there are none. -->
+<!-- One entry per screen (format: pr-screenshots.md, Attach), or one line saying why there are none. -->
 
-![Admin, /customers: the new status column](.playwright-mcp/customers-status-column.png)
+<!-- shot screen=customers-index role=admin sha=1a2b3c4 base=9f8e7d6 files=resources/js/pages/Customers/Index.vue -->
+![Admin, /customers: the new status column. Before: main @ 9f8e7d6, after: this branch @ 1a2b3c4](.playwright-mcp/pr/feat-status-column/customers-index--admin.png)
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 EOF
