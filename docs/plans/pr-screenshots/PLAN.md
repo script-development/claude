@@ -137,6 +137,14 @@ Sections:
 
 One PR in this repo. Propagating the change to consumers is a manual step after merge.
 
+The PR description also mentions two changes made along the way:
+
+- `core-skills:install` now offers a committed `.playwright-mcp/` line in `.gitignore` when
+  `references.browser` is set. The reference falls back to the local `info/exclude` and suggests
+  that committed fix.
+- This repo got its first `.gitignore` (`.playwright-mcp/`, `.claude/worktrees/`), in a commit of
+  its own.
+
 ## Out of scope
 
 - **`fix-bug` and `implement-plan` feeding the PR** (D14). They get the Look pointer and nothing

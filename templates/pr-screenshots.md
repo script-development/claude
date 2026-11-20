@@ -65,6 +65,11 @@ If git doesn't already ignore it, ignore it locally, not in a committed `.gitign
 git check-ignore -q .playwright-mcp/pr/x.png || echo '.playwright-mcp/' >> "$(git rev-parse --git-path info/exclude)"
 ```
 
+When that adds the local line, say once in the run's output that the lasting fix is a committed
+`.playwright-mcp/` line in the project's `.gitignore` (`/core-skills:install` offers it), since the
+local line covers this machine only. Ignore the whole folder, not just `pr/`: the Playwright MCP
+writes its own snapshots and logs at the folder's root.
+
 File names: `<screen>--<role>.png` (see Pick the screens). A developer adding a screenshot by hand
 drops it in this folder under that name.
 
