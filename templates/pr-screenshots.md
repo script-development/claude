@@ -73,8 +73,9 @@ writes its own snapshots and logs at the folder's root.
 File names: `<screen>--<role>.png` (see Pick the screens). A developer adding a screenshot by hand
 drops it in this folder under that name.
 
-Paths given to the Playwright MCP resolve against its workspace root, normally the repo root.
-After writing a file, check that it exists where you expect.
+Paths given to the Playwright MCP resolve against its workspace root, normally the repo root, and
+it refuses to write outside that root. After writing a file, check that it exists where you
+expect.
 
 ## Swap check
 
@@ -124,43 +125,57 @@ No file: go on. A file: its first line is `head=<sha>`, the rest are paths.
    - The code stays in this session: never in the PR body, a commit or a comment.
    - A setup screen for 2FA, or a wrong password, stops the look:
      `No screenshots: <what the login showed>.`
-5. **Look at each screen.** Open it, wait for the part that changed (`browser_find` or
-   `browser_wait_for`), then:
-   - take a screenshot (`browser_take_screenshot`, `scale: "css"`) and check that the change is
-     there and looks right;
-   - read the console (`browser_console_messages`).
+5. **Look at each screen.** Open it with a fresh page load, never by following the app's own
+   redirect after login. A page reached by a redirect can differ from a fresh load: on emmie, a
+   one-time welcome dialog appears on a fresh load only. A "before" is always a fresh load (Record,
+   step 4), so the "after" must be one too.
+   - **Look on its own:** `browser_navigate` to the screen, wait for the part that changed
+     (`browser_find` or `browser_wait_for`), then `browser_take_screenshot` (`scale: "css"`).
+     With a `filename`, that tool returns only a link to the file: open the file to look at it.
+     Save it wherever the calling skill says, or in the MCP's default output folder, never in
+     `.playwright-mcp/pr/`.
+   - **Look for Record:** run the open-and-keep snippet below, with key `after:<screen>--<role>`
+     and the file `.playwright-mcp/pr/<folder>/<screen>--<role>.png`. Then open that file to look
+     at it.
 
-   A screen that looks broken, or a console error the reference doesn't list as expected, is a
-   finding: the calling skill says what happens next. `pr` stops before the PR opens.
-
-   Where the screenshot goes:
-   - Look on its own: wherever the calling skill says, or the MCP's default output folder. Never
-     into `.playwright-mcp/pr/`.
-   - Look for Record: `filename: ".playwright-mcp/pr/<folder>/<screen>--<role>.png"`. Also keep a
-     copy in the browser for step 4 of Record (below).
+   Either way, check that the change is there and looks right, and read the console
+   (`browser_console_messages`). A screen that looks broken, or a console error the reference
+   doesn't list as expected, is a finding: the calling skill says what happens next. `pr` stops
+   before the PR opens.
 6. **Close the browser** (`browser_close`) when the calling skill is done with it. Record still
    needs it open.
 
-### Keeping a copy in the browser
+### Open and keep: the snippet both halves use
 
-The code tool (`browser_run_code_unsafe`; `browser_run_code` in older versions) can't read files,
-and nothing it holds survives to the next call. A browser tab does. So each screenshot that Record
-will join is also stored in a spare tab, `about:blank#shots`:
+The two halves of a before/after image compare fairly only when they're taken the same way. The
+code tool (`browser_run_code_unsafe`; `browser_run_code` in older versions) can't read files, and
+nothing it holds survives to the next call, but a browser tab does. So one snippet opens the
+screen, lets it settle, takes the screenshot, and keeps a copy in a spare tab, `about:blank#shots`.
+Use it for the "after" in Look and the "before" in Record, with the same `url` and `ready` each
+time:
 
 ```js
 async (page) => {
-  const key = 'after:<screen>--<role>';          // 'before:…' in Record
-  const png = (await page.screenshot({ scale: 'css' })).toString('base64');
+  const url = '<the screen's URL>';
+  const ready = '<text the screen shows once loaded, in both versions: not the changed part>';
+  const key = 'after:<screen>--<role>';                       // 'before:<screen>--<role>' in Record
+  const file = '.playwright-mcp/pr/<folder>/<screen>--<role>.png';   // null for the "before"
+  await page.goto(url);
+  await page.getByText(ready).first().waitFor({ timeout: 30000 });
+  await page.waitForLoadState('networkidle').catch(() => {});
+  await page.waitForTimeout(1000);                            // late dialogs and animations
+  const png = await page.screenshot({ scale: 'css', ...(file ? { path: file } : {}) });
   const ctx = page.context();
   let shots = ctx.pages().find(p => p.url().endsWith('#shots'));
   if (!shots) { shots = await ctx.newPage(); await shots.goto('about:blank#shots'); }
-  await shots.evaluate(([k, d]) => { (window.shots ??= {})[k] = d; }, [key, png]);
+  await shots.evaluate(([k, d]) => { (window.shots ??= {})[k] = d; }, [key, png.toString('base64')]);
+  return 'kept';
 }
 ```
 
-It returns nothing, so it costs no viewing tokens. Opening the tab doesn't change which tab the
-other browser tools act on. Check that with `browser_tabs` if a later call seems to act on the
-wrong page.
+It returns no image, so the "before" costs no viewing tokens. Opening the spare tab doesn't change
+which tab the other browser tools act on. If a later call seems to act on the wrong page, check
+with `browser_tabs`.
 
 ## Record
 
@@ -197,10 +212,10 @@ HEAD, so putting the branch's files back can't lose anything.
 
 4. **Take each "before".** The dev server picks up the swapped files, so log in again only if the
    session ended.
-   - For each screen, `browser_navigate` to it fresh, then wait (up to 30 s) for something the
-     base renders. The changed part may not exist there.
-   - Read the console, then store a copy as `before:<screen>--<role>` (snippet above). Don't take
-     a `browser_take_screenshot` here.
+   - For each screen, run the open-and-keep snippet with the same `url` and `ready` as its "after",
+     key `before:<screen>--<role>`, and `file` null. If `ready` never appears, the base renders
+     the screen differently: see the cases below.
+   - Read the console. Don't take a `browser_take_screenshot` here: the "before" isn't viewed.
    - The base answers the route with "not found": the screen is new after all.
      `Before left out: new on this branch.`
    - The page errors, shows the framework's error screen, or logs a console error that "after"
@@ -235,9 +250,10 @@ HEAD, so putting the branch's files back can't lose anything.
      const fig = (label, png) => `<figure style="margin:0"><figcaption style="padding:0 0 8px">${label}</figcaption>`
        + `<img style="display:block;border:1px solid #999" src="data:image/png;base64,${png}"></figure>`;
      const view = await page.context().newPage();
-     await view.setViewportSize({ width: 2640, height: 900 });
-     await view.setContent(`<body style="margin:0;padding:16px;display:flex;gap:24px;background:#fff;font:600 22px system-ui">`
+     await view.setContent(`<body style="margin:0;padding:16px;display:inline-flex;gap:24px;background:#fff;font:600 22px system-ui">`
        + fig('<before label>', b) + fig('<after label>', a) + `</body>`);
+     const width = await view.evaluate(() => Math.ceil(document.body.getBoundingClientRect().width));
+     await view.setViewportSize({ width, height: 900 });
      await view.screenshot({ path: '.playwright-mcp/pr/<folder>/<screen>--<role>.png', fullPage: true });
      await view.close();
      return 'joined';

@@ -116,6 +116,25 @@ Sections:
 
 ### 6. Verify
 
+**Emmie results (2026-11-20).** Done:
+
+- **Swap and restore** through Vite's live reload: correct "before", clean `git status`.
+- **Joined image.** A spare tab holds both screenshots between calls, and one code call joins
+  them.
+- **All five staleness rules** give the right verdict.
+- **Marker recovery** works after an interrupted swap.
+
+The run found three things, all fixed in the reference:
+
+- **Both halves are taken the same way.** One open-and-keep snippet takes both. A redirect after
+  login hid emmie's welcome dialog, which a fresh load showed.
+- **The MCP only writes inside its own workspace.**
+- **`browser_take_screenshot` with a filename returns only a link,** so to look you open the
+  file.
+
+Not tested: the API-change case. Its check stays a judgement on errors.
+
+
 - **On emmie, with a frontend branch.**
   - The swap gives a correct "before" through Vite HMR.
   - After the restore, `git status` is clean.
