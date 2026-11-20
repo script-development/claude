@@ -134,6 +134,23 @@ The run found three things, all fixed in the reference:
 
 Not tested: the API-change case. Its check stays a judgement on errors.
 
+**Test PR results (#86, closed, 2026-11-20).** Done:
+
+- **Hidden entries survive.** GitHub stores the body as sent, and the hidden entries survive
+  `gh pr edit` and `--attach`.
+- **Uploads replace the path in place.** gh 2.105.0 swaps the local path for an asset URL and
+  leaves the lines around it alone.
+- **A second run behaves.** It keeps an entry word for word, retakes a stale one and adds a new
+  one.
+
+Found and fixed:
+
+- **The footer was dropped.** Splicing the last section "through EOF" took the
+  `🤖 Generated with` footer with it.
+- **Headings must be matched at the start of a line.**
+
+`--attach` needs gh 2.99.0 or later.
+
 
 - **On emmie, with a frontend branch.**
   - The swap gives a correct "before" through Vite HMR.
