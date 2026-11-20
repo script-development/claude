@@ -335,7 +335,7 @@ Steps:
    from the manifest), the "before left out" lines under their entries, and the status lines last.
    An empty result never leaves the section empty: it says why there are no screenshots, in one
    line.
-6. **Upload.** `--attach` is new in `gh`. Check for it with
+6. **Upload.** `--attach` arrived in gh 2.99.0. Check for it with
    `gh pr create --help | grep -q -- --attach`.
    - **gh has it:** pass each new file to the same `gh pr create` or `gh pr edit` as
      `--attach '<path>#<caption>'`, and reference it in the section as `![<caption>](<path>)`
@@ -343,10 +343,11 @@ Steps:
      Kept entries already have their URL: don't attach them again.
    - **gh lacks it:** the PR still opens or updates. New entries are left out. The section gets
      `Screenshots taken, not attached: this gh has no --attach. Files: <path>, <path>.`, and the
-     user drags the files into the PR by hand or upgrades `gh`.
+     user drags the files into the PR by hand or upgrades `gh` to 2.99.0 or later.
 
    On an existing PR, splice the body as the calling skill's "Refreshing an existing PR body"
-   recipe says. Only `## Screenshots` changes here.
+   recipe says. Only `## Screenshots` changes here. The section ends at the next `## ` heading or
+   at the `🤖 Generated with` footer line. The footer stays where it is.
 7. **Clean up.** After a successful upload, read the body back and check that each new entry's
    image line now holds a URL. Then delete `.playwright-mcp/pr/<folder>/`. If gh lacked
    `--attach`, keep the folder: the user still needs the files.

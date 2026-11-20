@@ -311,6 +311,12 @@ heading if it is already in the body, insert it if it is missing. Do not add a R
 `gh pr edit --body` replaces the **whole** body. A Summary-only string wipes later `##`
 sections. Always splice; never pass a partial body.
 
+A section starts at its heading, matched at the start of a line: the same words inside a sentence
+don't count. It runs until the next `## ` heading at the start of a line, the
+`🤖 Generated with` footer line, or the end of the body, whichever comes first. The footer is
+never part of a section. Screenshots is usually last, so a splice that ran to the end of the body
+would drop the footer.
+
 1. `old=$(gh pr view <n> --json body --jq .body)`
 2. Note whether `$old` contains `## Docs accuracy`, `## Bug Fix Verification` and
    `## Screenshots`.
