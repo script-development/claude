@@ -73,7 +73,7 @@ and work without them:
 | Server | Used by | Without it |
 |--------|---------|------------|
 | Playwright (`playwright@claude-plugins-official`) | `pr` and `shepard` (screenshots of changed screens), `fix-bug` and `implement-plan` (looking at a UI change before calling it done) | `pr` and `shepard` say why the PR has no screenshots; `fix-bug` and `implement-plan` fall back to another browser-driving skill or your own look |
-| An issue tracker's MCP (e.g. Kendo, via `kendo-pm`), named by `issue_tracker_skill` | `catchup`, `fix-bug`, `install`, `newbranch`, `plan-feature`, `pr`, `task-writer` | Tracker steps are skipped |
+| The issue tracker's MCP, reached through the skill `issue_tracker_skill` names in `.claude/project-context.md` (default `kendo-mcp`, from `kendo-pm`) | `catchup`, `fix-bug`, `install`, `newbranch`, `plan-feature`, `pr`, `task-writer` | Set the field to `none` to skip tracker steps; see the [template](references/project-context-template.md) |
 
 Playwright is deliberately not a `dependencies` entry in `plugin.json`. A plugin dependency
 can't be marked optional, so declaring it would install a browser MCP in every project,
