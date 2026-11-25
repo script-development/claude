@@ -65,6 +65,22 @@ prepare-issue all read it, and a ruling kept in
 `CLAUDE.md` instead is invisible to the fixing agent's disposition step. `install` moves an
 existing ruling there, or walks the template's catalogue of failure classes to write one.
 
+## MCP servers
+
+This plugin bundles no MCP server and requires none. Skills use these when the session has them,
+and work without them:
+
+| Server | Used by | Without it |
+|--------|---------|------------|
+| Playwright (`playwright@claude-plugins-official`) | `pr` and `shepard` (screenshots of changed screens), `fix-bug` and `implement-plan` (looking at a UI change before calling it done) | `pr` and `shepard` say why the PR has no screenshots; `fix-bug` and `implement-plan` fall back to another browser-driving skill or your own look |
+| An issue tracker's MCP (e.g. Kendo, via `kendo-pm`), named by `issue_tracker_skill` | `catchup`, `fix-bug`, `install`, `newbranch`, `plan-feature`, `pr`, `task-writer` | Tracker steps are skipped |
+
+Playwright is deliberately not a `dependencies` entry in `plugin.json`. A plugin dependency
+can't be marked optional, so declaring it would install a browser MCP in every project,
+backend-only ones included. And because Playwright comes from another marketplace, a project
+that isn't allowlisted would fail to load this plugin at all. Install it yourself where it
+helps: `claude plugin install playwright@claude-plugins-official`.
+
 ## Skills
 
 | Skill | Description |
