@@ -49,6 +49,19 @@ defended, and `prepare-issue` flags an acceptance criterion that still asks for 
 project-context mechanism of this plugin's own only if a future skill needs a fact `core-skills`'
 template can't already cover.
 
+## MCP servers
+
+This plugin bundles no MCP server. It needs one of these two ways to reach Kendo:
+
+| Route | Used by | Setup |
+|-------|---------|-------|
+| Kendo MCP server | `kendo-mcp`, `prepare-issue`, `triage-reports` | Connect it per Kendo tenant: [`kendo-mcp/references/setup.md`](skills/kendo-mcp/references/setup.md) |
+| `kendo` CLI | `kendo-cli` | No MCP server needed |
+
+Kendo can't be a `dependencies` entry in `plugin.json`: that field only lists plugins, and the
+Kendo MCP server is a connection to your own tenant, not a plugin. The plugin can't ship its
+config (`mcpServers`) either, because every tenant has its own server.
+
 ## Skills
 
 | Skill | Description |

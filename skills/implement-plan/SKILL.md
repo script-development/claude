@@ -127,6 +127,9 @@ and re-commit/re-push.
 For frontend changes, also drive the feature in a real browser — a browser-driving skill or the
 Playwright MCP — before declaring done. Code that compiles and tests-green can still be visually
 broken.
+With the Playwright MCP, follow the Look part of
+[`pr-screenshots.md`](../../templates/pr-screenshots.md): find-first login, the 2FA traps, the console check.
+Screenshots taken here are for this check only; `/pr` takes the PR's own.
 
 ## Step 7: Branch review
 

@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Keeps each template core-skills ships byte-identical to its canonical source in templates/
-# (see each file's own header comment): project-context-template.md and
-# browser-reference-template.md. When a canonical file is part of this commit, this hook copies
+# (see each file's own header comment): project-context-template.md,
+# browser-reference-template.md and pr-screenshots.md. When a canonical file is part of this commit, this hook copies
 # it over its shipped mirror and stages the result, so the two never drift.
 #
 # One-time setup per clone: git config core.hooksPath .githooks
 
 set -e
 
-for name in project-context-template.md browser-reference-template.md; do
+for name in project-context-template.md browser-reference-template.md pr-screenshots.md; do
   SRC="templates/$name"
   DEST="plugins/core-skills/references/$name"
   if git diff --cached --name-only | grep -qx "$SRC"; then

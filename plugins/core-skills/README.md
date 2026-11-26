@@ -45,12 +45,41 @@ nothing a project writes there survives. Each key's reader and default are docum
 in the template. The browser reference has a template of its own, shipped at
 [`references/browser-reference-template.md`](references/browser-reference-template.md).
 
+**PR screenshots.** `pr` and `shepard` look at each changed screen and keep the PR body's
+`## Screenshots` current, one before/after image per screen, following
+[`references/pr-screenshots.md`](references/pr-screenshots.md). What that costs is a per-person
+choice, so it is set in Claude Code settings, not in the committed project file:
+
+```json
+{ "env": { "CORE_SKILLS_PR_SCREENSHOTS": "ask" } }
+```
+
+`live` (the default) takes missing screens at once, `ask` asks first, `collect-only` uses only
+screenshots dropped in by hand, and `off` takes none. `.claude/settings.local.json` overrides
+`~/.claude/settings.json`.
+
 **Accepted failures.** A project's ruling on which failures it will not guard against lives in
 the file itself, under `## Review › ### Accepted failures`, not in a reference file: shepard,
 plan-feature, surface-reviewer, the review-branch finders, and kendo-pm's triage-reports and
 prepare-issue all read it, and a ruling kept in
 `CLAUDE.md` instead is invisible to the fixing agent's disposition step. `install` moves an
 existing ruling there, or walks the template's catalogue of failure classes to write one.
+
+## MCP servers
+
+This plugin bundles no MCP server and requires none. Skills use these when the session has them,
+and work without them:
+
+| Server | Used by | Without it |
+|--------|---------|------------|
+| Playwright (`playwright@claude-plugins-official`) | `pr` and `shepard` (screenshots of changed screens), `fix-bug` and `implement-plan` (looking at a UI change before calling it done) | `pr` and `shepard` say why the PR has no screenshots; `fix-bug` and `implement-plan` fall back to another browser-driving skill or your own look |
+| The issue tracker's MCP, reached through the skill `issue_tracker_skill` names in `.claude/project-context.md` (default `kendo-mcp`, from `kendo-pm`) | `catchup`, `fix-bug`, `install`, `newbranch`, `plan-feature`, `pr`, `task-writer` | Set the field to `none` to skip tracker steps; see the [template](references/project-context-template.md) |
+
+Playwright is deliberately not a `dependencies` entry in `plugin.json`. A plugin dependency
+can't be marked optional, so declaring it would install a browser MCP in every project,
+backend-only ones included. And because Playwright comes from another marketplace, a project
+that isn't allowlisted would fail to load this plugin at all. Install it yourself where it
+helps: `claude plugin install playwright@claude-plugins-official`.
 
 ## Skills
 
@@ -65,7 +94,7 @@ existing ruling there, or walks the template's catalogue of failure classes to w
 | [newbranch](skills/newbranch/) | Create a new branch from this project's integration branch; if an issue tracker is configured, resolve/create the issue and start work on it |
 | [next](skills/next/) | Continue through TASKS.md — find next task, execute with TDD flow, mark done |
 | [plan-feature](skills/plan-feature/) | Interrogate the developer with codebase-informed questions, then produce PLAN.md and DECISIONS.md; self-gated by the bundled plan-reviewer and surface-reviewer agents |
-| [pr](skills/pr/) | Create a pull request with automatic issue feedback; offers `/core-skills:review-branch` when this session has none for HEAD, gates bug branches on `bug-fix-verifier`'s BUG.md verdict, and attaches screenshots of the changed screens via `references.browser` when the branch changes frontend files |
+| [pr](skills/pr/) | Create a pull request with automatic issue feedback; offers `/core-skills:review-branch` when this session has none for HEAD, gates bug branches on `bug-fix-verifier`'s BUG.md verdict, and attaches a before/after screenshot of each changed screen via `references.browser` when the branch changes frontend files |
 | [review-branch](skills/review-branch/) | Full-branch review vs the integration branch: three finders (runtime-integrity, correctness, precedent) in parallel against a shared hunting corpus; reports tagged findings in chat |
 | [review-mcp-descriptions](skills/review-mcp-descriptions/) | Improve MCP tool/resource descriptions for Tool Search discoverability |
 | [shepard](skills/shepard/) | Drive one PR to green and answered: fix red CI, dispose every review finding, push once per cycle, arm a live watch; reads the repo's own notes via `references.shepard_notes` |
